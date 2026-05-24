@@ -330,18 +330,35 @@ class ScannerClient:
         """GET ScanJobs/{uuid}/NextDocument. Returns the body bytes, or None
         if the scanner reports no more pages.
 
-        eSCL spec says 404/410 means "no more documents", but vendor reality
-        differs: HP MFPs return 503 once the job's last document has been
-        consumed, and some return 500. We treat any of those as a terminator
-        rather than an error — the higher layer decides whether to keep
-        what's already been buffered.
+        Status code handling:
+          * 404 / 410 — canonical "no more documents". Return None.
+          * 503 — HP returns this in two contradictory ways:
+                  (a) the document IS exhausted (signals "done")
+                  (b) the next chunk is still being processed ("retry me")
+                Strategy: retry a couple times with backoff. If 503 persists
+                we treat it as "done" so the loop terminates.
+          * 500 — sometimes transient. Retry once.
+
+        The caller decides whether to keep partial buffer state on a None
+        return — see coordinator's PDF validation.
         """
-        async with await self._session() as s:
-            async with s.get(f"{job_url}/NextDocument") as resp:
-                if resp.status in (404, 410, 500, 503):
-                    return None
-                resp.raise_for_status()
-                return await resp.read()
+        import asyncio
+
+        for attempt in range(3):
+            async with await self._session() as s:
+                async with s.get(f"{job_url}/NextDocument") as resp:
+                    if resp.status in (404, 410):
+                        return None
+                    if resp.status in (500, 503):
+                        # Transient on attempt 0-1; treat as "done" on the
+                        # third try if it still hasn't resolved.
+                        if attempt < 2:
+                            await asyncio.sleep(0.5 * (attempt + 1))
+                            continue
+                        return None
+                    resp.raise_for_status()
+                    return await resp.read()
+        return None
 
     async def delete_job(self, job_url: str) -> bool:
         """Cancel a scan job. Returns True on 2xx, False otherwise.

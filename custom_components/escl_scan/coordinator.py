@@ -133,7 +133,8 @@ class ScanCoordinator:
         self._current: TrackedScan | None = None
         self._driver_tasks: dict[str, asyncio.Task] = {}
         self._update_listeners: list[Callable[[], None]] = []
-        self._storage.mkdir(parents=True, exist_ok=True)
+        # `storage` directory is created lazily on first scan (inside an
+        # executor) so the integration's async_setup_entry never blocks.
 
     @property
     def current(self) -> TrackedScan | None:
@@ -188,7 +189,7 @@ class ScanCoordinator:
         self._fire(EVENT_STATE_CHANGED, scan)
         self._notify()
 
-        self._purge_expired_files()
+        await self._hass.async_add_executor_job(self._ensure_storage_and_purge)
         self._driver_tasks[scan_id] = self._hass.loop.create_task(
             self._drive_scan(scan)
         )
@@ -202,16 +203,18 @@ class ScanCoordinator:
         scan = self._scans.get(scan_id)
         if scan is None or scan.is_terminal():
             return False
-        ok = False
+        # Best-effort device-side delete; if the scan hasn't gotten its
+        # job_url yet (still in `pending`), skip it. The local cancel
+        # below is what guarantees the UI/sensor flips to canceled.
         if scan.job_url:
             try:
-                ok = await self._client.delete_job(scan.job_url)
+                await self._client.delete_job(scan.job_url)
             except Exception as exc:
                 _LOGGER.warning("delete_job for %s failed: %s", scan_id, exc)
         # The driver task will observe the cancel via JobInfo or NextDocument
         # returning 404; mark optimistically here so the UI updates fast.
         self._mark_terminal(scan, STATE_CANCELED, "user-cancel", error=None)
-        return ok
+        return True
 
     # ── Driver ──────────────────────────────────────────────────────────
 
@@ -292,9 +295,36 @@ class ScanCoordinator:
                 )
                 return
 
+            # Validate the buffered bytes look like a complete PDF before
+            # claiming success. HP MFPs occasionally return a truncated PDF
+            # (just the catalog header, ~58 bytes) for unsupported setting
+            # combos like low-DPI grayscale — they don't 4xx/5xx the
+            # request, they just hand back garbage. Detecting EOF here gives
+            # the user a clear failed-state with a useful error rather than
+            # a "completed" claim on a broken file.
+            body = bytes(buffer)
+            if not body.startswith(b"%PDF-"):
+                self._mark_terminal(
+                    scan, STATE_FAILED, None,
+                    error=f"scanner returned a non-PDF response ({len(body)} bytes)",
+                )
+                return
+            if b"%%EOF" not in body[-1024:]:
+                self._mark_terminal(
+                    scan, STATE_FAILED, None,
+                    error=(
+                        f"scanner returned a truncated PDF ({len(body)} bytes; "
+                        f"no EOF trailer). This usually means the requested "
+                        f"DPI/color combo isn't supported by the device."
+                    ),
+                )
+                return
+
             try:
-                scan.file_path.write_bytes(bytes(buffer))
-                scan.bytes_written = len(buffer)
+                await self._hass.async_add_executor_job(
+                    scan.file_path.write_bytes, body,
+                )
+                scan.bytes_written = len(body)
             except OSError as exc:
                 self._mark_terminal(
                     scan, STATE_FAILED, None, error=f"write failed: {exc}"
@@ -313,17 +343,23 @@ class ScanCoordinator:
                 pass
 
             self._mark_terminal(scan, final_state, final_reasons, error=None)
-            # Best-effort delete of the server-side job.
-            try:
-                await self._client.delete_job(scan.job_url)
-            except Exception:
-                pass
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             _LOGGER.exception("scan driver crashed")
             self._mark_terminal(scan, STATE_FAILED, None, error=str(exc))
         finally:
+            # Always best-effort delete the server-side job, including on
+            # failure paths. eSCL devices have a limited number of job slots
+            # and won't accept new ScanJobs until stale ones are deleted.
+            if scan.job_url:
+                try:
+                    await self._client.delete_job(scan.job_url)
+                except Exception as exc:
+                    _LOGGER.debug(
+                        "post-terminal delete_job for %s: %s",
+                        scan.scan_id, exc,
+                    )
             self._driver_tasks.pop(scan.scan_id, None)
             self._hass.loop.create_task(self._terminal_hold(scan))
 
@@ -398,6 +434,14 @@ class ScanCoordinator:
         self._hass.bus.async_fire(event, scan.to_dict())
 
     # ── File retention ──────────────────────────────────────────────────
+
+    def _ensure_storage_and_purge(self) -> None:
+        """Executor-safe: create storage dir if missing, then purge TTLed files."""
+        try:
+            self._storage.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            _LOGGER.warning("could not create scan storage dir: %s", exc)
+        self._purge_expired_files()
 
     def _purge_expired_files(self) -> None:
         cutoff = time.time() - self._file_ttl

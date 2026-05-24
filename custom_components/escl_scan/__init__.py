@@ -48,7 +48,9 @@ _CARD_FILE = Path(__file__).parent / "static" / CARD_FILENAME
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
-def _card_url() -> str:
+def _card_url_sync() -> str:
+    """Compute the content-hashed card URL. Reads card.js from disk;
+    must be called from an executor, not the event loop."""
     digest = hashlib.sha256(_CARD_FILE.read_bytes()).hexdigest()[:12]
     return f"{CARD_URL_PREFIX}{digest}.js"
 
@@ -83,9 +85,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
     }
 
-    hass.http.register_view(ScanStartView(coordinator))
-    hass.http.register_view(ScanCancelView(coordinator))
-    hass.http.register_view(ScanFileView(coordinator))
+    # Views are idempotent — re-registering on reload is a no-op since the
+    # URL is already taken. They resolve their coordinator from hass.data
+    # on each request so option-flow reloads pick up new defaults.
+    if not hass.data[DOMAIN].get("_views_registered"):
+        hass.http.register_view(ScanStartView(hass))
+        hass.http.register_view(ScanCancelView(hass))
+        hass.http.register_view(ScanFileView(hass))
+        hass.data[DOMAIN]["_views_registered"] = True
     _LOGGER.info(
         "%s: endpoints ready at /api/%s/{start,cancel,file/<id>} (scanner=%s)",
         DOMAIN, DOMAIN, data[CONF_HOST],
@@ -94,7 +101,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Content-hash card URL for cache-busting.
-    card_url = _card_url()
+    card_url = await hass.async_add_executor_job(_card_url_sync)
     await hass.http.async_register_static_paths(
         [StaticPathConfig(card_url, str(_CARD_FILE), False)]
     )
@@ -114,6 +121,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the entry when its options are saved."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -156,6 +164,21 @@ async def _sync_lovelace_resource(hass: HomeAssistant, card_url: str) -> None:
         _LOGGER.exception("failed to sync lovelace resources")
 
 
+def _current_coordinator(hass: HomeAssistant) -> ScanCoordinator | None:
+    """Return the most-recently-set-up scan coordinator from hass.data,
+    or None if no entry is configured. Views resolve through this on
+    every request so option-flow reloads see the new coordinator instance
+    without needing the views themselves to be re-registered."""
+    entries = hass.data.get(DOMAIN, {})
+    for key, entry_data in entries.items():
+        if key.startswith("_") or not isinstance(entry_data, dict):
+            continue
+        c = entry_data.get("coordinator")
+        if c is not None:
+            return c
+    return None
+
+
 class ScanStartView(HomeAssistantView):
     """POST /api/escl_scan/start  body (optional): {"dpi": int, "color": "color"|"gray", "source": "Platen"|"Feeder"}"""
 
@@ -163,8 +186,12 @@ class ScanStartView(HomeAssistantView):
     name = "api:escl_scan:start"
     requires_auth = True
 
-    def __init__(self, coordinator: ScanCoordinator) -> None:
-        self._coord = coordinator
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    @property
+    def _coord(self) -> ScanCoordinator | None:
+        return _current_coordinator(self._hass)
 
     async def post(self, request: web.Request) -> web.Response:
         try:
@@ -184,8 +211,11 @@ class ScanStartView(HomeAssistantView):
         if color not in (None, "color", "gray"):
             return self.json_message("invalid 'color' (must be 'color' or 'gray')", status_code=400)
 
+        coord = self._coord
+        if coord is None:
+            return self.json_message("integration not configured", status_code=503)
         try:
-            scan = await self._coord.start_scan(source=source, dpi=dpi, color=color)
+            scan = await coord.start_scan(source=source, dpi=dpi, color=color)
         except Exception as exc:
             _LOGGER.exception("scan kickoff failed")
             return self.json_message(f"scan kickoff failed: {exc}", status_code=502)
@@ -209,8 +239,12 @@ class ScanCancelView(HomeAssistantView):
     name = "api:escl_scan:cancel"
     requires_auth = True
 
-    def __init__(self, coordinator: ScanCoordinator) -> None:
-        self._coord = coordinator
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    @property
+    def _coord(self) -> ScanCoordinator | None:
+        return _current_coordinator(self._hass)
 
     async def post(self, request: web.Request) -> web.Response:
         try:
@@ -220,9 +254,22 @@ class ScanCancelView(HomeAssistantView):
         scan_id = data.get("scan_id") if isinstance(data, dict) else None
         if not isinstance(scan_id, str) or not scan_id:
             return self.json_message("missing or invalid 'scan_id'", status_code=400)
-        ok = await self._coord.async_cancel(scan_id)
+        coord = self._coord
+        if coord is None:
+            return self.json_message("integration not configured", status_code=503)
+        scan = coord.get(scan_id)
+        if scan is None:
+            return self.json_message("scan not found", status_code=404)
+        if scan.is_terminal():
+            return self.json_message(
+                f"scan already terminal (state={scan.state})", status_code=409,
+            )
+        ok = await coord.async_cancel(scan_id)
         if not ok:
-            return self.json_message("cancel failed", status_code=502)
+            return self.json_message(
+                "scanner refused cancel — job may still be running",
+                status_code=502,
+            )
         return self.json({"ok": True, "scan_id": scan_id})
 
 
@@ -233,16 +280,31 @@ class ScanFileView(HomeAssistantView):
     name = "api:escl_scan:file"
     requires_auth = True
 
-    def __init__(self, coordinator: ScanCoordinator) -> None:
-        self._coord = coordinator
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    @property
+    def _coord(self) -> ScanCoordinator | None:
+        return _current_coordinator(self._hass)
 
     async def get(self, request: web.Request, scan_id: str) -> web.Response:
-        scan = self._coord.get(scan_id)
-        if scan is None or scan.file_path is None or not scan.file_path.exists():
+        coord = self._coord
+        if coord is None:
+            return self.json_message("integration not configured", status_code=503)
+        scan = coord.get(scan_id)
+        # Status precedence:
+        #   404 — scan_id unknown OR file already TTL-purged from disk
+        #   409 — scan_id valid but not ready (in progress, canceled,
+        #         failed: anything not 'completed')
+        if scan is None:
             return self.json_message("not found", status_code=404)
         if scan.state != "completed":
             return self.json_message(
-                f"scan not ready (state={scan.state})", status_code=409
+                f"scan not ready (state={scan.state})", status_code=409,
+            )
+        if scan.file_path is None or not scan.file_path.exists():
+            return self.json_message(
+                "file expired or missing on disk", status_code=404,
             )
         return web.FileResponse(
             scan.file_path,
