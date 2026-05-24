@@ -1,22 +1,56 @@
-"""eSCL Scan — placeholder entry point.
-
-Full implementation lands in phases:
-  - Phase 2: scanner.py (eSCL wire format + client)
-  - Phase 3: coordinator.py (job tracking + bus events)
-  - Phase 4: sensor.py (sensor.printer_current_scan)
-  - Phase 5: HTTP views (/api/escl_scan/{start,cancel,file/{id}})
-  - Phase 6: static/card.js (Lovelace card)
-"""
+"""eSCL Scan — trigger document scans on AirScan-capable network scanners
+with per-job state tracking, bus events, and a Lovelace card."""
 from __future__ import annotations
 
+import hashlib
+import logging
+from pathlib import Path
+
+from aiohttp import web
+
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import HomeAssistantView, StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN
+from .const import (
+    CARD_FILENAME,
+    CARD_URL_PREFIX,
+    CONF_DEFAULT_COLOR,
+    CONF_DEFAULT_DPI,
+    CONF_FILE_TTL,
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_PORT,
+    CONF_RELAXED_CIPHERS,
+    CONF_USER,
+    CONF_USE_TLS,
+    CONF_VERIFY_TLS,
+    DEFAULT_COLOR,
+    DEFAULT_DPI,
+    DEFAULT_FILE_TTL,
+    DEFAULT_PORT,
+    DEFAULT_USER,
+    DOMAIN,
+    STORAGE_SUBDIR,
+)
+from .coordinator import ScanCoordinator
+from .scanner import ScannerClient
+
+_LOGGER = logging.getLogger(__name__)
+
+PLATFORMS = ["sensor"]
+
+_CARD_FILE = Path(__file__).parent / "static" / CARD_FILENAME
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+def _card_url() -> str:
+    digest = hashlib.sha256(_CARD_FILE.read_bytes()).hexdigest()[:12]
+    return f"{CARD_URL_PREFIX}{digest}.js"
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -24,11 +58,196 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    data = {**entry.data, **entry.options}
+    client = ScannerClient(
+        host=data[CONF_HOST],
+        port=data.get(CONF_PORT, DEFAULT_PORT),
+        use_tls=data.get(CONF_USE_TLS, True),
+        user=data.get(CONF_USER) or DEFAULT_USER,
+        password=data.get(CONF_PASSWORD, ""),
+        verify_tls=data.get(CONF_VERIFY_TLS, False),
+        relaxed_ciphers=data.get(CONF_RELAXED_CIPHERS, False),
+    )
+    storage_dir = Path(hass.config.path(".storage")) / STORAGE_SUBDIR
+    coordinator = ScanCoordinator(
+        hass,
+        client,
+        storage_dir=storage_dir,
+        default_dpi=data.get(CONF_DEFAULT_DPI, DEFAULT_DPI),
+        default_color=data.get(CONF_DEFAULT_COLOR, DEFAULT_COLOR),
+        file_ttl_seconds=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL),
+    )
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {}
+    hass.data[DOMAIN][entry.entry_id] = {
+        "client": client,
+        "coordinator": coordinator,
+    }
+
+    hass.http.register_view(ScanStartView(coordinator))
+    hass.http.register_view(ScanCancelView(coordinator))
+    hass.http.register_view(ScanFileView(coordinator))
+    _LOGGER.info(
+        "%s: endpoints ready at /api/%s/{start,cancel,file/<id>} (scanner=%s)",
+        DOMAIN, DOMAIN, data[CONF_HOST],
+    )
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Content-hash card URL for cache-busting.
+    card_url = _card_url()
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(card_url, str(_CARD_FILE), False)]
+    )
+    add_extra_js_url(hass, card_url)
+    hass.data[DOMAIN][entry.entry_id]["card_url"] = card_url
+    hass.async_create_task(_sync_lovelace_resource(hass, card_url))
+
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    hass.data[DOMAIN].pop(entry.entry_id, None)
-    return True
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+    return unloaded
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def _sync_lovelace_resource(hass: HomeAssistant, card_url: str) -> None:
+    """Mirror of ipp_print's resource sync. Make the global lovelace resource
+    collection match `card_url`, dropping any stale entries from older hashes
+    so the OLD card class can't register first and beat the new one's
+    customElements.define race."""
+    import asyncio
+    for _ in range(60):
+        coll = hass.data.get("lovelace_resources") or (
+            hass.data.get("lovelace", {}).get("resources")
+            if isinstance(hass.data.get("lovelace"), dict)
+            else getattr(hass.data.get("lovelace"), "resources", None)
+        )
+        if coll is not None:
+            break
+        await asyncio.sleep(1)
+    else:
+        _LOGGER.warning("lovelace resources collection never appeared")
+        return
+    try:
+        items = list(coll.async_items())
+        current_id = None
+        stale_ids: list[str] = []
+        for item in items:
+            url = item.get("url", "")
+            if url == card_url:
+                current_id = item.get("id")
+            elif url.startswith(CARD_URL_PREFIX):
+                stale_ids.append(item.get("id"))
+        for sid in stale_ids:
+            if sid:
+                await coll.async_delete_item(sid)
+                _LOGGER.info("reaped stale lovelace resource %s", sid)
+        if current_id is None:
+            await coll.async_create_item({"res_type": "module", "url": card_url})
+            _LOGGER.info("registered %s in lovelace resources", card_url)
+    except Exception:
+        _LOGGER.exception("failed to sync lovelace resources")
+
+
+class ScanStartView(HomeAssistantView):
+    """POST /api/escl_scan/start  body (optional): {"dpi": int, "color": "color"|"gray", "source": "Platen"|"Feeder"}"""
+
+    url = "/api/escl_scan/start"
+    name = "api:escl_scan:start"
+    requires_auth = True
+
+    def __init__(self, coordinator: ScanCoordinator) -> None:
+        self._coord = coordinator
+
+    async def post(self, request: web.Request) -> web.Response:
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+
+        source = data.get("source")
+        if source not in (None, "Platen", "Feeder"):
+            return self.json_message("invalid 'source'", status_code=400)
+        dpi = data.get("dpi")
+        if dpi is not None and (not isinstance(dpi, int) or dpi <= 0 or dpi > 1200):
+            return self.json_message("invalid 'dpi'", status_code=400)
+        color = data.get("color")
+        if color not in (None, "color", "gray"):
+            return self.json_message("invalid 'color' (must be 'color' or 'gray')", status_code=400)
+
+        try:
+            scan = await self._coord.start_scan(source=source, dpi=dpi, color=color)
+        except Exception as exc:
+            _LOGGER.exception("scan kickoff failed")
+            return self.json_message(f"scan kickoff failed: {exc}", status_code=502)
+
+        return self.json(
+            {
+                "ok": True,
+                "scan_id": scan.scan_id,
+                "source": scan.source,
+                "dpi": scan.dpi,
+                "color": scan.color,
+                "state": scan.state,
+            }
+        )
+
+
+class ScanCancelView(HomeAssistantView):
+    """POST /api/escl_scan/cancel  body: {"scan_id": "..."}"""
+
+    url = "/api/escl_scan/cancel"
+    name = "api:escl_scan:cancel"
+    requires_auth = True
+
+    def __init__(self, coordinator: ScanCoordinator) -> None:
+        self._coord = coordinator
+
+    async def post(self, request: web.Request) -> web.Response:
+        try:
+            data = await request.json()
+        except Exception:
+            return self.json_message("invalid JSON", status_code=400)
+        scan_id = data.get("scan_id") if isinstance(data, dict) else None
+        if not isinstance(scan_id, str) or not scan_id:
+            return self.json_message("missing or invalid 'scan_id'", status_code=400)
+        ok = await self._coord.async_cancel(scan_id)
+        if not ok:
+            return self.json_message("cancel failed", status_code=502)
+        return self.json({"ok": True, "scan_id": scan_id})
+
+
+class ScanFileView(HomeAssistantView):
+    """GET /api/escl_scan/file/{scan_id}  streams the PDF."""
+
+    url = "/api/escl_scan/file/{scan_id}"
+    name = "api:escl_scan:file"
+    requires_auth = True
+
+    def __init__(self, coordinator: ScanCoordinator) -> None:
+        self._coord = coordinator
+
+    async def get(self, request: web.Request, scan_id: str) -> web.Response:
+        scan = self._coord.get(scan_id)
+        if scan is None or scan.file_path is None or not scan.file_path.exists():
+            return self.json_message("not found", status_code=404)
+        if scan.state != "completed":
+            return self.json_message(
+                f"scan not ready (state={scan.state})", status_code=409
+            )
+        return web.FileResponse(
+            scan.file_path,
+            headers={
+                "Content-Type": "application/pdf",
+                "Content-Disposition": f'inline; filename="{scan.filename}"',
+            },
+        )

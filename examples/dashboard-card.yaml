@@ -1,0 +1,4 @@
+# Minimal example. The integration registers the card globally; no resources
+# entry is required.
+type: custom:escl-scan-card
+title: Scan now
