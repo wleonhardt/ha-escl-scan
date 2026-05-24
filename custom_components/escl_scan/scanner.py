@@ -328,10 +328,17 @@ class ScannerClient:
 
     async def pull_next_document(self, job_url: str) -> Optional[bytes]:
         """GET ScanJobs/{uuid}/NextDocument. Returns the body bytes, or None
-        if the scanner reports no more pages (404 or 410)."""
+        if the scanner reports no more pages.
+
+        eSCL spec says 404/410 means "no more documents", but vendor reality
+        differs: HP MFPs return 503 once the job's last document has been
+        consumed, and some return 500. We treat any of those as a terminator
+        rather than an error — the higher layer decides whether to keep
+        what's already been buffered.
+        """
         async with await self._session() as s:
             async with s.get(f"{job_url}/NextDocument") as resp:
-                if resp.status in (404, 410):
+                if resp.status in (404, 410, 500, 503):
                     return None
                 resp.raise_for_status()
                 return await resp.read()

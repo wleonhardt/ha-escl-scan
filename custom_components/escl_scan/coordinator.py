@@ -240,8 +240,20 @@ class ScanCoordinator:
             poll_task = self._hass.loop.create_task(self._poll_loop(scan))
             try:
                 # Pull pages serially; eSCL servers serialize these anyway.
+                # Errors mid-loop are logged and treated as "we got what we
+                # got" — if the buffer holds a PDF, we keep it. This survives
+                # vendor quirks like HP MFPs returning 503 on the call AFTER
+                # the document has been consumed.
                 while not scan.is_terminal():
-                    chunk = await self._client.pull_next_document(scan.job_url)
+                    try:
+                        chunk = await self._client.pull_next_document(scan.job_url)
+                    except Exception as exc:
+                        _LOGGER.warning(
+                            "scan %s: pull_next_document errored after "
+                            "%d page(s): %s — using what we have",
+                            scan.scan_id, scan.pages_done, exc,
+                        )
+                        break
                     if chunk is None:
                         break
                     if not buffer:
