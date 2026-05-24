@@ -87,10 +87,14 @@ C.prototype._render = function () {
 
   this._card.addEventListener('click', (ev) => {
     if (ev.target === this._cancelEl) return;
+    // Bail if the click landed on (or inside) any anchor — the "Open scan"
+    // link lives in the .status div and bubbles up here.
+    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a')) return;
     this._startScan();
   });
   this._card.addEventListener('keydown', (ev) => {
     if (ev.target === this._cancelEl) return;
+    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a')) return;
     if (ev.key === 'Enter' || ev.key === ' ') {
       ev.preventDefault();
       this._startScan();
@@ -208,10 +212,39 @@ C.prototype._trackScanProgress = async function () {
     const url = attrs?.file_url;
     if (!url) return null;
     const a = document.createElement('a');
+    // href preserved for accessibility / right-click context, but the
+    // actual fetch happens via the bearer-authenticated JS handler below —
+    // HA's view rejects plain link navigation (no Authorization header).
     a.href = url;
     a.target = '_blank';
     a.rel = 'noopener';
     a.textContent = 'Open scan';
+    a.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      // Stop the card's own click handler from firing a fresh scan.
+      ev.stopPropagation();
+      try {
+        const resp = await fetch(url, {
+          headers: this._authHeaders(),
+          credentials: 'same-origin',
+        });
+        if (!resp.ok) {
+          throw new Error('HTTP ' + resp.status);
+        }
+        const blob = await resp.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const w = window.open(objUrl, '_blank', 'noopener');
+        // Some browsers refuse popups; fall back to navigating the
+        // current tab so the user at least sees the PDF.
+        if (!w) window.location.href = objUrl;
+        // Release after a delay so the new tab has time to load.
+        setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+      } catch (err) {
+        this._setStatus(
+          'Open failed: ' + (err?.message || err), 'err',
+        );
+      }
+    });
     return a;
   };
 
