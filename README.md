@@ -8,6 +8,19 @@ cancellation, and the scanner's own error reasons.
 Ships with a companion Lovelace card so a "Scan now" tile on your dashboard
 is a single tap.
 
+> 💡 **Sister project:** for printing PDFs to the same multifunction
+> printers, see [**ha-ipp-print**](https://github.com/wleonhardt/ha-ipp-print)
+> — same architecture (per-job sensor + Lovelace card + bus events) targeting
+> IPP/IPPS instead of eSCL.
+
+<p align="center">
+  <img src="assets/card-idle.png" width="320" alt="Idle card" />
+  <img src="assets/card-scanning.png" width="320" alt="Scanning card" />
+  <br/>
+  <img src="assets/card-complete.png" width="320" alt="Complete card" />
+  <img src="assets/card-failed.png" width="320" alt="Failed card" />
+</p>
+
 ## Why this exists
 
 Home Assistant's built-in printer integrations (`brother`, `ipp`, the various

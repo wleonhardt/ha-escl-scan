@@ -36,8 +36,8 @@ C.prototype._render = function () {
         padding: 22px 18px;
         border-radius: 18px;
         height: 130px;
-        background: rgba(96,165,250,0.18);
-        border: 1px solid rgba(96,165,250,0.55);
+        background: rgba(147,197,253,0.18);
+        border: 1px solid rgba(147,197,253,0.55);
         display: flex; flex-direction: column;
         align-items: center; justify-content: center;
         gap: 8px;
@@ -45,7 +45,7 @@ C.prototype._render = function () {
         transition: transform .08s ease, background .15s ease;
         box-sizing: border-box;
       }
-      ha-card:hover { background: rgba(96,165,250,0.26); }
+      ha-card:hover { background: rgba(147,197,253,0.26); }
       ha-card:active { transform: scale(.99); }
       ha-card.busy { cursor: progress; opacity: .85; }
       .icon { width: 36px; height: 36px; color: #93c5fd; flex-shrink: 0; }

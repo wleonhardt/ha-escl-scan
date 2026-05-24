@@ -1,0 +1,12 @@
+# Sister-project pairing: scan and print tiles side-by-side.
+#
+# Requires both ha-escl-scan and ha-ipp-print installed and configured —
+# https://github.com/wleonhardt/ha-ipp-print
+#
+# Both integrations register their cards globally; no resources: block needed.
+type: horizontal-stack
+cards:
+  - type: custom:escl-scan-card
+    title: Scan now
+  - type: custom:ipp-print-upload-card
+    title: Print PDF
