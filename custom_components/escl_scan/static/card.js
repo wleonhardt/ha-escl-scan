@@ -339,25 +339,82 @@ if (!window.customCards.find((c) => c.type === TAG)) {
   });
 }
 
-// Self-healing for HA's whenDefined() race — see ipp_print card.js for context.
+// Self-healing for HA's whenDefined() race — Lovelace's card factory can
+// render hui-error-card "Configuration error" placeholders before this
+// script finishes loading, especially on slow reloads (Firefox / mobile)
+// or when the dashboard mounts before the integration's static path is
+// served. We re-scan for error cards on a staggered schedule AND keep a
+// MutationObserver running so error cards that appear later (dashboard
+// navigation, lazy view mount) also get healed.
+const _ESCL_HEALED = new WeakSet();
+
+function _esclHealOne(err) {
+  if (_ESCL_HEALED.has(err)) return;
+  // Lovelace wraps each card in a <hui-card> that holds the original
+  // user-provided config on `_elementConfig`. The hui-error-card itself
+  // has _config = {type: 'error', message: 'Custom element doesn\'t exist...'},
+  // which is useless for healing. The parent is the source of truth.
+  let cfg = err.parentElement && err.parentElement._elementConfig;
+  // Fallbacks for older HA layouts that may still hand the config to the
+  // error card directly.
+  if (!cfg) cfg = err._config || err.config;
+  if (!cfg || cfg.type !== 'custom:' + TAG) {
+    // Last resort: parse the missing-tag from the error message — handles
+    // the case where _elementConfig isn't reachable. We can't reconstruct
+    // user-provided fields (like `title`) without it, but we can at least
+    // get a working default card so the dashboard isn't broken.
+    const msg = err._config && err._config.message;
+    if (typeof msg === 'string' && msg.indexOf(TAG) !== -1) {
+      cfg = {type: 'custom:' + TAG};
+    } else {
+      return;
+    }
+  }
+  const fresh = document.createElement(TAG);
+  try {
+    fresh.setConfig(cfg);
+  } catch (e) {
+    return;
+  }
+  _ESCL_HEALED.add(err);
+  err.replaceWith(fresh);
+}
+
 function _esclHeal() {
   const root = document.querySelector('home-assistant');
   if (!root) return;
   const stack = [root];
-  const errors = [];
   while (stack.length) {
     const el = stack.pop();
     if (!el) continue;
-    if (el.tagName === 'HUI-ERROR-CARD') errors.push(el);
+    if (el.tagName === 'HUI-ERROR-CARD') _esclHealOne(el);
     if (el.shadowRoot) stack.push(el.shadowRoot);
     for (const c of (el.children || [])) stack.push(c);
   }
-  for (const err of errors) {
-    const cfg = err._config || err.config;
-    if (!cfg || cfg.type !== 'custom:' + TAG) continue;
-    const fresh = document.createElement(TAG);
-    fresh.setConfig(cfg);
-    err.replaceWith(fresh);
-  }
 }
-[60, 250, 800, 2000, 5000].forEach((ms) => setTimeout(_esclHeal, ms));
+
+// Initial staggered retries — covers the common timing window.
+[40, 120, 300, 700, 1500, 3000, 6000, 10_000].forEach(
+  (ms) => setTimeout(_esclHeal, ms),
+);
+
+// Watch for new hui-error-cards appearing in the DOM after the initial
+// retry window expires. Reuses one observer attached at body level.
+try {
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const n of m.addedNodes) {
+        if (!n || n.nodeType !== 1) continue;
+        if (n.tagName === 'HUI-ERROR-CARD') {
+          _esclHealOne(n);
+        } else if (n.querySelectorAll) {
+          // querySelectorAll won't cross shadow roots, but most error
+          // cards live in the light DOM under hui-card-element-editor or
+          // similar parents that DO render them as direct children.
+          n.querySelectorAll('hui-error-card').forEach(_esclHealOne);
+        }
+      }
+    }
+  });
+  observer.observe(document.body, {childList: true, subtree: true});
+} catch {}
