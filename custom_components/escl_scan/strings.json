@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "eSCL scanner",
+        "description": "Connect to a network scanner that speaks eSCL (Apple AirScan). Most modern HP, Canon, Epson, Brother, and Kyocera multifunction devices support this. For HTTPS scanners with self-signed certs, leave Verify TLS off. If you see SSL handshake failures, enable relaxed ciphers (needed for some HP LaserJet models that only offer non-PFS ciphers).",
+        "data": {
+          "host": "Hostname or IP",
+          "port": "Port (443 for HTTPS, 80 for HTTP)",
+          "use_tls": "Use TLS",
+          "user": "User name (for basic auth, if required)",
+          "password": "Password (only if scanner requires basic auth)",
+          "verify_tls": "Verify TLS certificate",
+          "relaxed_ciphers": "Allow legacy cipher suites"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the scanner. Check host/port/TLS settings. Detail: {error_detail}"
+    },
+    "abort": {
+      "already_configured": "This scanner is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "eSCL scanner options",
+        "data": {
+          "host": "Hostname or IP",
+          "port": "Port",
+          "use_tls": "Use TLS",
+          "user": "User name",
+          "password": "Password",
+          "verify_tls": "Verify TLS certificate",
+          "relaxed_ciphers": "Allow legacy cipher suites",
+          "default_dpi": "Default scan resolution (DPI)",
+          "default_color": "Default color mode (color or gray)",
+          "file_ttl_seconds": "Scanned file retention (seconds before purge)"
+        }
+      }
+    }
+  }
+}
