@@ -17,6 +17,9 @@ const C = customElements.get(TAG);
 C.prototype.setConfig = function (config) {
   this._config = Object.assign({ title: 'Scan now' }, config || {});
   this._render();
+  // _render() no-ops after the first call, so apply title changes (e.g. the
+  // dashboard editor's live preview) directly to the already-rendered node.
+  if (this._titleEl) this._titleEl.textContent = this._config.title;
 };
 
 Object.defineProperty(C.prototype, 'hass', {

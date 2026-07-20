@@ -2,6 +2,7 @@
 with per-job state tracking, bus events, and a Lovelace card."""
 from __future__ import annotations
 
+from datetime import timedelta
 import hashlib
 import logging
 from pathlib import Path
@@ -13,6 +14,7 @@ from homeassistant.components.http import HomeAssistantView, StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
@@ -44,6 +46,9 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor"]
 
 _CARD_FILE = Path(__file__).parent / "static" / CARD_FILENAME
+
+# Sweep TTL-expired scan files even when no new scan is started.
+PURGE_INTERVAL = timedelta(minutes=15)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -118,6 +123,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.async_create_task(_reap_lovelace_resources(hass))
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    entry.async_on_unload(
+        async_track_time_interval(hass, coordinator.async_purge_now, PURGE_INTERVAL)
+    )
     return True
 
 

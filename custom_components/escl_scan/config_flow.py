@@ -7,6 +7,11 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, OptionsFlow, ConfigEntry
 from homeassistant.core import callback
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 
 from .const import (
     CONF_DEFAULT_COLOR,
@@ -27,6 +32,12 @@ from .const import (
     DOMAIN,
 )
 from .scanner import ScannerClient
+
+# Mask the credential in both flows instead of showing it in plain text.
+_PASSWORD_SELECTOR = TextSelector(
+    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+)
+_PORT = vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))
 
 
 class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -68,10 +79,10 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(CONF_HOST): str,
-                vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
+                vol.Optional(CONF_PORT, default=DEFAULT_PORT): _PORT,
                 vol.Optional(CONF_USE_TLS, default=True): bool,
                 vol.Optional(CONF_USER, default=DEFAULT_USER): str,
-                vol.Optional(CONF_PASSWORD, default=""): str,
+                vol.Optional(CONF_PASSWORD, default=""): _PASSWORD_SELECTOR,
                 vol.Optional(CONF_VERIFY_TLS, default=False): bool,
                 vol.Optional(CONF_RELAXED_CIPHERS, default=False): bool,
             }
@@ -107,15 +118,15 @@ class EsclScanOptionsFlow(OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Required(CONF_HOST, default=data.get(CONF_HOST, "")): str,
-                vol.Optional(CONF_PORT, default=data.get(CONF_PORT, DEFAULT_PORT)): int,
+                vol.Optional(CONF_PORT, default=data.get(CONF_PORT, DEFAULT_PORT)): _PORT,
                 vol.Optional(CONF_USE_TLS, default=data.get(CONF_USE_TLS, True)): bool,
                 vol.Optional(CONF_USER, default=data.get(CONF_USER, DEFAULT_USER)): str,
-                vol.Optional(CONF_PASSWORD, default=data.get(CONF_PASSWORD, "")): str,
+                vol.Optional(CONF_PASSWORD, default=data.get(CONF_PASSWORD, "")): _PASSWORD_SELECTOR,
                 vol.Optional(CONF_VERIFY_TLS, default=data.get(CONF_VERIFY_TLS, False)): bool,
                 vol.Optional(CONF_RELAXED_CIPHERS, default=data.get(CONF_RELAXED_CIPHERS, False)): bool,
-                vol.Optional(CONF_DEFAULT_DPI, default=data.get(CONF_DEFAULT_DPI, DEFAULT_DPI)): int,
+                vol.Optional(CONF_DEFAULT_DPI, default=data.get(CONF_DEFAULT_DPI, DEFAULT_DPI)): vol.All(vol.Coerce(int), vol.Range(min=50, max=1200)),
                 vol.Optional(CONF_DEFAULT_COLOR, default=data.get(CONF_DEFAULT_COLOR, DEFAULT_COLOR)): vol.In(["color", "gray"]),
-                vol.Optional(CONF_FILE_TTL, default=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL)): int,
+                vol.Optional(CONF_FILE_TTL, default=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL)): vol.All(vol.Coerce(int), vol.Range(min=0)),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

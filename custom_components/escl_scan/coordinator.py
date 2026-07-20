@@ -586,6 +586,20 @@ class ScanCoordinator:
             pass
         return deleted
 
+    async def async_purge_now(self, now: Any = None) -> None:
+        """TTL sweep, also driven by a periodic timer (see async_setup_entry).
+        Without it, files from infrequent scans outlive their TTL indefinitely
+        because the only other purge is at the start of the next scan. Skips
+        while a scan is active so it never races the writer."""
+        if self._starting or (
+            self._current is not None and not self._current.is_terminal()
+        ):
+            return
+        deleted = await self._hass.async_add_executor_job(
+            self._ensure_storage_and_purge
+        )
+        self._reap_tracked(deleted)
+
     def _reap_tracked(self, deleted: set[Path]) -> None:
         """Drop tracked entries whose files were just TTL-purged. Runs on the
         event loop — safe to mutate `self._scans` here."""
