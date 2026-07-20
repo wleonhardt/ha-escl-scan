@@ -63,6 +63,53 @@ _ESCL_STATE_MAP = {
 _TERMINAL_STATES = {STATE_COMPLETED, STATE_CANCELED, STATE_ABORTED, STATE_FAILED}
 
 
+class ScanBusyError(RuntimeError):
+    """Raised by start_scan when a scan is already in progress."""
+
+
+class _PdfFileWriter:
+    """Streams scan bytes to a scratch file, capturing the head/tail needed
+    for PDF validation without re-reading the file.
+
+    All methods do blocking file I/O — call them via
+    ``hass.async_add_executor_job``, never directly on the event loop.
+    """
+
+    def __init__(self, tmp_path: Path) -> None:
+        self._tmp = tmp_path
+        self._f: Any = None
+        self.bytes_written = 0
+        self.head = b""
+        self.tail = b""
+
+    def open(self) -> None:
+        self._f = open(self._tmp, "wb")
+
+    def write(self, chunk: bytes) -> None:
+        self._f.write(chunk)
+        self.bytes_written += len(chunk)
+        if len(self.head) < 8:
+            self.head = (self.head + chunk)[:8]
+        self.tail = (self.tail + chunk)[-1024:]
+
+    def close(self) -> None:
+        if self._f is not None:
+            try:
+                self._f.close()
+            finally:
+                self._f = None
+
+    def commit(self, final_path: Path) -> None:
+        """Atomically move the scratch file into place (same filesystem)."""
+        self._tmp.replace(final_path)
+
+    def cleanup(self) -> None:
+        try:
+            self._tmp.unlink()
+        except OSError:
+            pass
+
+
 @dataclass
 class TrackedScan:
     scan_id: str
@@ -132,7 +179,10 @@ class ScanCoordinator:
         self._scans: dict[str, TrackedScan] = {}
         self._current: TrackedScan | None = None
         self._driver_tasks: dict[str, asyncio.Task] = {}
+        self._hold_tasks: set[asyncio.Task] = set()
         self._update_listeners: list[Callable[[], None]] = []
+        self._starting = False
+        self._shutting_down = False
         # `storage` directory is created lazily on first scan (inside an
         # executor) so the integration's async_setup_entry never blocks.
 
@@ -171,25 +221,43 @@ class ScanCoordinator:
         color: str | None = None,
     ) -> TrackedScan:
         """Kick off a scan. Returns the tracked scan immediately; the
-        driver task assembles pages in the background."""
-        actual_source = source or await self._client.detect_source()
-        actual_dpi = dpi or self._default_dpi
-        actual_color = color or self._default_color
+        driver task assembles pages in the background.
 
-        scan_id = uuid.uuid4().hex[:12]
-        scan = TrackedScan(
-            scan_id=scan_id,
-            source=actual_source,
-            dpi=actual_dpi,
-            color=actual_color,
-            submitted_at=datetime.now(timezone.utc),
-        )
-        self._scans[scan_id] = scan
-        self._current = scan
+        Raises ScanBusyError if a scan is already in progress — the scanner
+        is single-job hardware and a second create would 503 and purge the
+        running job."""
+        if self._starting or (
+            self._current is not None and not self._current.is_terminal()
+        ):
+            raise ScanBusyError("a scan is already in progress")
+
+        # Reserve synchronously so a second request can't slip past the guard
+        # during the detect_source() network round-trip below.
+        self._starting = True
+        try:
+            actual_source = source or await self._client.detect_source()
+            actual_dpi = dpi or self._default_dpi
+            actual_color = color or self._default_color
+
+            scan_id = uuid.uuid4().hex[:12]
+            scan = TrackedScan(
+                scan_id=scan_id,
+                source=actual_source,
+                dpi=actual_dpi,
+                color=actual_color,
+                submitted_at=datetime.now(timezone.utc),
+            )
+            self._scans[scan_id] = scan
+            self._current = scan
+        finally:
+            self._starting = False
         self._fire(EVENT_STATE_CHANGED, scan)
         self._notify()
 
-        await self._hass.async_add_executor_job(self._ensure_storage_and_purge)
+        deleted = await self._hass.async_add_executor_job(
+            self._ensure_storage_and_purge
+        )
+        self._reap_tracked(deleted)
         self._driver_tasks[scan_id] = self._hass.loop.create_task(
             self._drive_scan(scan)
         )
@@ -216,6 +284,22 @@ class ScanCoordinator:
         self._mark_terminal(scan, STATE_CANCELED, "user-cancel", error=None)
         return True
 
+    async def async_shutdown(self) -> None:
+        """Cancel every in-flight task and await it. Call on entry unload/reload
+        so a scan-in-progress driver doesn't keep polling a stale client,
+        writing files, or notifying a removed sensor."""
+        self._shutting_down = True
+        tasks = list(self._driver_tasks.values()) + list(self._hold_tasks)
+        for t in tasks:
+            t.cancel()
+        for t in tasks:
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+        self._driver_tasks.clear()
+        self._hold_tasks.clear()
+
     # ── Driver ──────────────────────────────────────────────────────────
 
     async def _drive_scan(self, scan: TrackedScan) -> None:
@@ -238,41 +322,53 @@ class ScanCoordinator:
             ts = time.strftime("%Y%m%d-%H%M%S")
             scan.filename = f"scan-{ts}-{scan.source.lower()}-{scan.scan_id}.pdf"
             scan.file_path = self._storage / scan.filename
-            buffer = bytearray()
+            tmp_path = scan.file_path.with_name(scan.file_path.name + ".part")
+            writer = _PdfFileWriter(tmp_path)
+            try:
+                await self._hass.async_add_executor_job(writer.open)
+            except OSError as exc:
+                self._mark_terminal(
+                    scan, STATE_FAILED, None,
+                    error=f"cannot open scratch file: {exc}",
+                )
+                return
 
             poll_task = self._hass.loop.create_task(self._poll_loop(scan))
             try:
-                # Pull pages serially; eSCL servers serialize these anyway.
-                # Errors mid-loop are logged and treated as "we got what we
-                # got" — if the buffer holds a PDF, we keep it. This survives
-                # vendor quirks like HP MFPs returning 503 on the call AFTER
-                # the document has been consumed.
+                # Stream documents straight to disk (never buffer the whole
+                # PDF in RAM — a 600-DPI colour ADF batch can be hundreds of
+                # MB). Only the first document is saved; any subsequent ones
+                # are drained so the scanner reaches a terminal job state.
+                # Proper multi-PDF concatenation is on the roadmap (issue #1).
+                # Errors mid-stream are treated as "we got what we got" —
+                # PDF validation below decides whether the partial is usable.
+                doc_index = 0
                 while not scan.is_terminal():
+                    got_data = False
                     try:
-                        chunk = await self._client.pull_next_document(scan.job_url)
+                        async for chunk in self._client.iter_next_document(
+                            scan.job_url
+                        ):
+                            got_data = True
+                            if doc_index == 0:
+                                await self._hass.async_add_executor_job(
+                                    writer.write, chunk
+                                )
                     except Exception as exc:
                         _LOGGER.warning(
-                            "scan %s: pull_next_document errored after "
+                            "scan %s: document stream errored after "
                             "%d page(s): %s — using what we have",
                             scan.scan_id, scan.pages_done, exc,
                         )
                         break
-                    if chunk is None:
+                    if not got_data:
                         break
-                    if not buffer:
-                        # First PDF chunk — happy path for HP/Canon/Epson
-                        # multifunction devices that bundle the whole ADF
-                        # batch into a single document.
-                        buffer.extend(chunk)
-                    else:
-                        # Subsequent chunks: scanner returned one document
-                        # per page instead of bundling. Keep the first; log
-                        # the rest. Proper multi-PDF concatenation is on
-                        # the roadmap (issue #1).
+                    doc_index += 1
+                    if doc_index > 1:
                         _LOGGER.warning(
-                            "scan %s: scanner returned a second document chunk "
-                            "(%d bytes) — ignoring (only first chunk is saved)",
-                            scan.scan_id, len(chunk),
+                            "scan %s: scanner returned document #%d — "
+                            "ignoring (only the first is saved)",
+                            scan.scan_id, doc_index,
                         )
                     scan.pages_done += 1
                     scan.last_seen = datetime.now(timezone.utc)
@@ -284,36 +380,40 @@ class ScanCoordinator:
                     await poll_task
                 except (asyncio.CancelledError, Exception):
                     pass
+                await self._hass.async_add_executor_job(writer.close)
 
             if scan.is_terminal():
                 # Coordinator cancel beat us to it.
+                await self._hass.async_add_executor_job(writer.cleanup)
                 return
 
-            if not buffer:
+            if writer.bytes_written == 0:
+                await self._hass.async_add_executor_job(writer.cleanup)
                 self._mark_terminal(
                     scan, STATE_FAILED, None, error="no document returned from scanner"
                 )
                 return
 
-            # Validate the buffered bytes look like a complete PDF before
+            # Validate the streamed bytes look like a complete PDF before
             # claiming success. HP MFPs occasionally return a truncated PDF
             # (just the catalog header, ~58 bytes) for unsupported setting
             # combos like low-DPI grayscale — they don't 4xx/5xx the
             # request, they just hand back garbage. Detecting EOF here gives
             # the user a clear failed-state with a useful error rather than
             # a "completed" claim on a broken file.
-            body = bytes(buffer)
-            if not body.startswith(b"%PDF-"):
+            if not writer.head.startswith(b"%PDF-"):
+                await self._hass.async_add_executor_job(writer.cleanup)
                 self._mark_terminal(
                     scan, STATE_FAILED, None,
-                    error=f"scanner returned a non-PDF response ({len(body)} bytes)",
+                    error=f"scanner returned a non-PDF response ({writer.bytes_written} bytes)",
                 )
                 return
-            if b"%%EOF" not in body[-1024:]:
+            if b"%%EOF" not in writer.tail:
+                await self._hass.async_add_executor_job(writer.cleanup)
                 self._mark_terminal(
                     scan, STATE_FAILED, None,
                     error=(
-                        f"scanner returned a truncated PDF ({len(body)} bytes; "
+                        f"scanner returned a truncated PDF ({writer.bytes_written} bytes; "
                         f"no EOF trailer). This usually means the requested "
                         f"DPI/color combo isn't supported by the device."
                     ),
@@ -322,10 +422,11 @@ class ScanCoordinator:
 
             try:
                 await self._hass.async_add_executor_job(
-                    scan.file_path.write_bytes, body,
+                    writer.commit, scan.file_path,
                 )
-                scan.bytes_written = len(body)
+                scan.bytes_written = writer.bytes_written
             except OSError as exc:
+                await self._hass.async_add_executor_job(writer.cleanup)
                 self._mark_terminal(
                     scan, STATE_FAILED, None, error=f"write failed: {exc}"
                 )
@@ -339,6 +440,11 @@ class ScanCoordinator:
                 if info and info.state in TERMINAL_JOB_STATES:
                     final_state = _ESCL_STATE_MAP.get(info.state, STATE_COMPLETED)
                     final_reasons = info.state_reasons
+                # Single-document scanners report the page count only
+                # server-side; take the higher so completed scans don't
+                # under-report pages if the poll loop was cancelled early.
+                if info and info.pages_completed and info.pages_completed > scan.pages_done:
+                    scan.pages_done = info.pages_completed
             except Exception:
                 pass
 
@@ -352,7 +458,9 @@ class ScanCoordinator:
             # Always best-effort delete the server-side job, including on
             # failure paths. eSCL devices have a limited number of job slots
             # and won't accept new ScanJobs until stale ones are deleted.
-            if scan.job_url:
+            # Skip during shutdown — the task is being cancelled and the
+            # client session is about to close.
+            if scan.job_url and not self._shutting_down:
                 try:
                     await self._client.delete_job(scan.job_url)
                 except Exception as exc:
@@ -361,7 +469,10 @@ class ScanCoordinator:
                         scan.scan_id, exc,
                     )
             self._driver_tasks.pop(scan.scan_id, None)
-            self._hass.loop.create_task(self._terminal_hold(scan))
+            if not self._shutting_down:
+                hold = self._hass.loop.create_task(self._terminal_hold(scan))
+                self._hold_tasks.add(hold)
+                hold.add_done_callback(self._hold_tasks.discard)
 
     async def _poll_loop(self, scan: TrackedScan) -> None:
         """Poll JobInfo while the scan is in flight. Updates pages_done
@@ -435,27 +546,48 @@ class ScanCoordinator:
 
     # ── File retention ──────────────────────────────────────────────────
 
-    def _ensure_storage_and_purge(self) -> None:
-        """Executor-safe: create storage dir if missing, then purge TTLed files."""
+    def _ensure_storage_and_purge(self) -> set[Path]:
+        """Executor-safe: create storage dir if missing, then purge TTLed
+        files. Returns the set of deleted paths so the caller can reconcile
+        the tracked-scan dict on the event loop (this runs off-loop and must
+        not mutate coordinator state itself)."""
         try:
             self._storage.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             _LOGGER.warning("could not create scan storage dir: %s", exc)
-        self._purge_expired_files()
+        return self._purge_expired_files()
 
-    def _purge_expired_files(self) -> None:
+    def _purge_expired_files(self) -> set[Path]:
+        """Delete scan files older than the TTL, plus any leftover ``.part``
+        scratch files from a scan that died mid-write. Executor-safe: touches
+        disk only, returns the completed paths removed. Safe to nuke every
+        ``.part`` because the busy guard means no scan is writing when this
+        runs at the start of a new scan."""
+        deleted: set[Path] = set()
         cutoff = time.time() - self._file_ttl
         try:
             for f in self._storage.glob("scan-*.pdf"):
                 if f.is_file() and f.stat().st_mtime < cutoff:
                     try:
                         f.unlink()
+                        deleted.add(f)
                     except OSError:
                         pass
+            for part in self._storage.glob("scan-*.pdf.part"):
+                try:
+                    part.unlink()
+                except OSError:
+                    pass
         except OSError:
             pass
-        # Drop tracked entries whose files are gone.
+        return deleted
+
+    def _reap_tracked(self, deleted: set[Path]) -> None:
+        """Drop tracked entries whose files were just TTL-purged. Runs on the
+        event loop — safe to mutate `self._scans` here."""
+        if not deleted:
+            return
         for scan_id in list(self._scans):
             s = self._scans[scan_id]
-            if s.file_path and not s.file_path.exists() and s.is_terminal():
+            if s.is_terminal() and s.file_path in deleted:
                 self._scans.pop(scan_id, None)

@@ -36,7 +36,7 @@ from .const import (
     DOMAIN,
     STORAGE_SUBDIR,
 )
-from .coordinator import ScanCoordinator
+from .coordinator import ScanBusyError, ScanCoordinator
 from .scanner import ScannerClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -122,7 +122,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        data = hass.data[DOMAIN].pop(entry.entry_id, None)
+        if data:
+            coordinator = data.get("coordinator")
+            if coordinator is not None:
+                await coordinator.async_shutdown()
     return unloaded
 
 
@@ -222,6 +226,8 @@ class ScanStartView(HomeAssistantView):
             return self.json_message("integration not configured", status_code=503)
         try:
             scan = await coord.start_scan(source=source, dpi=dpi, color=color)
+        except ScanBusyError:
+            return self.json_message("a scan is already running", status_code=409)
         except Exception as exc:
             _LOGGER.exception("scan kickoff failed")
             return self.json_message(f"scan kickoff failed: {exc}", status_code=502)

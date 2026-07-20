@@ -14,11 +14,12 @@ tag names only, which has proven more robust than namespace-strict parsing.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 import logging
 import re
 import ssl
-from typing import Optional
+from typing import AsyncIterator, Optional
 from xml.etree import ElementTree as ET
 
 import aiohttp
@@ -27,6 +28,11 @@ _LOGGER = logging.getLogger(__name__)
 
 # Terminal job states (eSCL JobInfo/JobState).
 TERMINAL_JOB_STATES = {"Completed", "Canceled", "Aborted"}
+
+# Stream document bytes to disk in chunks this size. Large enough to keep
+# executor round-trips down on multi-hundred-MB ADF batches, small enough that
+# transient per-chunk memory stays negligible on Pi-class hosts.
+_STREAM_CHUNK = 1024 * 1024
 
 
 # ── ScanSettings XML template ────────────────────────────────────────────────
@@ -247,10 +253,18 @@ class ScannerClient:
             else None
         )
 
-    async def _session(self, *, timeout: float | None = None) -> aiohttp.ClientSession:
+    async def _session(
+        self, *, timeout: float | aiohttp.ClientTimeout | None = None
+    ) -> aiohttp.ClientSession:
+        if timeout is None:
+            to = self._timeout
+        elif isinstance(timeout, aiohttp.ClientTimeout):
+            to = timeout
+        else:
+            to = aiohttp.ClientTimeout(total=timeout)
         return aiohttp.ClientSession(
             connector=self._connector(),
-            timeout=(aiohttp.ClientTimeout(total=timeout) if timeout else self._timeout),
+            timeout=to,
             auth=self._auth(),
         )
 
@@ -326,39 +340,45 @@ class ScannerClient:
                 resp.raise_for_status()
                 return parse_job_info(await resp.read())
 
-    async def pull_next_document(self, job_url: str) -> Optional[bytes]:
-        """GET ScanJobs/{uuid}/NextDocument. Returns the body bytes, or None
-        if the scanner reports no more pages.
+    async def iter_next_document(self, job_url: str) -> AsyncIterator[bytes]:
+        """Stream one document from ScanJobs/{uuid}/NextDocument.
 
-        Status code handling:
-          * 404 / 410 — canonical "no more documents". Return None.
+        Async-generates the body in chunks, then returns. Generates nothing
+        (returns without yielding) when the scanner reports no more documents,
+        so the caller distinguishes "empty/done" from "got a document" by
+        whether any chunk arrived.
+
+        Status code handling before the first chunk:
+          * 404 / 410 — canonical "no more documents". Stop.
           * 503 — HP returns this in two contradictory ways:
                   (a) the document IS exhausted (signals "done")
                   (b) the next chunk is still being processed ("retry me")
                 Strategy: retry a couple times with backoff. If 503 persists
                 we treat it as "done" so the loop terminates.
-          * 500 — sometimes transient. Retry once.
+          * 500 — sometimes transient. Retry.
 
-        The caller decides whether to keep partial buffer state on a None
-        return — see coordinator's PDF validation.
+        Once streaming has begun, a mid-transfer error propagates to the
+        caller, which keeps the partial file and lets PDF validation decide.
+        A sock_read timeout (not a total timeout) bounds stalls without
+        capping large-but-healthy transfers.
         """
-        import asyncio
-
+        timeout = aiohttp.ClientTimeout(sock_connect=15, sock_read=90)
         for attempt in range(3):
-            async with await self._session() as s:
+            async with await self._session(timeout=timeout) as s:
                 async with s.get(f"{job_url}/NextDocument") as resp:
                     if resp.status in (404, 410):
-                        return None
+                        return
                     if resp.status in (500, 503):
                         # Transient on attempt 0-1; treat as "done" on the
                         # third try if it still hasn't resolved.
                         if attempt < 2:
                             await asyncio.sleep(0.5 * (attempt + 1))
                             continue
-                        return None
+                        return
                     resp.raise_for_status()
-                    return await resp.read()
-        return None
+                    async for chunk in resp.content.iter_chunked(_STREAM_CHUNK):
+                        yield chunk
+                    return
 
     async def delete_job(self, job_url: str) -> bool:
         """Cancel a scan job. Returns True on 2xx, False otherwise.
