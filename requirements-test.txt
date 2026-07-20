@@ -1,0 +1,4 @@
+# Test dependencies. pytest-homeassistant-custom-component pins a matching
+# Home Assistant core + pytest stack; pytest-aiohttp supplies aiohttp_server.
+pytest-homeassistant-custom-component
+pytest-aiohttp

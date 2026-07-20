@@ -15,11 +15,11 @@ tag names only, which has proven more robust than namespace-strict parsing.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 import logging
 import re
 import ssl
-from typing import AsyncIterator, Optional
 from xml.etree import ElementTree as ET
 
 import aiohttp
@@ -95,8 +95,8 @@ class JobInfo:
     """Parsed snapshot of a ScanJob's JobInfo."""
 
     state: str  # "Pending", "Processing", "Completed", "Canceled", "Aborted"
-    state_reasons: Optional[str]
-    pages_completed: Optional[int]
+    state_reasons: str | None
+    pages_completed: int | None
 
     @property
     def is_terminal(self) -> bool:
@@ -111,14 +111,14 @@ def _local(tag: str) -> str:
     return tag.split("}", 1)[1] if "}" in tag else tag
 
 
-def _find_local(root: ET.Element, name: str) -> Optional[ET.Element]:
+def _find_local(root: ET.Element, name: str) -> ET.Element | None:
     for el in root.iter():
         if _local(el.tag) == name:
             return el
     return None
 
 
-def _text(el: Optional[ET.Element]) -> Optional[str]:
+def _text(el: ET.Element | None) -> str | None:
     return el.text.strip() if el is not None and el.text else None
 
 
@@ -140,7 +140,8 @@ def parse_scanner_status(xml: bytes) -> ScannerStatus:
     adf_loaded = adf_state == "ScannerAdfLoaded"
 
     # Active job URIs — these are absolute or root-relative URLs.
-    uris = [m.group(1) for m in re.finditer(r"<[^>]*JobUri[^>]*>([^<]+)</", xml.decode("utf-8", "replace"))]
+    text = xml.decode("utf-8", "replace")
+    uris = [m.group(1) for m in re.finditer(r"<[^>]*JobUri[^>]*>([^<]+)</", text)]
     return ScannerStatus(state=state, adf_loaded=adf_loaded, active_job_uris=uris)
 
 
@@ -249,7 +250,7 @@ class ScannerClient:
             return f"{self._origin}{uri}"
         return f"{self._base}/{uri}"
 
-    def _auth(self) -> Optional[aiohttp.BasicAuth]:
+    def _auth(self) -> aiohttp.BasicAuth | None:
         return (
             aiohttp.BasicAuth(self._user, self._password)
             if self._password
@@ -366,7 +367,7 @@ class ScannerClient:
             raise RuntimeError("scan create: no Location header")
         return self._absolute(loc)
 
-    async def get_job_info(self, job_url: str) -> Optional[JobInfo]:
+    async def get_job_info(self, job_url: str) -> JobInfo | None:
         """Fetch JobInfo for an in-flight scan. Returns None on 404
         (job already cleaned up by device or never existed)."""
         s = await self._session()

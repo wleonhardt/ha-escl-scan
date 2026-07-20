@@ -54,8 +54,10 @@ C.prototype._render = function () {
         padding: 18px 14px;
         border-radius: 18px;
         min-height: 130px;
-        background: rgba(147,197,253,0.18);
-        border: 1px solid rgba(147,197,253,0.55);
+        /* Tint from the active theme's accent; fall back to the original
+           blue so themes without --rgb-primary-color look unchanged. */
+        background: rgba(var(--rgb-primary-color, 147,197,253), 0.18);
+        border: 1px solid rgba(var(--rgb-primary-color, 147,197,253), 0.55);
         display: flex; flex-direction: column;
         align-items: center; justify-content: center;
         gap: 6px;
@@ -63,10 +65,10 @@ C.prototype._render = function () {
         transition: transform .08s ease, background .15s ease;
         box-sizing: border-box;
       }
-      ha-card:hover { background: rgba(147,197,253,0.26); }
+      ha-card:hover { background: rgba(var(--rgb-primary-color, 147,197,253), 0.26); }
       ha-card:active { transform: scale(.99); }
       ha-card.busy { cursor: progress; opacity: .85; }
-      .icon { width: 36px; height: 36px; color: #93c5fd; flex-shrink: 0; }
+      .icon { width: 36px; height: 36px; color: var(--primary-color, #93c5fd); flex-shrink: 0; }
       .title { font-weight: 700; font-size: 20px; color: var(--primary-text-color, #fff); line-height: 1.1; text-align: center; }
       .status {
         font-size: 13px;
@@ -94,12 +96,12 @@ C.prototype._render = function () {
         .status { font-size: 11px; }
         .icon { width: 26px; height: 26px; }
       }
-      .status.err { color: #fca5a5; }
-      .status.ok  { color: #6ee7b7; }
+      .status.err { color: var(--error-color, #fca5a5); }
+      .status.ok  { color: var(--success-color, #6ee7b7); }
       .status a   { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
       .cancel {
         font-size: 11px;
-        color: #fca5a5;
+        color: var(--error-color, #fca5a5);
         cursor: pointer;
         text-decoration: underline;
         text-underline-offset: 2px;
@@ -107,7 +109,7 @@ C.prototype._render = function () {
         display: none;
       }
       .cancel.show { display: inline; }
-      .cancel:hover { color: #fecaca; }
+      .cancel:hover { filter: brightness(1.15); }
     </style>
     <ha-card role="button" tabindex="0">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"

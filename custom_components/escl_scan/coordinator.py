@@ -17,21 +17,22 @@ Three observable surfaces:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import logging
 from pathlib import Path
 import time
-from typing import Any, Callable
+from typing import Any
 import uuid
 
 from homeassistant.core import HomeAssistant
 
 from .const import EVENT_COMPLETED, EVENT_STATE_CHANGED
 from .scanner import (
+    TERMINAL_JOB_STATES,
     JobInfo,
     ScannerClient,
-    TERMINAL_JOB_STATES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -128,7 +129,7 @@ class TrackedScan:
     finished_at: datetime | None = None
     error: str | None = None
     last_seen: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(UTC)
     )
 
     def is_terminal(self) -> bool:
@@ -190,6 +191,10 @@ class ScanCoordinator:
     def current(self) -> TrackedScan | None:
         return self._current
 
+    @property
+    def host(self) -> str:
+        return self._client.host
+
     def get(self, scan_id: str) -> TrackedScan | None:
         return self._scans.get(scan_id)
 
@@ -245,7 +250,7 @@ class ScanCoordinator:
                 source=actual_source,
                 dpi=actual_dpi,
                 color=actual_color,
-                submitted_at=datetime.now(timezone.utc),
+                submitted_at=datetime.now(UTC),
             )
             self._scans[scan_id] = scan
             self._current = scan
@@ -375,7 +380,7 @@ class ScanCoordinator:
                             scan.scan_id, doc_index,
                         )
                     scan.pages_done += 1
-                    scan.last_seen = datetime.now(timezone.utc)
+                    scan.last_seen = datetime.now(UTC)
                     self._fire(EVENT_STATE_CHANGED, scan)
                     self._notify()
             finally:
@@ -536,7 +541,7 @@ class ScanCoordinator:
         scan.state = state
         scan.state_reasons = reasons
         scan.error = error
-        scan.finished_at = datetime.now(timezone.utc)
+        scan.finished_at = datetime.now(UTC)
         _LOGGER.info(
             "scan %s reached terminal state %s (%s)",
             scan.scan_id, state, reasons or error or "no reason",

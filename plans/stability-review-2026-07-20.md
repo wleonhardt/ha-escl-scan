@@ -1,6 +1,32 @@
 # Stability / bug / performance review — 2026-07-20
 
-Status: queued (review done, fixes not started)
+Status: DONE — P1/P2/P3 fixed + test suite added (v0.2.0). Line refs below are
+against the original HEAD `9607012` (pre-fix).
+
+## Resolution (2026-07-20)
+
+- **P1** all fixed: busy-guard (`ScanBusyError` → 409), `async_shutdown` wired
+  into unload, executor/loop split for file purge, streaming PDF write
+  (`_PdfFileWriter` + `iter_next_document`, sock_read timeout).
+- **P2** all fixed: shared session + cached SSL context + `async_close`, card
+  renders from the `hass` setter (no `subscribeEvents`) via `_apiFetch`
+  (`fetchWithAuth`), heal observer disconnects after 12s, resource sync
+  replaced by one-shot reap (`add_extra_js_url` is the sole loader).
+- **P3**: 3.1 `single_config_entry`, 3.2 card title on reconfig, 3.4 option
+  ranges + password selector, 3.5 page reconcile (folded into P1), 3.6
+  periodic purge timer. **Deferred:** 3.3 (unique_id on host change) and 3.7
+  (domain-dict cleanup) — both neutralised by `single_config_entry: true`
+  (no second entry can collide), so low value; left as-is.
+- **P4**: pytest suite (37 tests: parsers, coordinator lifecycle, scanner,
+  config-flow) + ruff, both in CI; manifest keys added; style nits fixed;
+  card themed to HA variables. mypy job **not** added (HA typing noise);
+  ruff covers the high-value lint surface.
+
+Verified: `pytest -q` (37 passed), `ruff check` clean, `compileall` clean,
+`node --check card.js` clean.
+
+---
+
 Scope: full read of integration + card. Findings ranked. Line refs against HEAD `9607012`.
 
 ---

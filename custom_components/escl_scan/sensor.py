@@ -1,18 +1,16 @@
 """sensor.printer_current_scan — mirrors the active eSCL scan state."""
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import ScanCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 SCAN_STATES = [
     "idle",
@@ -41,13 +39,18 @@ class ScannerScanSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_name = "Current scan"
     _attr_icon = "mdi:scanner"
-    _attr_device_class = "enum"
+    _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = SCAN_STATES
     _attr_should_poll = False
 
     def __init__(self, coordinator: ScanCoordinator, entry_id: str) -> None:
         self._coord = coordinator
         self._attr_unique_id = f"{entry_id}_current_scan"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            name=f"eSCL scanner ({coordinator.host})",
+            manufacturer="eSCL / AirScan",
+        )
         # Stable entity_id so the card can find it without renames.
         self.entity_id = "sensor.printer_current_scan"
         self._unsub = None

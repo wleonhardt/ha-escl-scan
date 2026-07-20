@@ -1,0 +1,9 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "B", "UP", "I"]
+
+[lint.isort]
+# Match Home Assistant's import style (import/from interleaved, alphabetical).
+force-sort-within-sections = true

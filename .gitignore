@@ -7,3 +7,7 @@ __pycache__/
 .vscode/
 *.swp
 *.bak
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/

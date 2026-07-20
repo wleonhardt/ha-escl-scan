@@ -109,7 +109,7 @@ title: Scan now        # optional, defaults to "Scan now"
 
 | Field | Value |
 |---|---|
-| state | `idle` / `pending` / `processing` / `processing-stopped` / `canceled` / `aborted` / `completed` |
+| state | `idle` / `pending` / `processing` / `processing-stopped` / `canceled` / `aborted` / `completed` / `failed` |
 | attributes.scan_id | Internal scan id (matches the file endpoint) |
 | attributes.filename | Auto-generated filename (e.g. `scan-20260524-153012-adf.pdf`) |
 | attributes.pages_done | Pages pulled from the scanner so far |
@@ -135,8 +135,11 @@ The integration registers three HA HTTP views (all `requires_auth = true`):
 Optional JSON body to override defaults: `{"dpi": 600, "color": "gray", "source": "Feeder"}`. Returns:
 
 ```json
-{"ok": true, "scan_id": "abc123", "source": "Feeder", "state": "pending"}
+{"ok": true, "scan_id": "abc123", "source": "Feeder", "dpi": 600, "color": "gray", "state": "pending"}
 ```
+
+Returns `409` if a scan is already running — the scanner is single-job
+hardware, so starts are serialized.
 
 ### `POST /api/escl_scan/cancel`
 
@@ -151,9 +154,11 @@ TTL-purged.
 
 - **No OCR.** Scans land as image-mode PDFs. Pair with Paperless-ngx or an
   OCR-capable bus-event listener for searchable text.
-- **Hardcoded 1h TTL on stored PDFs** (configurable in options).
-- **Single sensor per entry.** The sensor reflects the *most recent* scan;
-  concurrent independent scan tracking is not supported.
+- **1h TTL on stored PDFs** by default (configurable in options; a periodic
+  sweep purges expired files even when no new scan runs).
+- **One scanner, one scan at a time.** The integration allows a single config
+  entry, and a start request while a scan is in progress is rejected (`409`)
+  rather than clobbering the running job.
 - **HP LaserJets**: some models only offer non-PFS TLS ciphers. Enable
   "Allow legacy cipher suites" in the config flow.
 
@@ -161,9 +166,9 @@ TTL-purged.
 
 ```
 custom_components/escl_scan/
-├── __init__.py        # entry setup, HTTP views, lovelace resource sync
+├── __init__.py        # entry setup, HTTP views, card registration
 ├── config_flow.py     # UI flow + options flow
-├── coordinator.py     # background eSCL polling
+├── coordinator.py     # scan lifecycle driver + file retention
 ├── const.py
 ├── manifest.json
 ├── scanner.py         # eSCL wire format + client
@@ -171,6 +176,14 @@ custom_components/escl_scan/
 ├── static/card.js     # the Lovelace card
 ├── strings.json
 └── translations/en.json
+```
+
+### Tests
+
+```
+pip install -r requirements-test.txt
+pytest -q            # parser, coordinator lifecycle, scanner, config-flow tests
+ruff check custom_components tests
 ```
 
 Pull requests welcome.
