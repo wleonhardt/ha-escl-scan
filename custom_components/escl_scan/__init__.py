@@ -113,7 +113,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         add_extra_js_url(hass, card_url)
         registered.add(card_url)
     hass.data[DOMAIN][entry.entry_id]["card_url"] = card_url
-    hass.async_create_task(_sync_lovelace_resource(hass, card_url))
+    if not hass.data[DOMAIN].get("_resources_reaped"):
+        hass.data[DOMAIN]["_resources_reaped"] = True
+        hass.async_create_task(_reap_lovelace_resources(hass))
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
@@ -135,43 +137,38 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def _sync_lovelace_resource(hass: HomeAssistant, card_url: str) -> None:
-    """Mirror of ipp_print's resource sync. Make the global lovelace resource
-    collection match `card_url`, dropping any stale entries from older hashes
-    so the OLD card class can't register first and beat the new one's
-    customElements.define race."""
+async def _reap_lovelace_resources(hass: HomeAssistant) -> None:
+    """One-shot cleanup of lovelace resource entries this integration
+    auto-registered in older versions. The card now loads solely via
+    add_extra_js_url, so any `escl_scan/card-*.js` resource entry is redundant
+    and its content-hash URL 404s after an update. We only ever DELETE here —
+    never create — which sidesteps the concurrent-reload duplicate-entry race
+    the old sync had. Touching lovelace internals is best-effort and must
+    never fail setup."""
     import asyncio
-    for _ in range(60):
+
+    coll = None
+    for _ in range(30):
+        lovelace = hass.data.get("lovelace")
         coll = hass.data.get("lovelace_resources") or (
-            hass.data.get("lovelace", {}).get("resources")
-            if isinstance(hass.data.get("lovelace"), dict)
-            else getattr(hass.data.get("lovelace"), "resources", None)
+            lovelace.get("resources")
+            if isinstance(lovelace, dict)
+            else getattr(lovelace, "resources", None)
         )
         if coll is not None:
             break
         await asyncio.sleep(1)
-    else:
-        _LOGGER.warning("lovelace resources collection never appeared")
+    if coll is None:
         return
     try:
-        items = list(coll.async_items())
-        current_id = None
-        stale_ids: list[str] = []
-        for item in items:
+        for item in list(coll.async_items()):
             url = item.get("url", "")
-            if url == card_url:
-                current_id = item.get("id")
-            elif url.startswith(CARD_URL_PREFIX):
-                stale_ids.append(item.get("id"))
-        for sid in stale_ids:
-            if sid:
+            sid = item.get("id")
+            if sid and url.startswith(CARD_URL_PREFIX):
                 await coll.async_delete_item(sid)
-                _LOGGER.info("reaped stale lovelace resource %s", sid)
-        if current_id is None:
-            await coll.async_create_item({"res_type": "module", "url": card_url})
-            _LOGGER.info("registered %s in lovelace resources", card_url)
+                _LOGGER.info("removed redundant lovelace resource %s", url)
     except Exception:
-        _LOGGER.exception("failed to sync lovelace resources")
+        _LOGGER.debug("lovelace resource cleanup skipped", exc_info=True)
 
 
 def _current_coordinator(hass: HomeAssistant) -> ScanCoordinator | None:

@@ -299,6 +299,10 @@ class ScanCoordinator:
                 pass
         self._driver_tasks.clear()
         self._hold_tasks.clear()
+        try:
+            await self._client.async_close()
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("client close during shutdown failed", exc_info=True)
 
     # ── Driver ──────────────────────────────────────────────────────────
 

@@ -34,6 +34,12 @@ TERMINAL_JOB_STATES = {"Completed", "Canceled", "Aborted"}
 # transient per-chunk memory stays negligible on Pi-class hosts.
 _STREAM_CHUNK = 1024 * 1024
 
+# Per-request timeout overrides on the shared session (which carries a longer
+# default for job creation). Status/poll/delete are quick control calls;
+# document streaming bounds only the socket-read stall, never total transfer.
+_SHORT_TIMEOUT = aiohttp.ClientTimeout(total=10.0)
+_STREAM_TIMEOUT = aiohttp.ClientTimeout(sock_connect=15, sock_read=90)
+
 
 # ── ScanSettings XML template ────────────────────────────────────────────────
 #
@@ -214,11 +220,18 @@ class ScannerClient:
         self._password = password
         self._verify_tls = verify_tls
         self._relaxed_ciphers = relaxed_ciphers
-        self._timeout = aiohttp.ClientTimeout(total=timeout)
+        self._default_timeout = aiohttp.ClientTimeout(total=timeout)
         scheme = "https" if use_tls else "http"
         port_suffix = "" if port in (80, 443) else f":{port}"
         self._origin = f"{scheme}://{host}{port_suffix}"
         self._base = f"{self._origin}/eSCL"
+        # Built once, lazily, and reused across every request — a fresh
+        # session/connector/SSL context per call meant a TLS handshake and a
+        # CA-bundle read on every 1.5s poll. Guarded so concurrent first-use
+        # (driver + poll loop) can't build two sessions.
+        self._ssl_ctx: ssl.SSLContext | None = None
+        self._session_obj: aiohttp.ClientSession | None = None
+        self._session_lock = asyncio.Lock()
 
     @property
     def host(self) -> str:
@@ -236,16 +249,6 @@ class ScannerClient:
             return f"{self._origin}{uri}"
         return f"{self._base}/{uri}"
 
-    def _connector(self) -> aiohttp.TCPConnector:
-        if self._use_tls:
-            return aiohttp.TCPConnector(
-                ssl=_ssl_context(
-                    verify=self._verify_tls,
-                    relaxed_ciphers=self._relaxed_ciphers,
-                )
-            )
-        return aiohttp.TCPConnector()
-
     def _auth(self) -> Optional[aiohttp.BasicAuth]:
         return (
             aiohttp.BasicAuth(self._user, self._password)
@@ -253,28 +256,54 @@ class ScannerClient:
             else None
         )
 
-    async def _session(
-        self, *, timeout: float | aiohttp.ClientTimeout | None = None
-    ) -> aiohttp.ClientSession:
-        if timeout is None:
-            to = self._timeout
-        elif isinstance(timeout, aiohttp.ClientTimeout):
-            to = timeout
-        else:
-            to = aiohttp.ClientTimeout(total=timeout)
-        return aiohttp.ClientSession(
-            connector=self._connector(),
-            timeout=to,
-            auth=self._auth(),
+    def _build_ssl(self) -> ssl.SSLContext:
+        return _ssl_context(
+            verify=self._verify_tls, relaxed_ciphers=self._relaxed_ciphers
         )
+
+    async def _session(self) -> aiohttp.ClientSession:
+        """Return the shared session, building it (and the SSL context) once.
+
+        The default timeout is generous (create/scan). Callers that need a
+        tighter bound (status/poll) or a stall-only bound (document streaming)
+        pass a per-request `timeout=` to the individual .get()/.delete() call.
+        """
+        if self._session_obj is not None and not self._session_obj.closed:
+            return self._session_obj
+        async with self._session_lock:
+            if self._session_obj is not None and not self._session_obj.closed:
+                return self._session_obj
+            if self._use_tls and self._ssl_ctx is None:
+                # load_default_certs() can touch disk — build off the loop.
+                loop = asyncio.get_running_loop()
+                self._ssl_ctx = await loop.run_in_executor(None, self._build_ssl)
+            connector = (
+                aiohttp.TCPConnector(ssl=self._ssl_ctx)
+                if self._use_tls
+                else aiohttp.TCPConnector()
+            )
+            self._session_obj = aiohttp.ClientSession(
+                connector=connector,
+                timeout=self._default_timeout,
+                auth=self._auth(),
+            )
+        return self._session_obj
+
+    async def async_close(self) -> None:
+        """Close the shared session. Called from coordinator shutdown."""
+        if self._session_obj is not None and not self._session_obj.closed:
+            await self._session_obj.close()
+        self._session_obj = None
 
     # ── Status ──────────────────────────────────────────────────────────
 
     async def get_scanner_status(self) -> ScannerStatus:
-        async with await self._session(timeout=10.0) as s:
-            async with s.get(f"{self._base}/ScannerStatus") as resp:
-                resp.raise_for_status()
-                return parse_scanner_status(await resp.read())
+        s = await self._session()
+        async with s.get(
+            f"{self._base}/ScannerStatus", timeout=_SHORT_TIMEOUT
+        ) as resp:
+            resp.raise_for_status()
+            return parse_scanner_status(await resp.read())
 
     # ── ScanJob lifecycle ───────────────────────────────────────────────
 
@@ -313,32 +342,39 @@ class ScannerClient:
             height=height,
         ).encode("utf-8")
         headers = {"Content-Type": "text/xml; charset=utf-8"}
+        s = await self._session()
 
-        async with await self._session() as s:
-            r = await s.post(f"{self._base}/ScanJobs", data=body, headers=headers)
-            if r.status == 503:
-                # Likely a stale prior job. Purge and retry.
-                _LOGGER.info("eSCL ScanJobs returned 503; purging and retrying")
-                await self._purge_active_jobs(s)
-                r = await s.post(f"{self._base}/ScanJobs", data=body, headers=headers)
-            if r.status not in (200, 201):
-                raise RuntimeError(
-                    f"scan create failed: {r.status} {(await r.text())[:200]}"
-                )
-            loc = r.headers.get("Location")
-            if not loc:
-                raise RuntimeError("scan create: no Location header")
-            return self._absolute(loc)
+        async def _post() -> tuple[int, str | None, str | None]:
+            # `async with` releases the response back to the shared session's
+            # connection pool — required now that the session is long-lived.
+            async with s.post(
+                f"{self._base}/ScanJobs", data=body, headers=headers
+            ) as r:
+                loc = r.headers.get("Location")
+                err = None if r.status in (200, 201) else (await r.text())[:200]
+                return r.status, loc, err
+
+        status, loc, err = await _post()
+        if status == 503:
+            # Likely a stale prior job. Purge and retry.
+            _LOGGER.info("eSCL ScanJobs returned 503; purging and retrying")
+            await self._purge_active_jobs(s)
+            status, loc, err = await _post()
+        if status not in (200, 201):
+            raise RuntimeError(f"scan create failed: {status} {err or ''}")
+        if not loc:
+            raise RuntimeError("scan create: no Location header")
+        return self._absolute(loc)
 
     async def get_job_info(self, job_url: str) -> Optional[JobInfo]:
         """Fetch JobInfo for an in-flight scan. Returns None on 404
         (job already cleaned up by device or never existed)."""
-        async with await self._session(timeout=10.0) as s:
-            async with s.get(job_url) as resp:
-                if resp.status == 404:
-                    return None
-                resp.raise_for_status()
-                return parse_job_info(await resp.read())
+        s = await self._session()
+        async with s.get(job_url, timeout=_SHORT_TIMEOUT) as resp:
+            if resp.status == 404:
+                return None
+            resp.raise_for_status()
+            return parse_job_info(await resp.read())
 
     async def iter_next_document(self, job_url: str) -> AsyncIterator[bytes]:
         """Stream one document from ScanJobs/{uuid}/NextDocument.
@@ -362,42 +398,44 @@ class ScannerClient:
         A sock_read timeout (not a total timeout) bounds stalls without
         capping large-but-healthy transfers.
         """
-        timeout = aiohttp.ClientTimeout(sock_connect=15, sock_read=90)
+        s = await self._session()
         for attempt in range(3):
-            async with await self._session(timeout=timeout) as s:
-                async with s.get(f"{job_url}/NextDocument") as resp:
-                    if resp.status in (404, 410):
-                        return
-                    if resp.status in (500, 503):
-                        # Transient on attempt 0-1; treat as "done" on the
-                        # third try if it still hasn't resolved.
-                        if attempt < 2:
-                            await asyncio.sleep(0.5 * (attempt + 1))
-                            continue
-                        return
-                    resp.raise_for_status()
-                    async for chunk in resp.content.iter_chunked(_STREAM_CHUNK):
-                        yield chunk
+            async with s.get(
+                f"{job_url}/NextDocument", timeout=_STREAM_TIMEOUT
+            ) as resp:
+                if resp.status in (404, 410):
                     return
+                if resp.status in (500, 503):
+                    # Transient on attempt 0-1; treat as "done" on the
+                    # third try if it still hasn't resolved.
+                    if attempt < 2:
+                        await asyncio.sleep(0.5 * (attempt + 1))
+                        continue
+                    return
+                resp.raise_for_status()
+                async for chunk in resp.content.iter_chunked(_STREAM_CHUNK):
+                    yield chunk
+                return
 
     async def delete_job(self, job_url: str) -> bool:
         """Cancel a scan job. Returns True on 2xx, False otherwise.
         Treats 404 as success (already gone)."""
-        async with await self._session(timeout=10.0) as s:
-            async with s.delete(job_url) as resp:
-                if resp.status == 404:
-                    return True
-                return 200 <= resp.status < 300
+        s = await self._session()
+        async with s.delete(job_url, timeout=_SHORT_TIMEOUT) as resp:
+            if resp.status == 404:
+                return True
+            return 200 <= resp.status < 300
 
     async def purge_active_jobs(self) -> int:
         """Cancel every job the scanner is currently aware of. Returns
         the count of jobs purged. Best-effort — failures are swallowed."""
-        async with await self._session(timeout=10.0) as s:
-            return await self._purge_active_jobs(s)
+        return await self._purge_active_jobs(await self._session())
 
     async def _purge_active_jobs(self, session: aiohttp.ClientSession) -> int:
         try:
-            async with session.get(f"{self._base}/ScannerStatus") as resp:
+            async with session.get(
+                f"{self._base}/ScannerStatus", timeout=_SHORT_TIMEOUT
+            ) as resp:
                 if resp.status != 200:
                     return 0
                 status = parse_scanner_status(await resp.read())
@@ -406,7 +444,9 @@ class ScannerClient:
         purged = 0
         for uri in status.active_job_uris:
             try:
-                async with session.delete(self._absolute(uri)) as r:
+                async with session.delete(
+                    self._absolute(uri), timeout=_SHORT_TIMEOUT
+                ) as r:
                     if 200 <= r.status < 300 or r.status == 404:
                         purged += 1
             except Exception:

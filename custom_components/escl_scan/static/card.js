@@ -20,7 +20,16 @@ C.prototype.setConfig = function (config) {
 };
 
 Object.defineProperty(C.prototype, 'hass', {
-  set(hass) { this._hass = hass; },
+  set(hass) {
+    this._hass = hass;
+    // Lovelace pushes a fresh hass object on every state change. Drive all
+    // progress rendering from here by diffing the scan sensor — no
+    // subscribeEvents (which streamed every entity's changes to the browser
+    // and raced the initial snapshot), and the card now also reflects scans
+    // started from another device.
+    this._onHass();
+  },
+  get() { return this._hass; },
   configurable: true,
 });
 
@@ -143,18 +152,26 @@ C.prototype._render = function () {
     }
   });
   this._rendered = true;
+  // Reflect any scan already in progress (e.g. started from another device
+  // before this card mounted).
+  this._onHass();
 };
 
-C.prototype._authHeaders = function (json = false) {
+// All API calls go through hass.fetchWithAuth, which injects the auth header
+// and transparently refreshes an expired token (the old code dug the raw
+// access_token out of hass.auth and 401'd on long-lived dashboard tabs once
+// that token rotated). Falls back to a manual bearer only on frontends that
+// somehow lack the helper.
+C.prototype._apiFetch = function (path, init = {}) {
+  const hass = this._hass;
+  if (hass && typeof hass.fetchWithAuth === 'function') {
+    return hass.fetchWithAuth(path, init);
+  }
   const token =
-    this._hass?.auth?.data?.access_token ||
-    this._hass?.connection?.auth?.data?.access_token ||
-    this._hass?.auth?.accessToken ||
-    null;
-  const h = {};
-  if (json) h['Content-Type'] = 'application/json';
-  if (token) h.Authorization = `Bearer ${token}`;
-  return h;
+    hass?.auth?.data?.access_token || hass?.auth?.accessToken || null;
+  const headers = Object.assign({}, init.headers);
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(path, Object.assign({ credentials: 'same-origin' }, init, { headers }));
 };
 
 C.prototype._setStatus = function (text, cls = '') {
@@ -174,16 +191,17 @@ C.prototype._startScan = async function () {
   this._card.classList.add('busy');
   this._setStatus('Starting…');
   this._setCancelVisible(false);
+  this._clearResultTimer();
   try {
-    const resp = await fetch('/api/escl_scan/start', {
+    const resp = await this._apiFetch('/api/escl_scan/start', {
       method: 'POST',
-      headers: this._authHeaders(true),
+      headers: { 'Content-Type': 'application/json' },
       body: '{}',
-      credentials: 'same-origin',
     });
     let body = null;
     try { body = await resp.json(); } catch {}
     if (!resp.ok) {
+      // 409 = a scan is already running (busy guard). Surface it plainly.
       const msg = (body && (body.message || body.error)) || `HTTP ${resp.status}`;
       throw new Error(msg);
     }
@@ -191,9 +209,7 @@ C.prototype._startScan = async function () {
     const src = body?.source ? ` (${body.source.toLowerCase()})` : '';
     this._setStatus(`Scanning${src}…`);
     this._setCancelVisible(true);
-    this._trackScanProgress().catch((e) => {
-      console.warn('[escl-scan] progress tracking error', e);
-    });
+    // From here on, the hass setter drives progress via _onHass().
   } catch (err) {
     this._setStatus('Scan failed: ' + (err?.message || err), 'err');
   } finally {
@@ -205,11 +221,10 @@ C.prototype._startScan = async function () {
 C.prototype._cancelScan = async function () {
   if (!this._activeScanId) return;
   try {
-    const r = await fetch('/api/escl_scan/cancel', {
+    const r = await this._apiFetch('/api/escl_scan/cancel', {
       method: 'POST',
-      headers: this._authHeaders(true),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scan_id: this._activeScanId }),
-      credentials: 'same-origin',
     });
     if (!r.ok) {
       const body = await r.text();
@@ -225,139 +240,113 @@ C.prototype._cancelScan = async function () {
 const SCAN_SENSOR = 'sensor.printer_current_scan';
 const TERMINAL_STATES = new Set(['completed', 'canceled', 'aborted', 'failed']);
 const ACTIVE_STATES = new Set(['pending', 'processing', 'processing-stopped']);
+// How long a finished result (esp. the "Open scan" link) stays on the card
+// after the server drops the scan back to idle.
+const RESULT_LATCH_MS = 30_000;
 
-C.prototype._trackScanProgress = async function () {
-  const hass = this._hass;
-  if (!hass || !hass.connection) return;
-
-  if (this._unsubProgress) {
-    try { this._unsubProgress(); } catch {}
-    this._unsubProgress = null;
+C.prototype._clearResultTimer = function () {
+  if (this._resultTimer) {
+    clearTimeout(this._resultTimer);
+    this._resultTimer = null;
   }
-  clearTimeout(this._progressSafety);
+};
 
-  const ourScanId = this._activeScanId;
-  let sawState = null;
+// Called from the hass setter on every state push. Diffs the scan sensor and
+// re-renders only when something meaningful changed.
+C.prototype._onHass = function () {
+  if (!this._rendered) return;
+  const st = this._hass?.states?.[SCAN_SENSOR];
+  if (!st) return;
+  const attrs = st.attributes || {};
+  const state = st.state;
+  const sid = attrs.scan_id ?? null;
+  const sig = `${sid}|${state}|${attrs.pages_done || 0}`;
+  if (sig === this._lastSig) return;
+  this._lastSig = sig;
 
-  const renderLink = (attrs) => {
-    const url = attrs?.file_url;
-    if (!url) return null;
-    const a = document.createElement('a');
-    // href preserved for accessibility / right-click context, but the
-    // actual fetch happens via the bearer-authenticated JS handler below —
-    // HA's view rejects plain link navigation (no Authorization header).
-    a.href = url;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    a.textContent = 'Open scan';
-    a.addEventListener('click', async (ev) => {
-      ev.preventDefault();
-      // Stop the card's own click handler from firing a fresh scan.
-      ev.stopPropagation();
-      try {
-        const resp = await fetch(url, {
-          headers: this._authHeaders(),
-          credentials: 'same-origin',
-        });
-        if (!resp.ok) {
-          throw new Error('HTTP ' + resp.status);
-        }
-        const blob = await resp.blob();
-        const objUrl = URL.createObjectURL(blob);
-        const w = window.open(objUrl, '_blank', 'noopener');
-        // Some browsers refuse popups; fall back to navigating the
-        // current tab so the user at least sees the PDF.
-        if (!w) window.location.href = objUrl;
-        // Release after a delay so the new tab has time to load.
-        setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
-      } catch (err) {
-        this._setStatus(
-          'Open failed: ' + (err?.message || err), 'err',
-        );
-      }
-    });
-    return a;
-  };
-
-  const render = (state, attrs) => {
-    const pagesDone = attrs?.pages_done || 0;
-    const source = attrs?.source ? attrs.source.toLowerCase() : '';
-    if (state === 'pending') {
-      this._setStatus('Waiting for scanner…');
-      this._setCancelVisible(true);
-    } else if (state === 'processing') {
-      const src = source ? ` (${source})` : '';
-      const pages = pagesDone > 0 ? ` page ${pagesDone}` : '';
-      this._setStatus(`Scanning${src}${pages}…`);
-      this._setCancelVisible(true);
-    } else if (state === 'processing-stopped') {
-      this._setStatus('Scanner paused — check tray/jam', 'err');
-      this._setCancelVisible(true);
-    } else if (state === 'completed') {
-      const pages = pagesDone || 1;
-      const link = renderLink(attrs);
-      const wrap = document.createElement('span');
-      wrap.append(
-        `Scan ready ✓ (${pages} page${pages > 1 ? 's' : ''}) — `
-      );
-      if (link) wrap.appendChild(link);
-      this._setStatus(wrap, 'ok');
+  if (ACTIVE_STATES.has(state)) {
+    this._activeScanId = sid;
+    this._clearResultTimer();
+    this._renderScanState(state, attrs);
+  } else if (TERMINAL_STATES.has(state)) {
+    this._renderScanState(state, attrs);
+    // Latch the result so the "Open scan" link stays clickable even after
+    // the server drops `current` back to idle (~8s later).
+    this._clearResultTimer();
+    this._resultTimer = setTimeout(() => {
+      this._resultTimer = null;
+      this._lastSig = null;
+      this._setStatus('');
       this._setCancelVisible(false);
-    } else if (state === 'canceled') {
-      this._setStatus('Scan canceled', 'err');
-      this._setCancelVisible(false);
-    } else if (state === 'aborted' || state === 'failed') {
-      const reason = attrs?.state_reasons || attrs?.error;
-      this._setStatus(
-        'Scan failed' + (reason ? `: ${reason}` : ''),
-        'err',
-      );
-      this._setCancelVisible(false);
-    } else {
-      this._setCancelVisible(false);
-    }
-  };
-
-  // Push initial render — sensor may already have moved past pending.
-  const initial = hass.states[SCAN_SENSOR];
-  if (initial && initial.attributes?.scan_id === ourScanId) {
-    sawState = initial.state;
-    render(initial.state, initial.attributes);
+    }, RESULT_LATCH_MS);
+  } else if (!this._resultTimer && !this._busy) {
+    // idle / unavailable — clear, unless a fresh result is still latched
+    // or a local start is mid-flight.
+    this._setStatus('');
+    this._setCancelVisible(false);
   }
+};
 
-  this._unsubProgress = await hass.connection.subscribeEvents((ev) => {
-    if (ev?.data?.entity_id !== SCAN_SENSOR) return;
-    const newState = ev.data.new_state;
-    if (!newState) return;
-    const attrs = newState.attributes || {};
-    const sid = attrs.scan_id;
-    if (sid != null && sid !== ourScanId) return;
-    sawState = newState.state;
-    render(newState.state, attrs);
-    if (TERMINAL_STATES.has(newState.state)) {
-      clearTimeout(this._progressSafety);
-      // Leave the result up longer than the print card's 10s — users want
-      // time to tap the "Open scan" link before it disappears.
-      this._progressSafety = setTimeout(() => {
-        if (this._statusEl?.textContent &&
-            !ACTIVE_STATES.has(sawState)) {
-          this._setStatus('');
-        }
-      }, 30_000);
-      try { this._unsubProgress(); } catch {}
-      this._unsubProgress = null;
+C.prototype._buildOpenLink = function (attrs) {
+  const url = attrs?.file_url;
+  if (!url) return null;
+  const a = document.createElement('a');
+  // href kept for accessibility / right-click, but the click handler does
+  // the authenticated fetch — HA's view rejects plain navigation (no auth).
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.textContent = 'Open scan';
+  a.addEventListener('click', async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    try {
+      const resp = await this._apiFetch(url);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const blob = await resp.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const w = window.open(objUrl, '_blank', 'noopener');
+      if (!w) window.location.href = objUrl;
+      setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+    } catch (err) {
+      this._setStatus('Open failed: ' + (err?.message || err), 'err');
     }
-  }, 'state_changed');
+  });
+  return a;
+};
 
-  this._progressSafety = setTimeout(() => {
-    if (this._unsubProgress) {
-      try { this._unsubProgress(); } catch {}
-      this._unsubProgress = null;
-    }
-    if (!sawState) {
-      this._setStatus('Scan started (no further updates)', 'ok');
-    }
-  }, 180_000);  // scans can take a while for big ADF batches
+C.prototype._renderScanState = function (state, attrs) {
+  const pagesDone = attrs?.pages_done || 0;
+  const source = attrs?.source ? attrs.source.toLowerCase() : '';
+  if (state === 'pending') {
+    this._setStatus('Waiting for scanner…');
+    this._setCancelVisible(true);
+  } else if (state === 'processing') {
+    const src = source ? ` (${source})` : '';
+    const pages = pagesDone > 0 ? ` page ${pagesDone}` : '';
+    this._setStatus(`Scanning${src}${pages}…`);
+    this._setCancelVisible(true);
+  } else if (state === 'processing-stopped') {
+    this._setStatus('Scanner paused — check tray/jam', 'err');
+    this._setCancelVisible(true);
+  } else if (state === 'completed') {
+    const pages = pagesDone || 1;
+    const link = this._buildOpenLink(attrs);
+    const wrap = document.createElement('span');
+    wrap.append(`Scan ready ✓ (${pages} page${pages > 1 ? 's' : ''}) — `);
+    if (link) wrap.appendChild(link);
+    this._setStatus(wrap, 'ok');
+    this._setCancelVisible(false);
+  } else if (state === 'canceled') {
+    this._setStatus('Scan canceled', 'err');
+    this._setCancelVisible(false);
+  } else if (state === 'aborted' || state === 'failed') {
+    const reason = attrs?.state_reasons || attrs?.error;
+    this._setStatus('Scan failed' + (reason ? `: ${reason}` : ''), 'err');
+    this._setCancelVisible(false);
+  } else {
+    this._setCancelVisible(false);
+  }
 };
 
 window.customCards = window.customCards || [];
@@ -441,8 +430,11 @@ function _esclHeal() {
   (ms) => setTimeout(_esclHeal, ms),
 );
 
-// Watch for new hui-error-cards appearing in the DOM after the initial
-// retry window expires. Reuses one observer attached at body level.
+// Watch for hui-error-cards appearing after the initial retry window, then
+// STOP. The pre-define race only exists until customElements.define (top of
+// this module) runs; once defined, Lovelace constructs our card correctly.
+// A permanent body-wide subtree observer would otherwise fire on every DOM
+// mutation in the whole HA UI, on every page, for the life of the tab.
 try {
   const observer = new MutationObserver((mutations) => {
     for (const m of mutations) {
@@ -460,4 +452,7 @@ try {
     }
   });
   observer.observe(document.body, {childList: true, subtree: true});
+  // The race window closes within seconds of load; disconnect once the
+  // staggered sweeps above have all fired.
+  setTimeout(() => observer.disconnect(), 12_000);
 } catch {}

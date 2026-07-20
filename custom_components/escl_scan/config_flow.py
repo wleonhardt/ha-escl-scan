@@ -53,7 +53,9 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
             except Exception as exc:
                 errors["base"] = "cannot_connect"
                 self._last_error = str(exc)
-            else:
+            finally:
+                await client.async_close()
+            if not errors:
                 await self.async_set_unique_id(
                     f"{user_input[CONF_HOST]}:{user_input.get(CONF_PORT, DEFAULT_PORT)}"
                 )
