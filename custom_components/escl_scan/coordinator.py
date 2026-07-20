@@ -83,6 +83,14 @@ class _PdfFileWriter:
         self.head = b""
         self.tail = b""
 
+    @property
+    def path(self) -> Path:
+        return self._tmp
+
+    def is_valid_pdf(self) -> bool:
+        """The streamed bytes look like a complete PDF (header + EOF trailer)."""
+        return self.head.startswith(b"%PDF-") and b"%%EOF" in self.tail
+
     def open(self) -> None:
         self._f = open(self._tmp, "wb")
 
@@ -109,6 +117,34 @@ class _PdfFileWriter:
             self._tmp.unlink()
         except OSError:
             pass
+
+
+def _safe_unlink(path: Path) -> None:
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
+def _merge_pdfs(parts: list[Path], dest: Path) -> tuple[int, int]:
+    """Concatenate PDF `parts` into `dest`. Returns (page_count, byte_size).
+
+    Blocking (pypdf is sync + CPU-bound) — call via an executor. pypdf is
+    imported lazily so single-document scans never load it and a missing
+    dependency only surfaces on the multi-document path.
+    """
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter()
+    pages = 0
+    for part in parts:
+        reader = PdfReader(str(part))
+        for page in reader.pages:
+            writer.add_page(page)
+            pages += 1
+    with open(dest, "wb") as fh:
+        writer.write(fh)
+    return pages, dest.stat().st_size
 
 
 @dataclass
@@ -331,114 +367,17 @@ class ScanCoordinator:
             ts = time.strftime("%Y%m%d-%H%M%S")
             scan.filename = f"scan-{ts}-{scan.source.lower()}-{scan.scan_id}.pdf"
             scan.file_path = self._storage / scan.filename
-            tmp_path = scan.file_path.with_name(scan.file_path.name + ".part")
-            writer = _PdfFileWriter(tmp_path)
-            try:
-                await self._hass.async_add_executor_job(writer.open)
-            except OSError as exc:
-                self._mark_terminal(
-                    scan, STATE_FAILED, None,
-                    error=f"cannot open scratch file: {exc}",
-                )
-                return
 
-            poll_task = self._hass.loop.create_task(self._poll_loop(scan))
-            try:
-                # Stream documents straight to disk (never buffer the whole
-                # PDF in RAM — a 600-DPI colour ADF batch can be hundreds of
-                # MB). Only the first document is saved; any subsequent ones
-                # are drained so the scanner reaches a terminal job state.
-                # Proper multi-PDF concatenation is on the roadmap (issue #1).
-                # Errors mid-stream are treated as "we got what we got" —
-                # PDF validation below decides whether the partial is usable.
-                doc_index = 0
-                while not scan.is_terminal():
-                    got_data = False
-                    try:
-                        async for chunk in self._client.iter_next_document(
-                            scan.job_url
-                        ):
-                            got_data = True
-                            if doc_index == 0:
-                                await self._hass.async_add_executor_job(
-                                    writer.write, chunk
-                                )
-                    except Exception as exc:
-                        _LOGGER.warning(
-                            "scan %s: document stream errored after "
-                            "%d page(s): %s — using what we have",
-                            scan.scan_id, scan.pages_done, exc,
-                        )
-                        break
-                    if not got_data:
-                        break
-                    doc_index += 1
-                    if doc_index > 1:
-                        _LOGGER.warning(
-                            "scan %s: scanner returned document #%d — "
-                            "ignoring (only the first is saved)",
-                            scan.scan_id, doc_index,
-                        )
-                    scan.pages_done += 1
-                    scan.last_seen = datetime.now(UTC)
-                    self._fire(EVENT_STATE_CHANGED, scan)
-                    self._notify()
-            finally:
-                poll_task.cancel()
-                try:
-                    await poll_task
-                except (asyncio.CancelledError, Exception):
-                    pass
-                await self._hass.async_add_executor_job(writer.close)
+            parts = await self._stream_documents(scan)
 
             if scan.is_terminal():
                 # Coordinator cancel beat us to it.
-                await self._hass.async_add_executor_job(writer.cleanup)
+                for writer in parts:
+                    await self._hass.async_add_executor_job(writer.cleanup)
                 return
 
-            if writer.bytes_written == 0:
-                await self._hass.async_add_executor_job(writer.cleanup)
-                self._mark_terminal(
-                    scan, STATE_FAILED, None, error="no document returned from scanner"
-                )
-                return
-
-            # Validate the streamed bytes look like a complete PDF before
-            # claiming success. HP MFPs occasionally return a truncated PDF
-            # (just the catalog header, ~58 bytes) for unsupported setting
-            # combos like low-DPI grayscale — they don't 4xx/5xx the
-            # request, they just hand back garbage. Detecting EOF here gives
-            # the user a clear failed-state with a useful error rather than
-            # a "completed" claim on a broken file.
-            if not writer.head.startswith(b"%PDF-"):
-                await self._hass.async_add_executor_job(writer.cleanup)
-                self._mark_terminal(
-                    scan, STATE_FAILED, None,
-                    error=f"scanner returned a non-PDF response ({writer.bytes_written} bytes)",
-                )
-                return
-            if b"%%EOF" not in writer.tail:
-                await self._hass.async_add_executor_job(writer.cleanup)
-                self._mark_terminal(
-                    scan, STATE_FAILED, None,
-                    error=(
-                        f"scanner returned a truncated PDF ({writer.bytes_written} bytes; "
-                        f"no EOF trailer). This usually means the requested "
-                        f"DPI/color combo isn't supported by the device."
-                    ),
-                )
-                return
-
-            try:
-                await self._hass.async_add_executor_job(
-                    writer.commit, scan.file_path,
-                )
-                scan.bytes_written = writer.bytes_written
-            except OSError as exc:
-                await self._hass.async_add_executor_job(writer.cleanup)
-                self._mark_terminal(
-                    scan, STATE_FAILED, None, error=f"write failed: {exc}"
-                )
+            # Validate + assemble; marks the scan failed itself on error.
+            if not await self._assemble_result(scan, parts):
                 return
 
             # Final JobInfo sanity check — if scanner reports Aborted, honour it.
@@ -482,6 +421,140 @@ class ScanCoordinator:
                 hold = self._hass.loop.create_task(self._terminal_hold(scan))
                 self._hold_tasks.add(hold)
                 hold.add_done_callback(self._hold_tasks.discard)
+
+    async def _stream_documents(self, scan: TrackedScan) -> list[_PdfFileWriter]:
+        """Pull every document the scanner produces, each streamed straight to
+        its own scratch file (never buffer a whole PDF in RAM — a 600-DPI
+        colour ADF batch can be hundreds of MB). Returns the closed writers,
+        one per document received. Runs the JobInfo poll loop alongside.
+
+        Some scanners bundle the whole batch into a single document; others
+        return one document per page. Both are handled here; concatenation
+        happens in _assemble_result.
+        """
+        parts: list[_PdfFileWriter] = []
+        poll_task = self._hass.loop.create_task(self._poll_loop(scan))
+        try:
+            doc_index = 0
+            while not scan.is_terminal():
+                writer = _PdfFileWriter(
+                    scan.file_path.with_name(f"{scan.file_path.name}.part{doc_index}")
+                )
+                try:
+                    await self._hass.async_add_executor_job(writer.open)
+                except OSError as exc:
+                    _LOGGER.warning(
+                        "scan %s: cannot open scratch file: %s", scan.scan_id, exc
+                    )
+                    break
+                got_data = False
+                try:
+                    async for chunk in self._client.iter_next_document(scan.job_url):
+                        got_data = True
+                        await self._hass.async_add_executor_job(writer.write, chunk)
+                except Exception as exc:
+                    # Mid-stream error: keep the partial (validation decides).
+                    _LOGGER.warning(
+                        "scan %s: document stream errored after %d page(s): "
+                        "%s — using what we have",
+                        scan.scan_id, scan.pages_done, exc,
+                    )
+                    await self._hass.async_add_executor_job(writer.close)
+                    if got_data:
+                        parts.append(writer)
+                    else:
+                        await self._hass.async_add_executor_job(writer.cleanup)
+                    break
+                await self._hass.async_add_executor_job(writer.close)
+                if not got_data:
+                    await self._hass.async_add_executor_job(writer.cleanup)
+                    break
+                parts.append(writer)
+                doc_index += 1
+                scan.pages_done += 1
+                scan.last_seen = datetime.now(UTC)
+                self._fire(EVENT_STATE_CHANGED, scan)
+                self._notify()
+        finally:
+            poll_task.cancel()
+            try:
+                await poll_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        return parts
+
+    async def _assemble_result(
+        self, scan: TrackedScan, parts: list[_PdfFileWriter]
+    ) -> bool:
+        """Validate the streamed parts and produce scan.file_path.
+
+        Returns True if a usable PDF was written (the scan may proceed to
+        completed), or False after marking the scan failed. Always cleans up
+        the scratch parts. A single valid document is renamed into place (fast
+        path, no pypdf); multiple are concatenated with pypdf.
+        """
+        if not parts:
+            self._mark_terminal(
+                scan, STATE_FAILED, None, error="no document returned from scanner"
+            )
+            return False
+
+        # "Valid" = looks like a complete PDF. HP MFPs occasionally hand back a
+        # truncated catalog header (~58 bytes) for an unsupported DPI/colour
+        # combo without a 4xx/5xx; the EOF check turns that into a clear
+        # failure rather than a "completed" claim on a broken file.
+        valid = [w for w in parts if w.is_valid_pdf()]
+        if not valid:
+            first = parts[0]
+            for w in parts:
+                await self._hass.async_add_executor_job(w.cleanup)
+            if not first.head.startswith(b"%PDF-"):
+                err = f"scanner returned a non-PDF response ({first.bytes_written} bytes)"
+            else:
+                err = (
+                    f"scanner returned a truncated PDF ({first.bytes_written} bytes; "
+                    f"no EOF trailer). This usually means the requested DPI/color "
+                    f"combo isn't supported by the device."
+                )
+            self._mark_terminal(scan, STATE_FAILED, None, error=err)
+            return False
+
+        dropped = len(parts) - len(valid)
+        if dropped:
+            _LOGGER.warning(
+                "scan %s: dropped %d incomplete document part(s)",
+                scan.scan_id, dropped,
+            )
+
+        consumed: set[Path] = set()
+        try:
+            if len(valid) == 1:
+                await self._hass.async_add_executor_job(valid[0].commit, scan.file_path)
+                scan.bytes_written = valid[0].bytes_written
+                consumed = {valid[0].path}
+            else:
+                pages, size = await self._hass.async_add_executor_job(
+                    _merge_pdfs, [w.path for w in valid], scan.file_path
+                )
+                scan.bytes_written = size
+                scan.pages_done = max(scan.pages_done, pages)
+                _LOGGER.info(
+                    "scan %s: merged %d documents into a %d-page PDF",
+                    scan.scan_id, len(valid), pages,
+                )
+        except Exception as exc:
+            for w in parts:
+                await self._hass.async_add_executor_job(w.cleanup)
+            await self._hass.async_add_executor_job(_safe_unlink, scan.file_path)
+            self._mark_terminal(
+                scan, STATE_FAILED, None, error=f"could not assemble PDF: {exc}"
+            )
+            return False
+
+        for w in parts:
+            if w.path not in consumed:
+                await self._hass.async_add_executor_job(w.cleanup)
+        return True
 
     async def _poll_loop(self, scan: TrackedScan) -> None:
         """Poll JobInfo while the scan is in flight. Updates pages_done
@@ -582,7 +655,7 @@ class ScanCoordinator:
                         deleted.add(f)
                     except OSError:
                         pass
-            for part in self._storage.glob("scan-*.pdf.part"):
+            for part in self._storage.glob("scan-*.pdf.part*"):
                 try:
                     part.unlink()
                 except OSError:

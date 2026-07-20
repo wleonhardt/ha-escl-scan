@@ -3,6 +3,7 @@ fake scanner client. Covers the P1 fixes: busy guard, streaming + PDF
 validation, cancel, clean shutdown, multi-document drain, page reconciliation.
 """
 import asyncio
+import io
 
 import pytest
 
@@ -10,6 +11,19 @@ from custom_components.escl_scan.coordinator import ScanBusyError, ScanCoordinat
 from custom_components.escl_scan.scanner import JobInfo
 
 VALID_PDF = b"%PDF-1.4\n" + b"x" * 4096 + b"\n%%EOF\n"
+
+
+def real_pdf(n_pages: int = 1) -> bytes:
+    """A genuinely parseable PDF (pypdf can merge it), unlike VALID_PDF which
+    only satisfies the header/EOF sniff used on the single-document path."""
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    for _ in range(n_pages):
+        writer.add_blank_page(width=200, height=200)
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
 
 
 class FakeClient:
@@ -93,7 +107,7 @@ async def test_happy_path_streams_and_commits(make_coord):
     assert scan.file_path.read_bytes() == VALID_PDF
     assert scan.bytes_written == len(VALID_PDF)
     assert client.deleted  # server-side job cleaned up
-    assert not list((coord._storage).glob("*.part"))  # no scratch leak
+    assert not list(coord._storage.glob("*.part*"))  # no scratch leak
 
 
 async def test_streamed_in_multiple_chunks(make_coord):
@@ -130,13 +144,44 @@ async def test_no_document_fails(make_coord):
     assert "no document" in scan.error
 
 
-async def test_multi_document_saves_first_drains_rest(make_coord):
-    coord = make_coord(FakeClient(docs=[[VALID_PDF], [b"%PDF-1.4 second\n%%EOF"]]))
+async def test_multi_document_merges(make_coord):
+    # Per-page scanner: two single-page documents -> one merged 2-page PDF.
+    coord = make_coord(FakeClient(docs=[[real_pdf(1)], [real_pdf(1)]]))
     scan = await coord.start_scan()
     await _drive(coord, scan)
     assert scan.state == "completed"
+    from pypdf import PdfReader
+
+    assert len(PdfReader(str(scan.file_path)).pages) == 2
     assert scan.pages_done == 2
-    assert scan.file_path.read_bytes() == VALID_PDF  # only first saved
+    assert not list(coord._storage.glob("*.part*"))  # scratch parts cleaned
+
+
+async def test_multi_document_pages_streamed_in_chunks(make_coord):
+    # Each document itself split across TCP chunks, merged into 3 pages.
+    doc = real_pdf(1)
+    chunked = [doc[i:i + 128] for i in range(0, len(doc), 128)]
+    coord = make_coord(FakeClient(docs=[chunked, chunked, chunked]))
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    from pypdf import PdfReader
+
+    assert len(PdfReader(str(scan.file_path)).pages) == 3
+
+
+async def test_multi_document_drops_truncated_part(make_coord):
+    # One good page + one truncated (no EOF) -> keep the good one only.
+    coord = make_coord(
+        FakeClient(docs=[[real_pdf(1)], [b"%PDF-1.4 truncated, no trailer"]])
+    )
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    from pypdf import PdfReader
+
+    assert len(PdfReader(str(scan.file_path)).pages) == 1
+    assert not list(coord._storage.glob("*.part*"))
 
 
 async def test_final_jobinfo_reconciles_page_count(make_coord):

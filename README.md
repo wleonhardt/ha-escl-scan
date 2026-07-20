@@ -47,6 +47,7 @@ auto-upload to Paperless, etc.).
 ## Features
 
 - 📄 Direct eSCL submission — no SANE, no CUPS, no driver layer
+- 📚 Multi-page ADF batches merged into one PDF (per-page scanners included)
 - 📊 Per-scan sensor (`sensor.printer_current_scan`) with live page progress
 - 🔔 Bus events for state changes and completion
 - 🛑 Cancel-Job support
