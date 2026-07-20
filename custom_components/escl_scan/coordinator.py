@@ -126,6 +126,17 @@ def _safe_unlink(path: Path) -> None:
         pass
 
 
+def _count_pdf_pages(path: Path) -> int | None:
+    """Best-effort page count of a PDF. Returns None if pypdf is unavailable
+    or the file won't parse — the caller keeps its document-based count."""
+    try:
+        from pypdf import PdfReader
+
+        return len(PdfReader(str(path)).pages)
+    except Exception:
+        return None
+
+
 def _merge_pdfs(parts: list[Path], dest: Path) -> tuple[int, int]:
     """Concatenate PDF `parts` into `dest`. Returns (page_count, byte_size).
 
@@ -532,6 +543,15 @@ class ScanCoordinator:
                 await self._hass.async_add_executor_job(valid[0].commit, scan.file_path)
                 scan.bytes_written = valid[0].bytes_written
                 consumed = {valid[0].path}
+                # Bundle-mode scanners pack the whole ADF batch into one
+                # document, so the document count (1) understates the pages.
+                # Count the real pages so the sensor/card don't report "1 page"
+                # for an N-page scan.
+                pages = await self._hass.async_add_executor_job(
+                    _count_pdf_pages, scan.file_path
+                )
+                if pages:
+                    scan.pages_done = max(scan.pages_done, pages)
             else:
                 pages, size = await self._hass.async_add_executor_job(
                     _merge_pdfs, [w.path for w in valid], scan.file_path

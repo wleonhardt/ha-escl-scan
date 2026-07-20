@@ -144,6 +144,16 @@ async def test_no_document_fails(make_coord):
     assert "no document" in scan.error
 
 
+async def test_single_bundle_pdf_page_count(make_coord):
+    # Bundle-mode scanner: one document holding 3 pages. pages_done must
+    # reflect the PDF's real page count, not the document count (1).
+    coord = make_coord(FakeClient(docs=[[real_pdf(3)]]))
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    assert scan.pages_done == 3
+
+
 async def test_multi_document_merges(make_coord):
     # Per-page scanner: two single-page documents -> one merged 2-page PDF.
     coord = make_coord(FakeClient(docs=[[real_pdf(1)], [real_pdf(1)]]))
