@@ -16,6 +16,7 @@ CONF_DEFAULT_DPI = "default_dpi"
 CONF_DEFAULT_COLOR = "default_color"
 CONF_FILE_TTL = "file_ttl_seconds"
 CONF_DEFAULT_DUPLEX = "default_duplex"
+CONF_COPY_DIR = "copy_to_dir"  # optional directory to drop a copy of every scan
 
 DEFAULT_PORT = 443
 DEFAULT_BASE_PATH = "eSCL"

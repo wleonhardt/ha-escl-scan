@@ -14,6 +14,12 @@ match `custom_components/escl_scan/manifest.json`.
   `button.<scanner>_scan_now` entity, so automations and stock cards can
   trigger scans without the REST API.
 - Translated sensor states and entity names (`translation_key`), icons.
+- *Copy to folder* option: every finished scan is atomically copied to a
+  directory of your choice (Paperless-ngx consume folder), validated against
+  `allowlist_external_dirs`. New `file_path` / `copied_to` attributes.
+- Diagnostics download (capabilities, scans, redacted entry data).
+- Card is available in the dashboard card picker with a visual editor
+  (title, sensor entity) and a preview.
 - `ScannerCapabilities` is read at setup: device page shows the real make,
   model and serial; the config entry's unique id is the serial/UUID (survives
   DHCP changes); the scan region is the reported bed size per source (A4 and

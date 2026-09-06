@@ -10,6 +10,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.escl_scan.const import (
     CONF_BASE_PATH,
+    CONF_COPY_DIR,
     CONF_DEFAULT_DPI,
     CONF_FILE_TTL,
     CONF_HOST,
@@ -144,6 +145,31 @@ async def test_options_flow_saves_valid(hass: HomeAssistant):
     )
     assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_DEFAULT_DPI] == 600
+
+
+async def test_options_flow_rejects_copy_dir_outside_allowlist(hass: HomeAssistant):
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "192.0.2.10"})
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_HOST: "192.0.2.10", CONF_COPY_DIR: "/definitely/not/allowed"},
+    )
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["errors"] == {CONF_COPY_DIR: "path_not_allowed"}
+
+
+async def test_options_flow_accepts_allowed_copy_dir(hass: HomeAssistant, tmp_path):
+    hass.config.allowlist_external_dirs = {str(tmp_path)}
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "192.0.2.10"})
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_HOST: "192.0.2.10", CONF_COPY_DIR: f" {tmp_path}/consume "},
+    )
+    assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_COPY_DIR] == f"{tmp_path}/consume"
 
 
 async def test_options_flow_rejects_bad_dpi(hass: HomeAssistant):

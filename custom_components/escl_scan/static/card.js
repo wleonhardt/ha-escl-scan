@@ -40,6 +40,43 @@ Object.defineProperty(C.prototype, 'hass', {
 
 C.prototype.getCardSize = function () { return 2; };
 
+// Dashboard picker support: a default config and a visual editor built on
+// HA's own <ha-form>, so the card is configurable without YAML.
+C.getStubConfig = function () { return { title: 'Scan now' }; };
+C.getConfigElement = function () { return document.createElement(TAG + '-editor'); };
+
+const EDITOR_SCHEMA = [
+  { name: 'title', selector: { text: {} } },
+  { name: 'entity', selector: { entity: { domain: 'sensor', integration: 'escl_scan' } } },
+];
+const EDITOR_LABELS = { title: 'Title', entity: 'Scan sensor (optional)' };
+
+if (!customElements.get(TAG + '-editor')) {
+  customElements.define(TAG + '-editor', class extends HTMLElement {
+    setConfig(config) { this._config = config || {}; this._render(); }
+    set hass(hass) { this._hass = hass; if (this._form) this._form.hass = hass; }
+    _render() {
+      if (!this._form) {
+        this._form = document.createElement('ha-form');
+        this._form.schema = EDITOR_SCHEMA;
+        this._form.computeLabel = (s) => EDITOR_LABELS[s.name] || s.name;
+        this._form.addEventListener('value-changed', (ev) => {
+          ev.stopPropagation();
+          const value = Object.assign({}, this._config, ev.detail.value);
+          if (!value.entity) delete value.entity;
+          this._config = value;
+          this.dispatchEvent(new CustomEvent('config-changed', {
+            detail: { config: value }, bubbles: true, composed: true,
+          }));
+        });
+        this.appendChild(this._form);
+      }
+      this._form.hass = this._hass;
+      this._form.data = this._config;
+    }
+  });
+}
+
 C.prototype._render = function () {
   if (this._rendered) return;
   const root = this.attachShadow({ mode: 'open' });
@@ -384,7 +421,8 @@ if (!window.customCards.find((c) => c.type === TAG)) {
     type: TAG,
     name: 'eSCL Scan',
     description: 'One-tap document scan via eSCL/AirScan with live status.',
-    preview: false,
+    preview: true,
+    documentationURL: 'https://github.com/wleonhardt/ha-escl-scan#adding-the-card-to-a-dashboard',
   });
 }
 

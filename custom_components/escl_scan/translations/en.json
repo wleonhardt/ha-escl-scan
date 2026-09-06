@@ -43,9 +43,17 @@
           "default_dpi": "Default scan resolution (DPI)",
           "default_color": "Default color mode (color or gray)",
           "default_duplex": "Scan both sides by default (ADF duplex, if supported)",
-          "file_ttl_seconds": "Scanned file retention (seconds before purge)"
+          "file_ttl_seconds": "Scanned file retention (seconds before purge)",
+          "copy_to_dir": "Also copy finished scans to this folder (optional)"
+        },
+        "data_description": {
+          "copy_to_dir": "Absolute path, e.g. a Paperless consume folder. Must be listed under allowlist_external_dirs in configuration.yaml. Leave empty to disable.",
+          "file_ttl_seconds": "Scans older than this are deleted from the integration's own storage. Copies made to the folder above are never deleted."
         }
       }
+    },
+    "error": {
+      "path_not_allowed": "That folder is not in allowlist_external_dirs (configuration.yaml)."
     }
   },
   "entity": {

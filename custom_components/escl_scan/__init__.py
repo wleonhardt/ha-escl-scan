@@ -21,6 +21,7 @@ from .const import (
     CARD_FILENAME,
     CARD_URL_PREFIX,
     CONF_BASE_PATH,
+    CONF_COPY_DIR,
     CONF_DEFAULT_COLOR,
     CONF_DEFAULT_DPI,
     CONF_DEFAULT_DUPLEX,
@@ -83,6 +84,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         base_path=data.get(CONF_BASE_PATH, DEFAULT_BASE_PATH),
     )
     storage_dir = Path(hass.config.path(".storage")) / STORAGE_SUBDIR
+    copy_dir: Path | None = None
+    if raw_copy := data.get(CONF_COPY_DIR):
+        if hass.config.is_allowed_path(raw_copy):
+            copy_dir = Path(raw_copy)
+        else:
+            _LOGGER.warning(
+                "copy_to_dir %s is outside allowlist_external_dirs; ignoring", raw_copy
+            )
     coordinator = ScanCoordinator(
         hass,
         client,
@@ -91,6 +100,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         default_color=data.get(CONF_DEFAULT_COLOR, DEFAULT_COLOR),
         default_duplex=data.get(CONF_DEFAULT_DUPLEX, DEFAULT_DUPLEX),
         file_ttl_seconds=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL),
+        copy_dir=copy_dir,
     )
     # Model/serial/bed size for device info and scan regions. Best-effort —
     # setup must succeed even when the scanner is asleep or offline.

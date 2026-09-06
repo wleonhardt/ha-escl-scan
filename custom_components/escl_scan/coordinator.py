@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import logging
 from pathlib import Path
+import shutil
 import time
 from typing import Any
 import uuid
@@ -129,6 +130,18 @@ def _safe_unlink(path: Path) -> None:
         pass
 
 
+def _copy_into(src: Path, directory: Path) -> Path:
+    """Blocking: copy `src` into `directory` (created if missing), writing to
+    a temp name first so a consumer watching the folder never sees a partial
+    file. Returns the final path."""
+    directory.mkdir(parents=True, exist_ok=True)
+    dest = directory / src.name
+    tmp = directory / f".{src.name}.tmp"
+    shutil.copyfile(src, tmp)
+    tmp.replace(dest)
+    return dest
+
+
 def _count_pdf_pages(path: Path) -> int | None:
     """Best-effort page count of a PDF. Returns None if pypdf is unavailable
     or the file won't parse — the caller keeps its document-based count."""
@@ -175,6 +188,7 @@ class TrackedScan:
     pages_done: int = 0
     filename: str | None = None
     file_path: Path | None = None
+    copied_to: Path | None = None
     bytes_written: int = 0
     finished_at: datetime | None = None
     error: str | None = None
@@ -202,6 +216,10 @@ class TrackedScan:
                 self.finished_at.isoformat() if self.finished_at else None
             ),
             "error": self.error,
+            "file_path": (
+                str(self.file_path) if self.state == STATE_COMPLETED else None
+            ),
+            "copied_to": str(self.copied_to) if self.copied_to else None,
             "file_url": (
                 f"/api/escl_scan/file/{self.scan_id}" if self.state == STATE_COMPLETED else None
             ),
@@ -221,6 +239,7 @@ class ScanCoordinator:
         default_color: str,
         default_duplex: bool = False,
         file_ttl_seconds: int,
+        copy_dir: Path | None = None,
     ) -> None:
         self._hass = hass
         self._client = client
@@ -229,6 +248,7 @@ class ScanCoordinator:
         self._default_color = default_color
         self._default_duplex = default_duplex
         self._file_ttl = file_ttl_seconds
+        self._copy_dir = copy_dir
         self._caps: ScannerCapabilities | None = None
         self._scans: dict[str, TrackedScan] = {}
         self._current: TrackedScan | None = None
@@ -451,6 +471,18 @@ class ScanCoordinator:
             # Validate + assemble; marks the scan failed itself on error.
             if not await self._assemble_result(scan, parts):
                 return
+
+            # Optional "scan to folder" (e.g. a Paperless consume dir). A
+            # failed copy never fails the scan — the file is still served.
+            if self._copy_dir is not None:
+                try:
+                    scan.copied_to = await self._hass.async_add_executor_job(
+                        _copy_into, scan.file_path, self._copy_dir
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "scan %s: copy to %s failed: %s", scan.scan_id, self._copy_dir, exc
+                    )
 
             # Final JobInfo sanity check — if scanner reports Aborted, honour it.
             final_state = STATE_COMPLETED

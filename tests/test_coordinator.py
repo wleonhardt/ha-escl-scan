@@ -297,6 +297,31 @@ async def test_duplex_only_for_feeder_on_capable_adf(make_coord):
     assert scan.duplex is False  # requested but unsupported
 
 
+async def test_copy_dir_receives_finished_scan(make_coord, tmp_path):
+    consume = tmp_path / "paperless" / "consume"
+    coord = make_coord(FakeClient(docs=[[VALID_PDF]]), copy_dir=consume)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    assert scan.copied_to == consume / scan.filename
+    assert scan.copied_to.read_bytes() == VALID_PDF
+    assert not list(consume.glob(".*.tmp"))  # atomic rename, no leftovers
+    d = scan.to_dict()
+    assert d["file_path"] == str(scan.file_path)
+    assert d["copied_to"] == str(scan.copied_to)
+
+
+async def test_copy_dir_failure_does_not_fail_scan(make_coord, tmp_path):
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("file in the way")
+    coord = make_coord(FakeClient(docs=[[VALID_PDF]]), copy_dir=blocker)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    assert scan.copied_to is None
+    assert scan.file_path.exists()
+
+
 async def test_start_after_terminal_is_allowed(make_coord):
     coord = make_coord(FakeClient(docs=[[VALID_PDF]]))
     scan1 = await coord.start_scan()

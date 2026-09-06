@@ -177,6 +177,8 @@ actions:
 | attributes.state_reasons | The scanner's eSCL `JobStateReasons` |
 | attributes.submitted_at / finished_at | ISO timestamps |
 | attributes.file_url | Download URL once complete (`/api/escl_scan/file/{id}`) |
+| attributes.file_path | Absolute path of the stored PDF once complete (for `shell_command`, Paperless uploads, …) |
+| attributes.copied_to | Path of the copy made by *copy to folder*, if enabled |
 
 Bus events you can trigger automations from:
 
@@ -208,6 +210,42 @@ JSON body `{"scan_id": "abc123"}`. Returns `{"ok": true}` on success.
 
 Streams the PDF. Returns 404 if the scan isn't complete yet or has been
 TTL-purged.
+
+## Scan to folder (Paperless-ngx etc.)
+
+Options → *Also copy finished scans to this folder*. Every completed scan is
+copied there (written under a temp name and renamed, so folder watchers never
+see a half-written file). Point it at a Paperless-ngx consume directory and
+scans become documents with no automation at all. The folder must be listed
+in `configuration.yaml`:
+
+```yaml
+homeassistant:
+  allowlist_external_dirs:
+    - /media/paperless/consume
+```
+
+Copies are never purged by the retention TTL.
+
+## Troubleshooting
+
+- **Download diagnostics** (device page → ⋮ → *Download diagnostics*) and
+  attach it to bug reports: it contains the parsed `ScannerCapabilities`,
+  the current/tracked scans, and redacted entry data.
+- **Debug logging:**
+  ```yaml
+  logger:
+    logs:
+      custom_components.escl_scan: debug
+  ```
+- **`SSLV3_ALERT_HANDSHAKE_FAILURE`** → enable *Allow legacy cipher suites*.
+- **Scan fails with "truncated PDF"** → the DPI/colour combination isn't
+  supported; with capabilities available the DPI snaps automatically, so
+  try a different colour mode.
+- **"scanner busy"** → another client (phone, PC) has an active job; wait
+  or cancel it on the device.
+- **Card shows "Configuration error" briefly on a slow reload** → expected,
+  the card self-heals within a few seconds.
 
 ## Caveats
 

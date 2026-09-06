@@ -20,6 +20,7 @@ import voluptuous as vol
 
 from .const import (
     CONF_BASE_PATH,
+    CONF_COPY_DIR,
     CONF_DEFAULT_COLOR,
     CONF_DEFAULT_DPI,
     CONF_DEFAULT_DUPLEX,
@@ -176,9 +177,15 @@ class EsclScanOptionsFlow(OptionsFlow):
     """
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
-        data = {**self.config_entry.data, **self.config_entry.options}
+            copy_dir = (user_input.get(CONF_COPY_DIR) or "").strip()
+            user_input[CONF_COPY_DIR] = copy_dir
+            if copy_dir and not self.hass.config.is_allowed_path(copy_dir):
+                errors[CONF_COPY_DIR] = "path_not_allowed"
+            else:
+                return self.async_create_entry(title="", data=user_input)
+        data = {**self.config_entry.data, **self.config_entry.options, **(user_input or {})}
         schema = vol.Schema(
             {
                 vol.Required(CONF_HOST, default=data.get(CONF_HOST, "")): str,
@@ -215,6 +222,9 @@ class EsclScanOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_FILE_TTL, default=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL)
                 ): _TTL,
+                vol.Optional(
+                    CONF_COPY_DIR, default=data.get(CONF_COPY_DIR, "")
+                ): str,
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
