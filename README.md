@@ -93,7 +93,17 @@ Fill in:
 | Allow legacy cipher suites | Enable if you see `SSLV3_ALERT_HANDSHAKE_FAILURE` in the logs |
 
 The flow does a quick eSCL `ScannerStatus` probe before saving — any 200
-response confirms the network/auth path works.
+response confirms the network/auth path works. It then reads
+`ScannerCapabilities` (best-effort) for the model name, serial number, bed
+size per source, duplex support, and the supported resolutions:
+
+- the scan region is the full bed of the chosen source (A4, Letter, Legal
+  ADF — whatever the device reports), so nothing gets cropped;
+- a requested DPI the device doesn't offer snaps to the nearest supported one;
+- duplex is only sent for Feeder scans on a duplex-capable ADF.
+
+Options (gear icon on the integration) hold the defaults: DPI, color mode,
+duplex, and file retention.
 
 ## Adding the card to a dashboard
 
@@ -102,6 +112,7 @@ The integration registers the card globally — no `resources:` block needed.
 ```yaml
 type: custom:escl-scan-card
 title: Scan now        # optional, defaults to "Scan now"
+entity: sensor.printer_current_scan   # optional; auto-detected if renamed
 ```
 
 ## Sensor + events
@@ -115,6 +126,7 @@ title: Scan now        # optional, defaults to "Scan now"
 | attributes.filename | Auto-generated filename (e.g. `scan-20260524-153012-adf.pdf`) |
 | attributes.pages_done | Pages pulled from the scanner so far (final PDF page count on completion) |
 | attributes.source | `Platen` or `Feeder` |
+| attributes.duplex | `true` when both sides were requested (Feeder + duplex ADF only) |
 | attributes.state_reasons | The scanner's eSCL `JobStateReasons` |
 | attributes.submitted_at / finished_at | ISO timestamps |
 | attributes.file_url | Download URL once complete (`/api/escl_scan/file/{id}`) |
@@ -132,10 +144,10 @@ The integration registers three HA HTTP views (all `requires_auth = true`):
 
 ### `POST /api/escl_scan/start`
 
-Optional JSON body to override defaults: `{"dpi": 600, "color": "gray", "source": "Feeder"}`. Returns:
+Optional JSON body to override defaults: `{"dpi": 600, "color": "gray", "source": "Feeder", "duplex": true}`. Returns:
 
 ```json
-{"ok": true, "scan_id": "abc123", "source": "Feeder", "dpi": 600, "color": "gray", "state": "pending"}
+{"ok": true, "scan_id": "abc123", "source": "Feeder", "dpi": 600, "color": "gray", "duplex": true, "state": "pending"}
 ```
 
 Returns `409` if a scan is already running — the scanner is single-job

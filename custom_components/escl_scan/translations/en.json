@@ -36,6 +36,7 @@
           "relaxed_ciphers": "Allow legacy cipher suites",
           "default_dpi": "Default scan resolution (DPI)",
           "default_color": "Default color mode (color or gray)",
+          "default_duplex": "Scan both sides by default (ADF duplex, if supported)",
           "file_ttl_seconds": "Scanned file retention (seconds before purge)"
         }
       }

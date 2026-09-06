@@ -4,10 +4,14 @@ unload -> coordinator.async_shutdown path.
 """
 from unittest.mock import patch
 
+from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.escl_scan.const import CONF_HOST, CONF_USE_TLS, DOMAIN
+from custom_components.escl_scan.scanner import ScannerCapabilities
+
+_CAPS = "custom_components.escl_scan.scanner.ScannerClient.get_capabilities"
 
 
 async def _noop_reap(*args, **kwargs):
@@ -25,14 +29,25 @@ async def test_setup_and_unload(hass):
 
     # Skip the background lovelace-reap task (it would linger and trip the
     # harness cleanup check).
-    with patch("custom_components.escl_scan._reap_lovelace_resources", _noop_reap):
+    caps = ScannerCapabilities(make_and_model="HP LaserJet MFP M234sdw", serial_number="SN1")
+    with (
+        patch("custom_components.escl_scan._reap_lovelace_resources", _noop_reap),
+        patch(_CAPS, return_value=caps),
+    ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
         coord = hass.data[DOMAIN][entry.entry_id]["coordinator"]
         assert coord is not None
         assert coord.host == "192.0.2.10"
+        assert coord.capabilities is caps
         assert hass.states.get("sensor.printer_current_scan") is not None
+
+        dev_reg = dr.async_get(hass)
+        device = dev_reg.async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+        assert device.manufacturer == "HP"
+        assert device.model == "LaserJet MFP M234sdw"
+        assert device.serial_number == "SN1"
 
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()

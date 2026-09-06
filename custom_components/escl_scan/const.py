@@ -14,11 +14,13 @@ CONF_RELAXED_CIPHERS = "relaxed_ciphers"
 CONF_DEFAULT_DPI = "default_dpi"
 CONF_DEFAULT_COLOR = "default_color"
 CONF_FILE_TTL = "file_ttl_seconds"
+CONF_DEFAULT_DUPLEX = "default_duplex"
 
 DEFAULT_PORT = 443
 DEFAULT_USER = "anonymous"
 DEFAULT_DPI = 300
 DEFAULT_COLOR = "color"  # "color" | "gray"
+DEFAULT_DUPLEX = False  # only honoured for Feeder scans on duplex-capable ADFs
 DEFAULT_FILE_TTL = 3600  # 1h
 
 # Card asset served via content-hash URL.

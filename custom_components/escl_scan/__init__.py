@@ -22,6 +22,7 @@ from .const import (
     CARD_URL_PREFIX,
     CONF_DEFAULT_COLOR,
     CONF_DEFAULT_DPI,
+    CONF_DEFAULT_DUPLEX,
     CONF_FILE_TTL,
     CONF_HOST,
     CONF_PASSWORD,
@@ -32,6 +33,7 @@ from .const import (
     CONF_VERIFY_TLS,
     DEFAULT_COLOR,
     DEFAULT_DPI,
+    DEFAULT_DUPLEX,
     DEFAULT_FILE_TTL,
     DEFAULT_PORT,
     DEFAULT_USER,
@@ -82,8 +84,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         storage_dir=storage_dir,
         default_dpi=data.get(CONF_DEFAULT_DPI, DEFAULT_DPI),
         default_color=data.get(CONF_DEFAULT_COLOR, DEFAULT_COLOR),
+        default_duplex=data.get(CONF_DEFAULT_DUPLEX, DEFAULT_DUPLEX),
         file_ttl_seconds=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL),
     )
+    # Model/serial/bed size for device info and scan regions. Best-effort —
+    # setup must succeed even when the scanner is asleep or offline.
+    await coordinator.async_refresh_capabilities()
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,
@@ -196,7 +202,7 @@ class ScanStartView(HomeAssistantView):
     """POST /api/escl_scan/start
 
     Optional JSON body: {"dpi": int, "color": "color"|"gray",
-    "source": "Platen"|"Feeder"}."""
+    "source": "Platen"|"Feeder", "duplex": bool}."""
 
     url = "/api/escl_scan/start"
     name = "api:escl_scan:start"
@@ -226,12 +232,17 @@ class ScanStartView(HomeAssistantView):
         color = data.get("color")
         if color not in (None, "color", "gray"):
             return self.json_message("invalid 'color' (must be 'color' or 'gray')", status_code=400)
+        duplex = data.get("duplex")
+        if duplex is not None and not isinstance(duplex, bool):
+            return self.json_message("invalid 'duplex' (must be a boolean)", status_code=400)
 
         coord = self._coord
         if coord is None:
             return self.json_message("integration not configured", status_code=503)
         try:
-            scan = await coord.start_scan(source=source, dpi=dpi, color=color)
+            scan = await coord.start_scan(
+                source=source, dpi=dpi, color=color, duplex=duplex
+            )
         except ScanBusyError:
             return self.json_message("a scan is already running", status_code=409)
         except Exception as exc:
@@ -245,6 +256,7 @@ class ScanStartView(HomeAssistantView):
                 "source": scan.source,
                 "dpi": scan.dpi,
                 "color": scan.color,
+                "duplex": scan.duplex,
                 "state": scan.state,
             }
         )

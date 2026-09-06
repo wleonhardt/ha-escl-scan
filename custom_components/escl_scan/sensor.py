@@ -46,10 +46,17 @@ class ScannerScanSensor(SensorEntity):
     def __init__(self, coordinator: ScanCoordinator, entry_id: str) -> None:
         self._coord = coordinator
         self._attr_unique_id = f"{entry_id}_current_scan"
+        caps = coordinator.capabilities
+        model = caps.make_and_model if caps else None
+        # "HP LaserJet MFP M234sdw" -> manufacturer "HP", model the rest.
+        manufacturer, _, rest = (model or "").partition(" ")
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
-            name=f"eSCL scanner ({coordinator.host})",
-            manufacturer="eSCL / AirScan",
+            name=model or f"eSCL scanner ({coordinator.host})",
+            manufacturer=manufacturer or "eSCL / AirScan",
+            model=rest or None,
+            serial_number=caps.serial_number if caps else None,
+            configuration_url=f"{coordinator.origin}/",
         )
         # Stable entity_id so the card can find it without renames.
         self.entity_id = "sensor.printer_current_scan"

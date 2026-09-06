@@ -2,9 +2,92 @@
 import pytest
 
 from custom_components.escl_scan.scanner import (
+    DEFAULT_REGION,
+    ScannerCapabilities,
     parse_job_info,
+    parse_scanner_capabilities,
     parse_scanner_status,
 )
+
+CAPS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<scan:ScannerCapabilities xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03"
+                          xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
+  <pwg:Version>2.63</pwg:Version>
+  <pwg:MakeAndModel>HP LaserJet MFP M234sdw</pwg:MakeAndModel>
+  <pwg:SerialNumber>CNB1234567</pwg:SerialNumber>
+  <scan:UUID>3f9a-uuid</scan:UUID>
+  <scan:Platen>
+    <scan:PlatenInputCaps>
+      <scan:MinWidth>8</scan:MinWidth><scan:MaxWidth>2550</scan:MaxWidth>
+      <scan:MinHeight>8</scan:MinHeight><scan:MaxHeight>3508</scan:MaxHeight>
+      <scan:SettingProfiles><scan:SettingProfile>
+        <scan:ColorModes>
+          <scan:ColorMode>Grayscale8</scan:ColorMode>
+          <scan:ColorMode>RGB24</scan:ColorMode>
+        </scan:ColorModes>
+        <scan:SupportedResolutions><scan:DiscreteResolutions>
+          <scan:DiscreteResolution><scan:XResolution>75</scan:XResolution><scan:YResolution>75</scan:YResolution></scan:DiscreteResolution>
+          <scan:DiscreteResolution><scan:XResolution>300</scan:XResolution><scan:YResolution>300</scan:YResolution></scan:DiscreteResolution>
+          <scan:DiscreteResolution><scan:XResolution>600</scan:XResolution><scan:YResolution>600</scan:YResolution></scan:DiscreteResolution>
+        </scan:DiscreteResolutions></scan:SupportedResolutions>
+      </scan:SettingProfile></scan:SettingProfiles>
+    </scan:PlatenInputCaps>
+  </scan:Platen>
+  <scan:Adf>
+    <scan:AdfSimplexInputCaps>
+      <scan:MaxWidth>2550</scan:MaxWidth><scan:MaxHeight>4200</scan:MaxHeight>
+    </scan:AdfSimplexInputCaps>
+    <scan:AdfOptions><scan:AdfOption>DetectPaperLoaded</scan:AdfOption><scan:AdfOption>Duplex</scan:AdfOption></scan:AdfOptions>
+  </scan:Adf>
+</scan:ScannerCapabilities>"""
+
+
+def test_capabilities_full_parse():
+    caps = parse_scanner_capabilities(CAPS_XML)
+    assert caps.make_and_model == "HP LaserJet MFP M234sdw"
+    assert caps.serial_number == "CNB1234567"
+    assert caps.device_id == "CNB1234567"
+    assert caps.platen_max == (2550, 3508)
+    assert caps.adf_max == (2550, 4200)
+    assert caps.adf_duplex is True
+    assert caps.resolutions == [75, 300, 600]
+    assert caps.color_modes == ["Grayscale8", "RGB24"]
+    assert caps.region_for("Platen") == (2550, 3508)
+    assert caps.region_for("Feeder") == (2550, 4200)
+
+
+def test_capabilities_snap_dpi_to_supported():
+    caps = parse_scanner_capabilities(CAPS_XML)
+    assert caps.snap_dpi(300) == 300
+    assert caps.snap_dpi(200) == 300
+    assert caps.snap_dpi(1200) == 600
+    assert caps.snap_dpi(100) == 75
+    assert ScannerCapabilities().snap_dpi(1200) == 1200  # unknown -> passthrough
+
+
+def test_capabilities_minimal_document():
+    caps = parse_scanner_capabilities(b"<ScannerCapabilities></ScannerCapabilities>")
+    assert caps.device_id is None
+    assert caps.region_for("Platen") == DEFAULT_REGION
+    assert caps.adf_duplex is False
+    assert caps.resolutions == []
+
+
+def test_capabilities_uuid_fallback_and_duplex_caps_element():
+    xml = (
+        b'<ScannerCapabilities><UUID>u-1</UUID>'
+        b'<Adf><AdfDuplexInputCaps><MaxWidth>2550</MaxWidth><MaxHeight>3508</MaxHeight>'
+        b'</AdfDuplexInputCaps></Adf></ScannerCapabilities>'
+    )
+    caps = parse_scanner_capabilities(xml)
+    assert caps.device_id == "u-1"
+    assert caps.adf_duplex is True
+    assert caps.adf_max == (2550, 3508)
+
+
+def test_capabilities_invalid_xml_raises():
+    with pytest.raises(ValueError):
+        parse_scanner_capabilities(b"<nope")
 
 
 def test_status_hp_adf_loaded():

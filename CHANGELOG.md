@@ -6,6 +6,26 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+### Added
+- `ScannerCapabilities` is read at setup: device page shows the real make,
+  model and serial; the config entry's unique id is the serial/UUID (survives
+  DHCP changes); the scan region is the reported bed size per source (A4 and
+  Legal are no longer cropped to Letter); a requested DPI snaps to the nearest
+  supported resolution.
+- Duplex scanning for Feeder scans on duplex-capable ADFs: `duplex` in the
+  start body and a "scan both sides by default" option.
+- Card `entity:` option; the card also auto-detects a renamed scan sensor.
+
+### Fixed
+- Creating a job while another client is scanning no longer deletes that
+  client's job; the start fails with "scanner busy" instead.
+- Per-page ADF scanners that answer 503 between sheets no longer get their
+  batch truncated: NextDocument retries while JobInfo reports the job alive.
+- Failed/canceled scans are dropped from memory after the retention TTL.
+
+### Removed
+- `pages_total` attribute (was never populated).
+
 ## [0.3.0] - 2026-09-06
 
 ### Added

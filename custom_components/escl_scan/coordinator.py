@@ -30,8 +30,10 @@ from homeassistant.core import HomeAssistant
 
 from .const import EVENT_COMPLETED, EVENT_STATE_CHANGED
 from .scanner import (
+    DEFAULT_REGION,
     TERMINAL_JOB_STATES,
     JobInfo,
+    ScannerCapabilities,
     ScannerClient,
 )
 
@@ -165,6 +167,7 @@ class TrackedScan:
     dpi: int
     color: str
     submitted_at: datetime
+    duplex: bool = False
     job_url: str | None = None
     state: str = STATE_PENDING
     state_reasons: str | None = None
@@ -187,6 +190,7 @@ class TrackedScan:
             "source": self.source,
             "dpi": self.dpi,
             "color": self.color,
+            "duplex": self.duplex,
             "state": self.state,
             "state_reasons": self.state_reasons,
             "pages_done": self.pages_done,
@@ -214,6 +218,7 @@ class ScanCoordinator:
         storage_dir: Path,
         default_dpi: int,
         default_color: str,
+        default_duplex: bool = False,
         file_ttl_seconds: int,
     ) -> None:
         self._hass = hass
@@ -221,7 +226,9 @@ class ScanCoordinator:
         self._storage = storage_dir
         self._default_dpi = default_dpi
         self._default_color = default_color
+        self._default_duplex = default_duplex
         self._file_ttl = file_ttl_seconds
+        self._caps: ScannerCapabilities | None = None
         self._scans: dict[str, TrackedScan] = {}
         self._current: TrackedScan | None = None
         self._driver_tasks: dict[str, asyncio.Task] = {}
@@ -239,6 +246,24 @@ class ScanCoordinator:
     @property
     def host(self) -> str:
         return self._client.host
+
+    @property
+    def origin(self) -> str:
+        return self._client.origin
+
+    @property
+    def capabilities(self) -> ScannerCapabilities | None:
+        return self._caps
+
+    async def async_refresh_capabilities(self) -> ScannerCapabilities | None:
+        """Fetch ScannerCapabilities once (cached). Best-effort: a device
+        that doesn't serve it just leaves us on the built-in defaults."""
+        if self._caps is None:
+            try:
+                self._caps = await self._client.get_capabilities()
+            except Exception as exc:
+                _LOGGER.debug("ScannerCapabilities unavailable: %s", exc)
+        return self._caps
 
     def get(self, scan_id: str) -> TrackedScan | None:
         return self._scans.get(scan_id)
@@ -269,6 +294,7 @@ class ScanCoordinator:
         source: str | None = None,
         dpi: int | None = None,
         color: str | None = None,
+        duplex: bool | None = None,
     ) -> TrackedScan:
         """Kick off a scan. Returns the tracked scan immediately; the
         driver task assembles pages in the background.
@@ -285,9 +311,22 @@ class ScanCoordinator:
         # during the detect_source() network round-trip below.
         self._starting = True
         try:
+            caps = await self.async_refresh_capabilities()
             actual_source = source or await self._client.detect_source()
             actual_dpi = dpi or self._default_dpi
+            if caps is not None and (snapped := caps.snap_dpi(actual_dpi)) != actual_dpi:
+                _LOGGER.info(
+                    "scanner has no %d dpi mode; using nearest supported %d dpi",
+                    actual_dpi, snapped,
+                )
+                actual_dpi = snapped
             actual_color = color or self._default_color
+            want_duplex = self._default_duplex if duplex is None else duplex
+            actual_duplex = (
+                want_duplex
+                and actual_source == "Feeder"
+                and (caps is None or caps.adf_duplex)
+            )
 
             scan_id = uuid.uuid4().hex[:12]
             scan = TrackedScan(
@@ -295,6 +334,7 @@ class ScanCoordinator:
                 source=actual_source,
                 dpi=actual_dpi,
                 color=actual_color,
+                duplex=actual_duplex,
                 submitted_at=datetime.now(UTC),
             )
             self._scans[scan_id] = scan
@@ -312,8 +352,8 @@ class ScanCoordinator:
             self._drive_scan(scan)
         )
         _LOGGER.info(
-            "started scan %s (source=%s dpi=%s color=%s)",
-            scan_id, actual_source, actual_dpi, actual_color,
+            "started scan %s (source=%s dpi=%s color=%s duplex=%s)",
+            scan_id, actual_source, actual_dpi, actual_color, actual_duplex,
         )
         return scan
 
@@ -359,11 +399,17 @@ class ScanCoordinator:
     async def _drive_scan(self, scan: TrackedScan) -> None:
         """Foreground orchestration of a single scan job."""
         try:
+            region = (
+                self._caps.region_for(scan.source) if self._caps else DEFAULT_REGION
+            )
             try:
                 scan.job_url = await self._client.create_job(
                     source=scan.source,
                     dpi=scan.dpi,
                     color=scan.color,
+                    duplex=scan.duplex,
+                    width=region[0],
+                    height=region[1],
                 )
             except Exception as exc:
                 self._mark_terminal(scan, STATE_FAILED, None, error=str(exc))

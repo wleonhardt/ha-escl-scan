@@ -15,6 +15,7 @@ import voluptuous as vol
 from .const import (
     CONF_DEFAULT_COLOR,
     CONF_DEFAULT_DPI,
+    CONF_DEFAULT_DUPLEX,
     CONF_FILE_TTL,
     CONF_HOST,
     CONF_PASSWORD,
@@ -25,6 +26,7 @@ from .const import (
     CONF_VERIFY_TLS,
     DEFAULT_COLOR,
     DEFAULT_DPI,
+    DEFAULT_DUPLEX,
     DEFAULT_FILE_TTL,
     DEFAULT_PORT,
     DEFAULT_USER,
@@ -60,20 +62,30 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
                 relaxed_ciphers=user_input.get(CONF_RELAXED_CIPHERS, False),
                 timeout=10.0,
             )
+            caps = None
             try:
                 await client.get_scanner_status()
+                try:
+                    caps = await client.get_capabilities()
+                except Exception:  # noqa: BLE001 — optional endpoint
+                    caps = None
             except Exception as exc:
                 errors["base"] = "cannot_connect"
                 self._last_error = str(exc)
             finally:
                 await client.async_close()
             if not errors:
+                # Serial/UUID survives a DHCP address change; host:port is
+                # the fallback for devices that don't serve capabilities.
+                device_id = caps.device_id if caps else None
                 await self.async_set_unique_id(
-                    f"{user_input[CONF_HOST]}:{user_input.get(CONF_PORT, DEFAULT_PORT)}"
+                    device_id
+                    or f"{user_input[CONF_HOST]}:{user_input.get(CONF_PORT, DEFAULT_PORT)}"
                 )
                 self._abort_if_unique_id_configured()
+                model = caps.make_and_model if caps else None
                 return self.async_create_entry(
-                    title=f"eSCL scanner at {user_input[CONF_HOST]}",
+                    title=model or f"eSCL scanner at {user_input[CONF_HOST]}",
                     data=user_input,
                 )
 
@@ -145,6 +157,10 @@ class EsclScanOptionsFlow(OptionsFlow):
                     CONF_DEFAULT_COLOR,
                     default=data.get(CONF_DEFAULT_COLOR, DEFAULT_COLOR),
                 ): vol.In(["color", "gray"]),
+                vol.Optional(
+                    CONF_DEFAULT_DUPLEX,
+                    default=data.get(CONF_DEFAULT_DUPLEX, DEFAULT_DUPLEX),
+                ): bool,
                 vol.Optional(
                     CONF_FILE_TTL, default=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL)
                 ): _TTL,

@@ -8,7 +8,11 @@ import io
 import pytest
 
 from custom_components.escl_scan.coordinator import ScanBusyError, ScanCoordinator
-from custom_components.escl_scan.scanner import JobInfo
+from custom_components.escl_scan.scanner import (
+    DEFAULT_REGION,
+    JobInfo,
+    ScannerCapabilities,
+)
 
 VALID_PDF = b"%PDF-1.4\n" + b"x" * 4096 + b"\n%%EOF\n"
 
@@ -29,9 +33,11 @@ def real_pdf(n_pages: int = 1) -> bytes:
 class FakeClient:
     def __init__(
         self, docs=None, *, job_state="Completed", pages=None,
-        source="Platen", gate=None, hang=False,
+        source="Platen", gate=None, hang=False, caps=None,
     ):
         self._docs = [list(d) for d in (docs or [])]
+        self.caps = caps
+        self.create_kwargs = None
         self.job_state = job_state
         self.pages = pages
         self._source = source
@@ -43,7 +49,13 @@ class FakeClient:
     async def detect_source(self):
         return self._source
 
+    async def get_capabilities(self):
+        if self.caps is None:
+            raise OSError("no capabilities endpoint")
+        return self.caps
+
     async def create_job(self, **kwargs):
+        self.create_kwargs = kwargs
         return "https://scanner/eSCL/ScanJobs/j1"
 
     async def iter_next_document(self, url):
@@ -72,10 +84,10 @@ class FakeClient:
 async def make_coord(hass, tmp_path):
     created = []
 
-    def _make(client, ttl=3600):
+    def _make(client, ttl=3600, **kw):
         coord = ScanCoordinator(
             hass, client, storage_dir=tmp_path / "store",
-            default_dpi=300, default_color="color", file_ttl_seconds=ttl,
+            default_dpi=300, default_color="color", file_ttl_seconds=ttl, **kw,
         )
         created.append(coord)
         return coord
@@ -278,6 +290,63 @@ async def test_reap_keeps_current_and_active_scans(make_coord):
     await _drive(coord, scan)
     coord._reap_tracked(set())  # still `current` during the terminal hold
     assert scan.scan_id in coord._scans
+
+
+CAPS = ScannerCapabilities(
+    platen_max=(2550, 3508), adf_max=(2550, 4200), adf_duplex=True,
+    resolutions=[75, 300, 600],
+)
+
+
+async def test_region_from_capabilities_per_source(make_coord):
+    client = FakeClient(docs=[[VALID_PDF]], source="Feeder", caps=CAPS)
+    coord = make_coord(client)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert (client.create_kwargs["width"], client.create_kwargs["height"]) == (2550, 4200)
+
+    client._docs = [[VALID_PDF]]
+    scan = await coord.start_scan(source="Platen")
+    await _drive(coord, scan)
+    assert (client.create_kwargs["width"], client.create_kwargs["height"]) == (2550, 3508)
+
+
+async def test_region_default_without_capabilities(make_coord):
+    client = FakeClient(docs=[[VALID_PDF]])
+    coord = make_coord(client)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert coord.capabilities is None
+    assert (client.create_kwargs["width"], client.create_kwargs["height"]) == DEFAULT_REGION
+
+
+async def test_dpi_snaps_to_supported_resolution(make_coord):
+    client = FakeClient(docs=[[VALID_PDF]], caps=CAPS)
+    coord = make_coord(client)
+    scan = await coord.start_scan(dpi=1200)
+    await _drive(coord, scan)
+    assert scan.dpi == 600
+    assert client.create_kwargs["dpi"] == 600
+
+
+async def test_duplex_only_for_feeder_on_capable_adf(make_coord):
+    client = FakeClient(docs=[[VALID_PDF]], source="Feeder", caps=CAPS)
+    coord = make_coord(client, default_duplex=True)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.duplex is True and client.create_kwargs["duplex"] is True
+
+    client._docs = [[VALID_PDF]]
+    scan = await coord.start_scan(source="Platen")  # platen has no duplex
+    await _drive(coord, scan)
+    assert scan.duplex is False and client.create_kwargs["duplex"] is False
+
+    client.caps = ScannerCapabilities(adf_duplex=False)
+    coord._caps = client.caps
+    client._docs = [[VALID_PDF]]
+    scan = await coord.start_scan(source="Feeder", duplex=True)
+    await _drive(coord, scan)
+    assert scan.duplex is False  # requested but unsupported
 
 
 async def test_start_after_terminal_is_allowed(make_coord):

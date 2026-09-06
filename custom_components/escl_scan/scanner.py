@@ -2,6 +2,7 @@
 
 Implements the surface we need from the AirScan/eSCL spec:
 
+    GET    /eSCL/ScannerCapabilities      — model, serial, bed sizes, duplex, DPIs
     GET    /eSCL/ScannerStatus            — device state, ADF presence, active jobs
     POST   /eSCL/ScanJobs                  — create a scan job (XML ScanSettings body)
     GET    /eSCL/ScanJobs/{uuid}           — JobInfo (state, pages, reasons)
@@ -48,10 +49,13 @@ NEXT_DOCUMENT_RETRY_SECONDS = 120.0
 
 # ── ScanSettings XML template ────────────────────────────────────────────────
 #
-# US Letter region at 1/300" units = 2550 x 3300 (W x H). We use that as
-# a safe default — most scanners clamp to their native bed size anyway.
-# A4 would be 2480 x 3508; users typically don't care unless they hit
-# the edge of the bed.
+# Region units are 1/300". The coordinator passes the source's MaxWidth /
+# MaxHeight from ScannerCapabilities so the full bed is scanned whatever the
+# paper size. When capabilities are unavailable we fall back to A4-ish
+# 2550 x 3508 (Letter width, A4 height) — scanners clamp oversize regions
+# down to the bed, but never grow a too-small one, so erring large is safe.
+DEFAULT_REGION = (2550, 3508)
+
 _SCAN_SETTINGS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <scan:ScanSettings xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03"
                    xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
@@ -70,9 +74,10 @@ _SCAN_SETTINGS_XML = """<?xml version="1.0" encoding="UTF-8"?>
   <scan:DocumentFormatExt>{format}</scan:DocumentFormatExt>
   <scan:XResolution>{dpi}</scan:XResolution>
   <scan:YResolution>{dpi}</scan:YResolution>
-  <scan:ColorMode>{color}</scan:ColorMode>
+  <scan:ColorMode>{color}</scan:ColorMode>{duplex}
 </scan:ScanSettings>
 """
+_DUPLEX_XML = "\n  <scan:Duplex>true</scan:Duplex>"
 
 
 def _color_mode(color: str) -> str:
@@ -93,6 +98,35 @@ class ScannerStatus:
     @property
     def is_idle(self) -> bool:
         return self.state == "Idle"
+
+
+@dataclass
+class ScannerCapabilities:
+    """Parsed subset of ScannerCapabilities we act on."""
+
+    make_and_model: str | None = None
+    serial_number: str | None = None
+    uuid: str | None = None
+    platen_max: tuple[int, int] | None = None  # (width, height) in 1/300"
+    adf_max: tuple[int, int] | None = None
+    adf_duplex: bool = False
+    resolutions: list[int] = field(default_factory=list)  # sorted, discrete
+    color_modes: list[str] = field(default_factory=list)
+
+    @property
+    def device_id(self) -> str | None:
+        """Stable identifier for unique_id: serial first, then UUID."""
+        return self.serial_number or self.uuid
+
+    def region_for(self, source: str) -> tuple[int, int]:
+        caps = self.adf_max if source == "Feeder" else self.platen_max
+        return caps or DEFAULT_REGION
+
+    def snap_dpi(self, dpi: int) -> int:
+        """Nearest supported discrete resolution (or dpi itself if unknown)."""
+        if not self.resolutions:
+            return dpi
+        return min(self.resolutions, key=lambda r: (abs(r - dpi), r))
 
 
 @dataclass
@@ -148,6 +182,60 @@ def parse_scanner_status(xml: bytes) -> ScannerStatus:
     text = xml.decode("utf-8", "replace")
     uris = [m.group(1) for m in re.finditer(r"<[^>]*JobUri[^>]*>([^<]+)</", text)]
     return ScannerStatus(state=state, adf_loaded=adf_loaded, active_job_uris=uris)
+
+
+def _int(text: str | None) -> int | None:
+    try:
+        return int(text) if text is not None else None
+    except ValueError:
+        return None
+
+
+def parse_scanner_capabilities(xml: bytes) -> ScannerCapabilities:
+    """Tolerant parse of ScannerCapabilities. Everything is optional —
+    vendors omit whole sections — so any missing field stays None/empty and
+    the caller falls back to defaults."""
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError as exc:
+        raise ValueError(f"ScannerCapabilities: invalid XML ({exc})") from exc
+
+    def _max_region(caps_name: str) -> tuple[int, int] | None:
+        el = _find_local(root, caps_name)
+        if el is None:
+            return None
+        w = _int(_text(_find_local(el, "MaxWidth")))
+        h = _int(_text(_find_local(el, "MaxHeight")))
+        return (w, h) if w and h else None
+
+    adf = _find_local(root, "Adf")
+    adf_duplex = adf is not None and (
+        _find_local(adf, "AdfDuplexInputCaps") is not None
+        or any(
+            _local(el.tag) == "AdfOption" and _text(el) == "Duplex"
+            for el in adf.iter()
+        )
+    )
+    resolutions: set[int] = set()
+    for el in root.iter():
+        if _local(el.tag) == "DiscreteResolution":
+            x = _int(_text(_find_local(el, "XResolution")))
+            if x:
+                resolutions.add(x)
+    color_modes: list[str] = []
+    for el in root.iter():
+        if _local(el.tag) == "ColorMode" and (t := _text(el)) and t not in color_modes:
+            color_modes.append(t)
+    return ScannerCapabilities(
+        make_and_model=_text(_find_local(root, "MakeAndModel")),
+        serial_number=_text(_find_local(root, "SerialNumber")),
+        uuid=_text(_find_local(root, "UUID")),
+        platen_max=_max_region("PlatenInputCaps"),
+        adf_max=_max_region("AdfSimplexInputCaps") or _max_region("AdfDuplexInputCaps"),
+        adf_duplex=adf_duplex,
+        resolutions=sorted(resolutions),
+        color_modes=color_modes,
+    )
 
 
 def parse_job_info(xml: bytes) -> JobInfo:
@@ -244,6 +332,10 @@ class ScannerClient:
         return self._host
 
     @property
+    def origin(self) -> str:
+        return self._origin
+
+    @property
     def base_url(self) -> str:
         return self._base
 
@@ -311,6 +403,14 @@ class ScannerClient:
             resp.raise_for_status()
             return parse_scanner_status(await resp.read())
 
+    async def get_capabilities(self) -> ScannerCapabilities:
+        s = await self._session()
+        async with s.get(
+            f"{self._base}/ScannerCapabilities", timeout=_SHORT_TIMEOUT
+        ) as resp:
+            resp.raise_for_status()
+            return parse_scanner_capabilities(await resp.read())
+
     # ── ScanJob lifecycle ───────────────────────────────────────────────
 
     async def detect_source(self) -> str:
@@ -329,9 +429,10 @@ class ScannerClient:
         source: str,
         dpi: int,
         color: str,
+        duplex: bool = False,
         document_format: str = "application/pdf",
-        width: int = 2550,
-        height: int = 3300,
+        width: int = DEFAULT_REGION[0],
+        height: int = DEFAULT_REGION[1],
     ) -> str:
         """Create a ScanJob; returns the job's absolute URL.
 
@@ -347,6 +448,7 @@ class ScannerClient:
             format=document_format,
             width=width,
             height=height,
+            duplex=_DUPLEX_XML if duplex else "",
         ).encode("utf-8")
         headers = {"Content-Type": "text/xml; charset=utf-8"}
         s = await self._session()

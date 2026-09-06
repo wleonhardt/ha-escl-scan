@@ -12,8 +12,10 @@ from custom_components.escl_scan.const import (
     CONF_HOST,
     DOMAIN,
 )
+from custom_components.escl_scan.scanner import ScannerCapabilities
 
 _OK = "custom_components.escl_scan.config_flow.ScannerClient.get_scanner_status"
+_CAPS = "custom_components.escl_scan.config_flow.ScannerClient.get_capabilities"
 
 
 async def test_user_flow_success(hass: HomeAssistant):
@@ -22,7 +24,8 @@ async def test_user_flow_success(hass: HomeAssistant):
     )
     assert result["type"] == data_entry_flow.FlowResultType.FORM
 
-    with patch(_OK, return_value=None):
+    caps = ScannerCapabilities(make_and_model="Canon TR8600", serial_number="ABC123")
+    with patch(_OK, return_value=None), patch(_CAPS, return_value=caps):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_HOST: "192.0.2.10"}
         )
@@ -30,6 +33,20 @@ async def test_user_flow_success(hass: HomeAssistant):
 
     assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_HOST] == "192.0.2.10"
+    assert result["title"] == "Canon TR8600"
+    assert result["result"].unique_id == "ABC123"
+
+
+async def test_user_flow_without_capabilities_falls_back_to_host(hass: HomeAssistant):
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    with patch(_OK, return_value=None), patch(_CAPS, side_effect=OSError("404")):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_HOST: "192.0.2.10"}
+        )
+    assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == "192.0.2.10:443"
 
 
 async def test_user_flow_cannot_connect(hass: HomeAssistant):
