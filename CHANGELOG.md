@@ -6,6 +6,8 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-06
+
 ### Added
 - Zeroconf/mDNS discovery (`_uscan._tcp`, `_uscans._tcp`): scanners show up
   under *Discovered*; the TXT `rs` resource path is honoured for devices
@@ -83,7 +85,8 @@ match `custom_components/escl_scan/manifest.json`.
 Last release before the stability review. See GitHub releases for earlier
 history.
 
-[Unreleased]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.1.7...v0.3.0
 [0.2.0]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.1.7...v0.3.0
 [0.1.7]: https://github.com/wleonhardt/ha-escl-scan/releases/tag/v0.1.7

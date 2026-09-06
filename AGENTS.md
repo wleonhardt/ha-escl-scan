@@ -22,6 +22,8 @@ Lovelace card (`static/card.js`). No build step, no dependencies beyond HA core
 - Match existing style; tolerant XML parsing (local tag names, not namespace-strict)
   is deliberate — vendors differ.
 - Project knowledge belongs in `plans/`, not agent memory.
+- Never delete another client's scanner job: the 503 purge only runs when ScannerStatus is Idle.
+- Anything that touches the network in setup/flows must be patchable in tests (HA blocks sockets).
 - Commit after each meaningful change (only when user asked for commits).
 
 ## Before-done checklist
@@ -39,11 +41,13 @@ Lovelace card (`static/card.js`). No build step, no dependencies beyond HA core
 ## Workspace structure
 - `custom_components/escl_scan/` — integration
   - `__init__.py` — setup, HTTP views (start/cancel/file), card URL registration
-  - `scanner.py` — eSCL HTTP client + XML parsing
-  - `coordinator.py` — scan lifecycle driver, state machine, file retention
-  - `sensor.py` — `sensor.printer_current_scan` mirror entity
-  - `config_flow.py` — config + options flow
-  - `static/card.js` — Lovelace card (served content-hashed)
+  - `scanner.py` — eSCL HTTP client + XML parsing (status, capabilities, jobs, streaming)
+  - `coordinator.py` — scan lifecycle driver, state machine, copy-to-folder, file retention
+  - `sensor.py` / `button.py` — `sensor.printer_current_scan`, `button.*_scan_now`
+  - `services.py` + `services.yaml` — `escl_scan.start` / `escl_scan.cancel`
+  - `config_flow.py` — user + zeroconf flows, options flow
+  - `diagnostics.py`, `icons.json`, `brand/` (inline icon, HA 2026.3+)
+  - `static/card.js` — Lovelace card + visual editor (served content-hashed)
 - `plans/` — plans, decisions, open questions
 - `examples/` — dashboard YAML snippets
 

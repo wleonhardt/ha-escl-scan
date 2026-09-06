@@ -1,5 +1,10 @@
 # eSCL Scan for Home Assistant
 
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![GitHub release](https://img.shields.io/github/v/release/wleonhardt/ha-escl-scan)](https://github.com/wleonhardt/ha-escl-scan/releases)
+[![validate](https://github.com/wleonhardt/ha-escl-scan/actions/workflows/validate.yml/badge.svg)](https://github.com/wleonhardt/ha-escl-scan/actions/workflows/validate.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A Home Assistant custom integration that triggers document scans on any
 eSCL/AirScan-capable network scanner and surfaces **per-job state** through
 a sensor — including live page progress for ADF batches, completion,
@@ -61,18 +66,28 @@ auto-upload to Paperless, etc.).
 
 ## Requirements
 
-- Home Assistant 2024.8 or newer
+- Home Assistant 2024.8 or newer (2026.3+ for the integration icon)
 - A network scanner that supports eSCL / AirScan (most modern MFPs do)
 - The scanner reachable from your HA host (typically port 443 or 80)
 
+### Tested devices
+
+| Device | Platen | ADF | Duplex | Notes |
+|---|---|---|---|---|
+| HP LaserJet MFP (developer's device; exact model to be confirmed) | ✅ | ✅ | untested | Needs *Allow legacy cipher suites* (non-PFS TLS ciphers) |
+
+Works with yours? Open a [device report](https://github.com/wleonhardt/ha-escl-scan/issues/new?template=device_report.yml)
+and it gets added here.
+
 ## Installation
 
-### Via HACS (custom repository)
+### Via HACS
 
-1. HACS → Integrations → ⋮ → Custom repositories
-2. Add `https://github.com/wleonhardt/ha-escl-scan` as type **Integration**
-3. Install **eSCL Scan**
-4. Restart Home Assistant
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=wleonhardt&repository=ha-escl-scan&category=integration)
+
+Or manually: HACS → ⋮ → Custom repositories → add
+`https://github.com/wleonhardt/ha-escl-scan` as type **Integration**, install
+**eSCL Scan**, restart Home Assistant.
 
 ### Manual
 
@@ -264,24 +279,33 @@ Copies are never purged by the retention TTL.
 ```
 custom_components/escl_scan/
 ├── __init__.py        # entry setup, HTTP views, card registration
-├── config_flow.py     # UI flow + options flow
-├── coordinator.py     # scan lifecycle driver + file retention
+├── button.py          # button.<scanner>_scan_now
+├── config_flow.py     # user + zeroconf flows, options flow
+├── coordinator.py     # scan lifecycle driver, copy-to-folder, file retention
 ├── const.py
+├── diagnostics.py
 ├── manifest.json
-├── scanner.py         # eSCL wire format + client
+├── scanner.py         # eSCL wire format + client (capabilities, jobs, streaming)
 ├── sensor.py          # sensor.printer_current_scan
-├── static/card.js     # the Lovelace card
-├── strings.json
+├── services.py        # escl_scan.start / escl_scan.cancel
+├── services.yaml
+├── static/card.js     # the Lovelace card + its visual editor
+├── brand/             # integration icon (HA 2026.3+ inline brands)
+├── strings.json, icons.json
 └── translations/en.json
 ```
 
 ### Tests
 
 ```
-pip install -r requirements-test.txt
-pytest -q            # parser, coordinator lifecycle, scanner, config-flow tests
-ruff check custom_components tests
+python3 -m venv .venv && .venv/bin/pip install -r requirements-test.txt
+.venv/bin/pytest -q            # parsers, scanner client, coordinator, flows, services, views
+.venv/bin/ruff check custom_components tests
 ```
+
+Releases: bump `version` in `manifest.json`, add a CHANGELOG section, push a
+`vX.Y.Z` tag — the release workflow publishes the GitHub release from the
+CHANGELOG entry (HACS only installs releases).
 
 Pull requests welcome.
 
