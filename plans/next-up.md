@@ -1,8 +1,8 @@
 # Next up
 
 ## Queue
-- Submit to HACS default list (`hacs/default` → `integration`) once v0.4.0 is
-  released and its validate run is green.
+- HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
+  nothing to do on our side.
 - Live-test v0.4.0 against the real printer: zeroconf discovery, capabilities
   parse (attach XML to a device report), duplex, copy-to-folder.
 

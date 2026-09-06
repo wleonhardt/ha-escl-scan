@@ -9,4 +9,5 @@
 - Card load mechanism → `add_extra_js_url` only; resource sync reaped (2026-07-20).
 - pypdf dependency → accepted, pure Python (2026-07-20, v0.3.0).
 - Brands submission → not needed; inline `brand/` folder since HA 2026.3 (2026-09-06).
+- HACS default listing → already listed in `hacs/default` `integration` (verified 2026-09-06).
 - Storage location (`.storage` vs elsewhere) → stays; backups include either (2026-09-06).

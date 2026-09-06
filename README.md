@@ -1,6 +1,6 @@
 # eSCL Scan for Home Assistant
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/default)
 [![GitHub release](https://img.shields.io/github/v/release/wleonhardt/ha-escl-scan)](https://github.com/wleonhardt/ha-escl-scan/releases)
 [![validate](https://github.com/wleonhardt/ha-escl-scan/actions/workflows/validate.yml/badge.svg)](https://github.com/wleonhardt/ha-escl-scan/actions/workflows/validate.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -81,13 +81,12 @@ and it gets added here.
 
 ## Installation
 
-### Via HACS
+### Via HACS (default store)
 
 [![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=wleonhardt&repository=ha-escl-scan&category=integration)
 
-Or manually: HACS → ⋮ → Custom repositories → add
-`https://github.com/wleonhardt/ha-escl-scan` as type **Integration**, install
-**eSCL Scan**, restart Home Assistant.
+HACS → search **eSCL Scan** → Download → restart Home Assistant. No custom
+repository needed.
 
 ### Manual
 
