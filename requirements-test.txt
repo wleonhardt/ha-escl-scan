@@ -2,4 +2,4 @@
 # Home Assistant core + pytest stack; pytest-aiohttp supplies aiohttp_server.
 pytest-homeassistant-custom-component
 pytest-aiohttp
-pypdf>=4.0
+pypdf>=6.16.2
