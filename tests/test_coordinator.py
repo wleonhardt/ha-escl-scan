@@ -254,6 +254,32 @@ async def test_shutdown_cancels_inflight_driver(make_coord):
     assert client.closed is True
 
 
+async def test_reap_drops_expired_terminal_scans_without_files(make_coord):
+    # Failed scans never produce a file, so the old file-based reap kept them
+    # forever. They must age out by finished_at instead.
+    coord = make_coord(FakeClient(docs=[]), ttl=0)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "failed" and scan.scan_id in coord._scans
+
+    coord._current = None  # simulate the terminal hold having elapsed
+    coord._reap_tracked(set())
+    assert scan.scan_id not in coord._scans
+
+
+async def test_reap_keeps_current_and_active_scans(make_coord):
+    gate = asyncio.Event()
+    coord = make_coord(FakeClient(docs=[[VALID_PDF]], gate=gate), ttl=0)
+    scan = await coord.start_scan()
+    await _wait_for(lambda: scan.state == "processing")
+    coord._reap_tracked(set())
+    assert scan.scan_id in coord._scans
+    gate.set()
+    await _drive(coord, scan)
+    coord._reap_tracked(set())  # still `current` during the terminal hold
+    assert scan.scan_id in coord._scans
+
+
 async def test_start_after_terminal_is_allowed(make_coord):
     coord = make_coord(FakeClient(docs=[[VALID_PDF]]))
     scan1 = await coord.start_scan()

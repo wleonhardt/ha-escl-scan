@@ -1,5 +1,10 @@
-# Test dependencies. pytest-homeassistant-custom-component pins a matching
-# Home Assistant core + pytest stack; pytest-aiohttp supplies aiohttp_server.
-pytest-homeassistant-custom-component
-pytest-aiohttp
-pypdf>=4.0
+# Test/lint dependencies, pinned so CI is reproducible; Dependabot bumps them
+# monthly. pytest-homeassistant-custom-component pins the matching Home
+# Assistant core + pytest stack; pytest-aiohttp supplies aiohttp_server.
+pytest-homeassistant-custom-component==0.13.364
+pytest-aiohttp==1.1.1
+# frontend is a hard dependency of the integration (add_extra_js_url)
+home-assistant-frontend==20260826.6
+# runtime requirement from manifest.json, needed by the merge/page-count tests
+pypdf==6.17.0
+ruff==0.16.6

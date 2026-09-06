@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import logging
 from pathlib import Path
 import time
@@ -169,7 +169,6 @@ class TrackedScan:
     state: str = STATE_PENDING
     state_reasons: str | None = None
     pages_done: int = 0
-    pages_total: int | None = None
     filename: str | None = None
     file_path: Path | None = None
     bytes_written: int = 0
@@ -191,7 +190,6 @@ class TrackedScan:
             "state": self.state,
             "state_reasons": self.state_reasons,
             "pages_done": self.pages_done,
-            "pages_total": self.pages_total,
             "filename": self.filename,
             "bytes": self.bytes_written,
             "submitted_at": self.submitted_at.isoformat(),
@@ -699,11 +697,14 @@ class ScanCoordinator:
         self._reap_tracked(deleted)
 
     def _reap_tracked(self, deleted: set[Path]) -> None:
-        """Drop tracked entries whose files were just TTL-purged. Runs on the
-        event loop — safe to mutate `self._scans` here."""
-        if not deleted:
-            return
+        """Drop tracked entries whose files were just TTL-purged, plus any
+        terminal scan (failed/canceled ones never had a file) older than the
+        TTL. Runs on the event loop — safe to mutate `self._scans` here."""
+        cutoff = datetime.now(UTC) - timedelta(seconds=self._file_ttl)
         for scan_id in list(self._scans):
             s = self._scans[scan_id]
-            if s.is_terminal() and s.file_path in deleted:
+            if not s.is_terminal() or s is self._current:
+                continue
+            expired = s.finished_at is not None and s.finished_at < cutoff
+            if s.file_path in deleted or expired:
                 self._scans.pop(scan_id, None)

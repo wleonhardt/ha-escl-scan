@@ -4,7 +4,9 @@
 //
 // Type:  custom:escl-scan-card
 // Options:
-//   title:  string, default "Scan now"
+//   title:   string, default "Scan now"
+//   entity:  the scan sensor, default sensor.printer_current_scan (auto-
+//            detected if that entity was renamed)
 
 const TAG = 'escl-scan-card';
 
@@ -243,6 +245,28 @@ C.prototype._cancelScan = async function () {
 };
 
 const SCAN_SENSOR = 'sensor.printer_current_scan';
+
+// Resolve the scan sensor: explicit `entity:` config wins; otherwise the
+// default id; otherwise find the (single) escl_scan sensor by its enum
+// options so a user-renamed entity still works. Result is cached.
+C.prototype._scanState = function () {
+  const states = this._hass?.states;
+  if (!states) return null;
+  const id = this._config?.entity;
+  if (id) return states[id] || null;
+  if (states[SCAN_SENSOR]) return states[SCAN_SENSOR];
+  if (this._sensorId && states[this._sensorId]) return states[this._sensorId];
+  for (const [eid, st] of Object.entries(states)) {
+    const a = st.attributes || {};
+    if (eid.startsWith('sensor.') && 'scan_id' in a
+        && Array.isArray(a.options) && a.options.includes('processing-stopped')) {
+      this._sensorId = eid;
+      return st;
+    }
+  }
+  return null;
+};
+
 const TERMINAL_STATES = new Set(['completed', 'canceled', 'aborted', 'failed']);
 const ACTIVE_STATES = new Set(['pending', 'processing', 'processing-stopped']);
 // How long a finished result (esp. the "Open scan" link) stays on the card
@@ -260,7 +284,7 @@ C.prototype._clearResultTimer = function () {
 // re-renders only when something meaningful changed.
 C.prototype._onHass = function () {
   if (!this._rendered) return;
-  const st = this._hass?.states?.[SCAN_SENSOR];
+  const st = this._scanState();
   if (!st) return;
   const attrs = st.attributes || {};
   const state = st.state;

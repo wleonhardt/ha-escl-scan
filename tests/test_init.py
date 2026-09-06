@@ -23,12 +23,9 @@ async def test_setup_and_unload(hass):
     )
     entry.add_to_hass(hass)
 
-    # Avoid the frontend dependency and the background lovelace-reap task
-    # (which would otherwise linger and trip the harness cleanup check).
-    with (
-        patch("custom_components.escl_scan.add_extra_js_url"),
-        patch("custom_components.escl_scan._reap_lovelace_resources", _noop_reap),
-    ):
+    # Skip the background lovelace-reap task (it would linger and trip the
+    # harness cleanup check).
+    with patch("custom_components.escl_scan._reap_lovelace_resources", _noop_reap):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 

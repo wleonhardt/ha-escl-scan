@@ -40,6 +40,11 @@ _STREAM_CHUNK = 1024 * 1024
 _SHORT_TIMEOUT = aiohttp.ClientTimeout(total=10.0)
 _STREAM_TIMEOUT = aiohttp.ClientTimeout(sock_connect=15, sock_read=90)
 
+# NextDocument may answer 503 while the ADF is still feeding the next sheet.
+# We keep retrying while JobInfo says the job is alive, bounded by this
+# wall-clock budget so a wedged device can't hang the driver forever.
+NEXT_DOCUMENT_RETRY_SECONDS = 120.0
+
 
 # ── ScanSettings XML template ────────────────────────────────────────────────
 #
@@ -331,8 +336,9 @@ class ScannerClient:
         """Create a ScanJob; returns the job's absolute URL.
 
         Raises if the device returns a non-2xx status or omits the Location
-        header. Tolerates the 503-while-an-old-job-is-pending case by purging
-        and retrying once.
+        header. Tolerates the 503-while-a-stale-job-occupies-a-slot case by
+        purging and retrying once — but only when the scanner reports Idle,
+        so a job another client is actively running is never deleted.
         """
         body = _SCAN_SETTINGS_XML.format(
             source=source,
@@ -357,10 +363,17 @@ class ScannerClient:
 
         status, loc, err = await _post()
         if status == 503:
-            # Likely a stale prior job. Purge and retry.
-            _LOGGER.info("eSCL ScanJobs returned 503; purging and retrying")
-            await self._purge_active_jobs(s)
-            status, loc, err = await _post()
+            # Idle device with leftover job slots → stale jobs, purge and
+            # retry. A busy device → someone else is scanning, leave it be.
+            purged = await self._purge_active_jobs(s)
+            if purged:
+                _LOGGER.info(
+                    "eSCL ScanJobs returned 503; purged %d stale job(s), retrying",
+                    purged,
+                )
+                status, loc, err = await _post()
+            else:
+                raise RuntimeError("scanner busy (another job is active)")
         if status not in (200, 201):
             raise RuntimeError(f"scan create failed: {status} {err or ''}")
         if not loc:
@@ -389,10 +402,12 @@ class ScannerClient:
           * 404 / 410 — canonical "no more documents". Stop.
           * 503 — HP returns this in two contradictory ways:
                   (a) the document IS exhausted (signals "done")
-                  (b) the next chunk is still being processed ("retry me")
-                Strategy: retry a couple times with backoff. If 503 persists
-                we treat it as "done" so the loop terminates.
-          * 500 — sometimes transient. Retry.
+                  (b) the next page is still being scanned ("retry me")
+                Strategy: ask JobInfo. Job gone or terminal → done. Job still
+                Pending/Processing → back off and retry, up to
+                NEXT_DOCUMENT_RETRY_SECONDS (per-page ADF scanners can take
+                several seconds per sheet).
+          * 500 — sometimes transient. Same treatment.
 
         Once streaming has begun, a mid-transfer error propagates to the
         caller, which keeps the partial file and lets PDF validation decide.
@@ -400,23 +415,35 @@ class ScannerClient:
         capping large-but-healthy transfers.
         """
         s = await self._session()
-        for attempt in range(3):
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + NEXT_DOCUMENT_RETRY_SECONDS
+        backoff = 0.5
+        while True:
             async with s.get(
                 f"{job_url}/NextDocument", timeout=_STREAM_TIMEOUT
             ) as resp:
                 if resp.status in (404, 410):
                     return
-                if resp.status in (500, 503):
-                    # Transient on attempt 0-1; treat as "done" on the
-                    # third try if it still hasn't resolved.
-                    if attempt < 2:
-                        await asyncio.sleep(0.5 * (attempt + 1))
-                        continue
+                if resp.status not in (500, 503):
+                    resp.raise_for_status()
+                    async for chunk in resp.content.iter_chunked(_STREAM_CHUNK):
+                        yield chunk
                     return
-                resp.raise_for_status()
-                async for chunk in resp.content.iter_chunked(_STREAM_CHUNK):
-                    yield chunk
+            if not await self._job_still_running(job_url) or loop.time() >= deadline:
                 return
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 3.0)
+
+    async def _job_still_running(self, job_url: str) -> bool:
+        """True while JobInfo reports a non-terminal state. Probe failures
+        count as "still running" so a flaky status endpoint doesn't truncate
+        a batch; the caller's deadline bounds that."""
+        try:
+            info = await self.get_job_info(job_url)
+        except Exception as exc:
+            _LOGGER.debug("JobInfo probe during NextDocument retry failed: %s", exc)
+            return True
+        return info is not None and not info.is_terminal
 
     async def delete_job(self, job_url: str) -> bool:
         """Cancel a scan job. Returns True on 2xx, False otherwise.
@@ -441,6 +468,10 @@ class ScannerClient:
                     return 0
                 status = parse_scanner_status(await resp.read())
         except Exception:
+            return 0
+        if not status.is_idle:
+            # Jobs listed on a non-idle device belong to a live scan (possibly
+            # another client's). Never delete those.
             return 0
         purged = 0
         for uri in status.active_job_uris:

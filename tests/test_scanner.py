@@ -23,6 +23,12 @@ class _Backend:
         self.next_calls = 0
         self.peernames = set()
         self.create_calls = 0
+        self.deleted = []
+        # Scripted NextDocument statuses before the real document arrives.
+        self.next_prelude = []
+        self.job_state = b"Completed"
+        self.scanner_state = b"Idle"
+        self.create_status = 201
 
 
 @pytest.fixture
@@ -33,17 +39,29 @@ async def scanner(aiohttp_server, socket_enabled):
 
     async def status(request):
         backend.peernames.add(request.transport.get_extra_info("peername"))
-        return web.Response(body=STATUS_XML)
+        return web.Response(
+            body=b"<ScannerStatus><State>" + backend.scanner_state + b"</State>"
+            b"<AdfState>ScannerAdfLoaded</AdfState>"
+            b"<Jobs><JobInfo><JobUri>/eSCL/ScanJobs/stale</JobUri></JobInfo></Jobs>"
+            b"</ScannerStatus>"
+        )
 
     async def create(request):
         backend.create_calls += 1
         await request.read()
+        if backend.create_status != 201:
+            return web.Response(status=backend.create_status)
         return web.Response(status=201, headers={"Location": "/eSCL/ScanJobs/j1"})
 
     async def jobinfo(request):
-        return web.Response(body=JOBINFO_XML)
+        return web.Response(
+            body=b"<ScanJob><JobState>" + backend.job_state + b"</JobState>"
+            b"<ImagesCompleted>1</ImagesCompleted></ScanJob>"
+        )
 
     async def nextdoc(request):
+        if backend.next_prelude:
+            return web.Response(status=backend.next_prelude.pop(0))
         backend.next_calls += 1
         if backend.next_calls == 1:
             resp = web.StreamResponse(status=200)
@@ -56,6 +74,10 @@ async def scanner(aiohttp_server, socket_enabled):
         raise web.HTTPNotFound()
 
     async def delete(request):
+        backend.deleted.append(request.match_info["jid"])
+        hook = getattr(backend, "on_delete", None)
+        if hook:
+            await hook()
         return web.Response(status=200)
 
     app = web.Application()
@@ -126,6 +148,52 @@ async def test_close_then_rebuild(scanner):
     assert scanner._session_obj is None
     st = await scanner.get_scanner_status()
     assert st.state == "Idle"
+
+
+async def test_next_document_retries_503_while_job_alive(scanner, monkeypatch):
+    # Per-page ADF scanners answer 503 while the next sheet feeds; keep
+    # retrying while JobInfo says Processing, then stream the document.
+    monkeypatch.setattr("custom_components.escl_scan.scanner.asyncio.sleep", _no_sleep)
+    scanner._backend.job_state = b"Processing"
+    scanner._backend.next_prelude = [503, 503, 500]
+    buf = bytearray()
+    async for chunk in scanner.iter_next_document(_url(scanner)):
+        buf.extend(chunk)
+    assert bytes(buf) == VALID_PDF
+
+
+async def test_next_document_503_on_terminal_job_means_done(scanner):
+    # HP: 503 after the last page with JobInfo already Completed → stop.
+    scanner._backend.next_prelude = [503]
+    chunks = [c async for c in scanner.iter_next_document(_url(scanner))]
+    assert chunks == []
+    assert scanner._backend.next_calls == 0
+
+
+async def test_create_job_503_purges_stale_jobs_when_idle(scanner):
+    scanner._backend.create_status = 503
+
+    # First POST 503s; purge (device Idle) deletes the stale job; retry succeeds.
+    async def flip(*_):
+        scanner._backend.create_status = 201
+    scanner._backend.on_delete = flip
+    url = await scanner.create_job(source="Platen", dpi=300, color="color")
+    assert url.endswith("/ScanJobs/j1")
+    assert scanner._backend.deleted == ["stale"]
+    assert scanner._backend.create_calls == 2
+
+
+async def test_create_job_503_on_busy_device_never_deletes(scanner):
+    scanner._backend.create_status = 503
+    scanner._backend.scanner_state = b"Processing"
+    with pytest.raises(RuntimeError, match="busy"):
+        await scanner.create_job(source="Platen", dpi=300, color="color")
+    assert scanner._backend.deleted == []
+    assert scanner._backend.create_calls == 1
+
+
+async def _no_sleep(_seconds):
+    return None
 
 
 def _url(scanner):

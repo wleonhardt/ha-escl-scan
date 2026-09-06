@@ -39,7 +39,7 @@ supports (HP, Canon, Epson, modern Brother, Kyocera, Xerox, …).
 - `ScanJobs/{uuid}` (DELETE) to cancel
 
 Job state flows into `sensor.printer_current_scan` (state + filename
-+ pages_done + pages_total + source + timestamps), and
++ pages_done + source + timestamps), and
 `escl_scan_state_changed` / `escl_scan_completed` events fire on the bus so
 you can wire up automations (mobile notifications with the PDF attached,
 auto-upload to Paperless, etc.).
@@ -113,8 +113,7 @@ title: Scan now        # optional, defaults to "Scan now"
 | state | `idle` / `pending` / `processing` / `processing-stopped` / `canceled` / `aborted` / `completed` / `failed` |
 | attributes.scan_id | Internal scan id (matches the file endpoint) |
 | attributes.filename | Auto-generated filename (e.g. `scan-20260524-153012-adf.pdf`) |
-| attributes.pages_done | Pages pulled from the scanner so far |
-| attributes.pages_total | Total pages, if the scanner reports it (ADF only) |
+| attributes.pages_done | Pages pulled from the scanner so far (final PDF page count on completion) |
 | attributes.source | `Platen` or `Feeder` |
 | attributes.state_reasons | The scanner's eSCL `JobStateReasons` |
 | attributes.submitted_at / finished_at | ISO timestamps |
