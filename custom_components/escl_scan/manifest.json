@@ -23,5 +23,9 @@
     "pypdf>=4.0"
   ],
   "single_config_entry": true,
-  "version": "0.3.0"
+  "version": "0.3.0",
+  "zeroconf": [
+    "_uscan._tcp.local.",
+    "_uscans._tcp.local."
+  ]
 }

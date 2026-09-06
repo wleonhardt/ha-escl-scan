@@ -20,6 +20,7 @@ from homeassistant.helpers.typing import ConfigType
 from .const import (
     CARD_FILENAME,
     CARD_URL_PREFIX,
+    CONF_BASE_PATH,
     CONF_DEFAULT_COLOR,
     CONF_DEFAULT_DPI,
     CONF_DEFAULT_DUPLEX,
@@ -31,6 +32,7 @@ from .const import (
     CONF_USE_TLS,
     CONF_USER,
     CONF_VERIFY_TLS,
+    DEFAULT_BASE_PATH,
     DEFAULT_COLOR,
     DEFAULT_DPI,
     DEFAULT_DUPLEX,
@@ -42,10 +44,11 @@ from .const import (
 )
 from .coordinator import ScanBusyError, ScanCoordinator
 from .scanner import ScannerClient
+from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["button", "sensor"]
 
 _CARD_FILE = Path(__file__).parent / "static" / CARD_FILENAME
 
@@ -63,6 +66,7 @@ def _card_url_sync() -> str:
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    async_register_services(hass)
     return True
 
 
@@ -76,6 +80,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         password=data.get(CONF_PASSWORD, ""),
         verify_tls=data.get(CONF_VERIFY_TLS, False),
         relaxed_ciphers=data.get(CONF_RELAXED_CIPHERS, False),
+        base_path=data.get(CONF_BASE_PATH, DEFAULT_BASE_PATH),
     )
     storage_dir = Path(hass.config.path(".storage")) / STORAGE_SUBDIR
     coordinator = ScanCoordinator(

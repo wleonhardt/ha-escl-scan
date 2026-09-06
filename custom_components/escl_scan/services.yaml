@@ -1,0 +1,36 @@
+start:
+  fields:
+    source:
+      example: Feeder
+      selector:
+        select:
+          options:
+            - Platen
+            - Feeder
+    dpi:
+      example: 300
+      selector:
+        number:
+          min: 50
+          max: 1200
+          step: 1
+          unit_of_measurement: dpi
+          mode: box
+    color:
+      example: color
+      selector:
+        select:
+          options:
+            - color
+            - gray
+    duplex:
+      example: false
+      selector:
+        boolean:
+
+cancel:
+  fields:
+    scan_id:
+      example: 3f9a1c2b4d5e
+      selector:
+        text:

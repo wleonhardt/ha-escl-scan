@@ -27,8 +27,9 @@ from typing import Any
 import uuid
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 
-from .const import EVENT_COMPLETED, EVENT_STATE_CHANGED
+from .const import DOMAIN, EVENT_COMPLETED, EVENT_STATE_CHANGED
 from .scanner import (
     DEFAULT_REGION,
     TERMINAL_JOB_STATES,
@@ -254,6 +255,22 @@ class ScanCoordinator:
     @property
     def capabilities(self) -> ScannerCapabilities | None:
         return self._caps
+
+    def device_info(self, entry_id: str) -> DeviceInfo:
+        """One device for all entities. Make/model/serial come from
+        ScannerCapabilities when the device serves it."""
+        caps = self._caps
+        model = caps.make_and_model if caps else None
+        # "HP LaserJet MFP M234sdw" -> manufacturer "HP", model the rest.
+        manufacturer, _, rest = (model or "").partition(" ")
+        return DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            name=model or f"eSCL scanner ({self.host})",
+            manufacturer=manufacturer or "eSCL / AirScan",
+            model=rest or None,
+            serial_number=caps.serial_number if caps else None,
+            configuration_url=f"{self.origin}/",
+        )
 
     async def async_refresh_capabilities(self) -> ScannerCapabilities | None:
         """Fetch ScannerCapabilities once (cached). Best-effort: a device

@@ -7,6 +7,13 @@ match `custom_components/escl_scan/manifest.json`.
 ## [Unreleased]
 
 ### Added
+- Zeroconf/mDNS discovery (`_uscan._tcp`, `_uscans._tcp`): scanners show up
+  under *Discovered*; the TXT `rs` resource path is honoured for devices
+  that don't serve `/eSCL`.
+- `escl_scan.start` (with response) and `escl_scan.cancel` services, plus a
+  `button.<scanner>_scan_now` entity, so automations and stock cards can
+  trigger scans without the REST API.
+- Translated sensor states and entity names (`translation_key`), icons.
 - `ScannerCapabilities` is read at setup: device page shows the real make,
   model and serial; the config entry's unique id is the serial/UUID (survives
   DHCP changes); the scan region is the reported bed size per source (A4 and

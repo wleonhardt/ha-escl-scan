@@ -3,16 +3,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
 )
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 import voluptuous as vol
 
 from .const import (
+    CONF_BASE_PATH,
     CONF_DEFAULT_COLOR,
     CONF_DEFAULT_DPI,
     CONF_DEFAULT_DUPLEX,
@@ -24,6 +31,7 @@ from .const import (
     CONF_USE_TLS,
     CONF_USER,
     CONF_VERIFY_TLS,
+    DEFAULT_BASE_PATH,
     DEFAULT_COLOR,
     DEFAULT_DPI,
     DEFAULT_DUPLEX,
@@ -33,6 +41,8 @@ from .const import (
     DOMAIN,
 )
 from .scanner import ScannerClient
+
+_ZEROCONF_TLS_TYPE = "_uscans._tcp.local."
 
 # Mask the credential in both flows instead of showing it in plain text.
 _PASSWORD_SELECTOR = TextSelector(
@@ -48,6 +58,47 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
     ScannerStatus probe. Any well-formed eSCL response confirms the path."""
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        self._discovered: dict[str, Any] = {}
+        self._discovered_name = ""
+
+    async def async_step_zeroconf(
+        self, discovery_info: ZeroconfServiceInfo
+    ) -> ConfigFlowResult:
+        """eSCL scanners advertise _uscan._tcp (HTTP) / _uscans._tcp (HTTPS).
+        TXT keys: `rs` = resource path (usually "eSCL"), `ty` = model name,
+        `UUID` = device id. Never creates an entry without confirmation."""
+        props = discovery_info.properties
+        host = discovery_info.host
+        self._async_abort_entries_match({CONF_HOST: host})
+        uuid = props.get("UUID")
+        name = props.get("ty") or discovery_info.name.split(".", 1)[0]
+        self._discovered = {
+            CONF_HOST: host,
+            CONF_PORT: discovery_info.port or DEFAULT_PORT,
+            CONF_USE_TLS: discovery_info.type == _ZEROCONF_TLS_TYPE,
+            CONF_BASE_PATH: (props.get("rs") or DEFAULT_BASE_PATH).strip("/"),
+            CONF_USER: DEFAULT_USER,
+            CONF_PASSWORD: "",
+            CONF_VERIFY_TLS: False,
+            CONF_RELAXED_CIPHERS: False,
+        }
+        await self.async_set_unique_id(uuid or f"{host}:{self._discovered[CONF_PORT]}")
+        self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        self.context["title_placeholders"] = {"name": name}
+        self._discovered_name = name
+        return await self.async_step_zeroconf_confirm()
+
+    async def async_step_zeroconf_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is None:
+            return self.async_show_form(
+                step_id="zeroconf_confirm",
+                description_placeholders={"name": self._discovered_name},
+            )
+        return self.async_create_entry(title=self._discovered_name, data=self._discovered)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}

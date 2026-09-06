@@ -13,14 +13,20 @@
           "verify_tls": "Verify TLS certificate",
           "relaxed_ciphers": "Allow legacy cipher suites"
         }
+      },
+      "zeroconf_confirm": {
+        "title": "Discovered scanner",
+        "description": "Set up {name}? Credentials, TLS verification and scan defaults can be changed later in the integration's options."
       }
     },
     "error": {
       "cannot_connect": "Could not reach the scanner. Check host/port/TLS settings. Detail: {error_detail}"
     },
     "abort": {
-      "already_configured": "This scanner is already configured."
-    }
+      "already_configured": "This scanner is already configured.",
+      "single_instance_allowed": "Only one scanner can be configured."
+    },
+    "flow_title": "{name}"
   },
   "options": {
     "step": {
@@ -40,6 +46,73 @@
           "file_ttl_seconds": "Scanned file retention (seconds before purge)"
         }
       }
+    }
+  },
+  "entity": {
+    "button": {
+      "scan_now": {
+        "name": "Scan now"
+      }
+    },
+    "sensor": {
+      "current_scan": {
+        "name": "Current scan",
+        "state": {
+          "idle": "Idle",
+          "pending": "Pending",
+          "processing": "Scanning",
+          "processing-stopped": "Paused",
+          "canceled": "Canceled",
+          "aborted": "Aborted",
+          "completed": "Completed",
+          "failed": "Failed"
+        }
+      }
+    }
+  },
+  "services": {
+    "start": {
+      "name": "Start scan",
+      "description": "Starts a scan on the configured eSCL scanner. Omitted fields use the integration's defaults; the source is auto-detected (ADF if loaded, else platen).",
+      "fields": {
+        "source": {
+          "name": "Source",
+          "description": "Platen (flatbed) or Feeder (ADF)."
+        },
+        "dpi": {
+          "name": "Resolution",
+          "description": "Scan resolution in DPI; snaps to the nearest value the scanner supports."
+        },
+        "color": {
+          "name": "Color mode",
+          "description": "color or gray."
+        },
+        "duplex": {
+          "name": "Duplex",
+          "description": "Scan both sides (Feeder only, duplex-capable ADFs)."
+        }
+      }
+    },
+    "cancel": {
+      "name": "Cancel scan",
+      "description": "Cancels a running scan. Without a scan id, cancels the current scan.",
+      "fields": {
+        "scan_id": {
+          "name": "Scan ID",
+          "description": "The scan_id from the sensor attributes or the start response."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_configured": {
+      "message": "eSCL Scan is not configured."
+    },
+    "scan_busy": {
+      "message": "A scan is already running."
+    },
+    "no_active_scan": {
+      "message": "No active scan to cancel."
     }
   }
 }

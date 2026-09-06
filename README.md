@@ -47,8 +47,11 @@ auto-upload to Paperless, etc.).
 ## Features
 
 - 📄 Direct eSCL submission — no SANE, no CUPS, no driver layer
+- 🔍 Auto-discovered via mDNS (`_uscan`/`_uscans`) — shows up under *Discovered*
 - 📚 Multi-page ADF batches merged into one PDF (per-page scanners included)
+- 📐 Full-bed scan region and duplex from the device's own `ScannerCapabilities`
 - 📊 Per-scan sensor (`sensor.printer_current_scan`) with live page progress
+- 🔘 `button.<scanner>_scan_now` entity + `escl_scan.start` / `escl_scan.cancel` services for automations
 - 🔔 Bus events for state changes and completion
 - 🛑 Cancel-Job support
 - 🎨 Lovelace card with one-tap scan and status display
@@ -78,9 +81,13 @@ auto-upload to Paperless, etc.).
 
 ## Setup
 
-**Settings → Devices & Services → Add Integration → eSCL Scan**
+Most eSCL scanners advertise themselves on the LAN, so the scanner usually
+appears under **Settings → Devices & Services → Discovered**; press
+*Configure*, confirm, done. Credentials and TLS settings can be adjusted
+afterwards in the integration's options.
 
-Fill in:
+For manual setup: **Settings → Devices & Services → Add Integration → eSCL Scan**
+and fill in:
 
 | Field | Notes |
 |---|---|
@@ -113,6 +120,46 @@ The integration registers the card globally — no `resources:` block needed.
 type: custom:escl-scan-card
 title: Scan now        # optional, defaults to "Scan now"
 entity: sensor.printer_current_scan   # optional; auto-detected if renamed
+```
+
+## Services and button
+
+For automations, use the services instead of the REST API (no token needed):
+
+```yaml
+# Scan the ADF in grayscale, both sides, and grab the resulting scan_id
+action: escl_scan.start
+data:
+  source: Feeder      # optional: Platen | Feeder (auto-detected if omitted)
+  dpi: 300            # optional, snaps to a supported resolution
+  color: gray         # optional: color | gray
+  duplex: true        # optional, Feeder + duplex ADF only
+response_variable: scan
+
+# Cancel the current scan (or pass scan_id: ...)
+action: escl_scan.cancel
+```
+
+`escl_scan.start` returns the same dict the sensor exposes as attributes
+(`scan_id`, `source`, `dpi`, `state`, …). A `button.<scanner>_scan_now`
+entity is created too, so a stock *Tile* or *Button* card works without the
+custom card.
+
+### Example: notify with the PDF when a scan completes
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: escl_scan_completed
+conditions:
+  - condition: template
+    value_template: "{{ trigger.event.data.state == 'completed' }}"
+actions:
+  - action: notify.mobile_app_phone
+    data:
+      message: "Scan ready: {{ trigger.event.data.pages_done }} page(s)"
+      data:
+        url: "{{ trigger.event.data.file_url }}"
 ```
 
 ## Sensor + events

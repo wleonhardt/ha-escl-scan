@@ -5,6 +5,7 @@ DOMAIN = "escl_scan"
 
 # Config-entry data keys.
 CONF_HOST = "host"
+CONF_BASE_PATH = "base_path"  # eSCL resource path from mDNS `rs`, default "eSCL"
 CONF_PORT = "port"
 CONF_USE_TLS = "use_tls"
 CONF_USER = "user"
@@ -17,6 +18,7 @@ CONF_FILE_TTL = "file_ttl_seconds"
 CONF_DEFAULT_DUPLEX = "default_duplex"
 
 DEFAULT_PORT = 443
+DEFAULT_BASE_PATH = "eSCL"
 DEFAULT_USER = "anonymous"
 DEFAULT_DPI = 300
 DEFAULT_COLOR = "color"  # "color" | "gray"

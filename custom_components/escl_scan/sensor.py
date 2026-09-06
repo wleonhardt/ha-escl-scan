@@ -6,7 +6,6 @@ from typing import Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -37,8 +36,7 @@ class ScannerScanSensor(SensorEntity):
     """Mirrors ScanCoordinator.current as a sensor entity."""
 
     _attr_has_entity_name = True
-    _attr_name = "Current scan"
-    _attr_icon = "mdi:scanner"
+    _attr_translation_key = "current_scan"
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = SCAN_STATES
     _attr_should_poll = False
@@ -46,18 +44,7 @@ class ScannerScanSensor(SensorEntity):
     def __init__(self, coordinator: ScanCoordinator, entry_id: str) -> None:
         self._coord = coordinator
         self._attr_unique_id = f"{entry_id}_current_scan"
-        caps = coordinator.capabilities
-        model = caps.make_and_model if caps else None
-        # "HP LaserJet MFP M234sdw" -> manufacturer "HP", model the rest.
-        manufacturer, _, rest = (model or "").partition(" ")
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=model or f"eSCL scanner ({coordinator.host})",
-            manufacturer=manufacturer or "eSCL / AirScan",
-            model=rest or None,
-            serial_number=caps.serial_number if caps else None,
-            configuration_url=f"{coordinator.origin}/",
-        )
+        self._attr_device_info = coordinator.device_info(entry_id)
         # Stable entity_id so the card can find it without renames.
         self.entity_id = "sensor.printer_current_scan"
         self._unsub = None

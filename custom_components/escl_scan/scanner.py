@@ -306,6 +306,7 @@ class ScannerClient:
         verify_tls: bool = False,
         relaxed_ciphers: bool = False,
         timeout: float = 120.0,
+        base_path: str = "eSCL",
     ) -> None:
         self._host = host
         self._port = port
@@ -318,7 +319,7 @@ class ScannerClient:
         scheme = "https" if use_tls else "http"
         port_suffix = "" if port in (80, 443) else f":{port}"
         self._origin = f"{scheme}://{host}{port_suffix}"
-        self._base = f"{self._origin}/eSCL"
+        self._base = f"{self._origin}/{base_path.strip('/')}"
         # Built once, lazily, and reused across every request — a fresh
         # session/connector/SSL context per call meant a TLS handshake and a
         # CA-bundle read on every 1.5s poll. Guarded so concurrent first-use

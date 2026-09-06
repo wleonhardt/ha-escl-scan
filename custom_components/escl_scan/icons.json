@@ -1,0 +1,26 @@
+{
+  "entity": {
+    "button": {
+      "scan_now": {
+        "default": "mdi:scanner"
+      }
+    },
+    "sensor": {
+      "current_scan": {
+        "default": "mdi:scanner",
+        "state": {
+          "idle": "mdi:scanner-off",
+          "processing": "mdi:scanner",
+          "completed": "mdi:file-check-outline",
+          "failed": "mdi:alert-circle-outline",
+          "aborted": "mdi:alert-circle-outline",
+          "canceled": "mdi:cancel"
+        }
+      }
+    }
+  },
+  "services": {
+    "start": { "service": "mdi:scanner" },
+    "cancel": { "service": "mdi:cancel" }
+  }
+}
