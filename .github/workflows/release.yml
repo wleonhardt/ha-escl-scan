@@ -1,0 +1,35 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches manifest version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest=$(python3 -c "import json;print(json.load(open('custom_components/escl_scan/manifest.json'))['version'])")
+          if [ "$tag" != "$manifest" ]; then
+            echo "tag v$tag != manifest $manifest" >&2
+            exit 1
+          fi
+      - name: Extract changelog section
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          awk -v ver="$tag" '
+            /^## \[/ { if (found) exit; if (index($0, "[" ver "]")) { found=1; next } }
+            found { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          test -s RELEASE_NOTES.md || echo "See CHANGELOG.md" > RELEASE_NOTES.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md

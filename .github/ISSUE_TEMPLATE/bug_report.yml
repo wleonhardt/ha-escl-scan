@@ -1,0 +1,35 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Scanner make and model
+      placeholder: HP LaserJet MFP M234sdw
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: eSCL Scan version and Home Assistant version
+      placeholder: escl_scan 0.3.0, Home Assistant 2026.8.1
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Relevant lines from Settings → System → Logs with debug logging enabled
+        (`logger: logs: custom_components.escl_scan: debug`). The integration's
+        diagnostics download (device page → ⋮ → Download diagnostics) helps too.
+      render: text

@@ -1,0 +1,56 @@
+# Changelog
+
+All notable changes to this project are documented here. Format follows
+[Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
+match `custom_components/escl_scan/manifest.json`.
+
+## [Unreleased]
+
+## [0.3.0] - 2026-09-06
+
+### Added
+- Multi-document ADF scans are merged into a single PDF (issue #1). Scanners
+  that return one PDF per page are now handled; bundle-mode scanners keep the
+  single-file fast path. Adds a `pypdf` requirement.
+- `pages_done` reports the real page count of the resulting PDF for
+  bundle-mode scanners.
+
+### Changed
+- Test suite (pytest + `pytest-homeassistant-custom-component`) and ruff lint
+  run in CI alongside hassfest and HACS validation.
+- Card colours follow the active HA theme; `single_config_entry` declared;
+  sensor grouped under a device.
+
+## [0.2.0] - 2026-07-20
+
+### Fixed
+- Second "Scan now" tap during a running scan no longer kills the running
+  job; the start endpoint returns `409` instead.
+- Entry reload/unload cancels in-flight driver, poll, and hold tasks and
+  closes the HTTP session (no orphaned tasks after options changes).
+- Scan output streams straight to disk; the PDF is never buffered in RAM
+  (large ADF batches no longer risk OOM on small hosts).
+- TTL purge no longer mutates coordinator state from an executor thread.
+- A periodic sweep purges expired scan files even when no new scan runs.
+- Card title updates live in the dashboard editor.
+- Options flow validates port/DPI/TTL ranges and masks the password field.
+
+### Changed
+- One shared aiohttp session and SSL context per scanner instead of one per
+  request.
+- Card renders from the `hass` object Lovelace pushes; no more
+  `state_changed` firehose subscription. Scans started from another device
+  are reflected too.
+- Card loads solely via `add_extra_js_url`; stale Lovelace resource entries
+  from older versions are reaped once.
+- Heal observer for the Lovelace `whenDefined` race disconnects after 12 s.
+
+## [0.1.7] - 2026-05-24
+
+Last release before the stability review. See GitHub releases for earlier
+history.
+
+[Unreleased]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.1.7...v0.3.0
+[0.2.0]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.1.7...v0.3.0
+[0.1.7]: https://github.com/wleonhardt/ha-escl-scan/releases/tag/v0.1.7

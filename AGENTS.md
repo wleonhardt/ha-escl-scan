@@ -14,8 +14,8 @@ Lovelace card (`static/card.js`). No build step, no dependencies beyond HA core
 (aiohttp comes from HA). Sister project: ipp_print (shares patterns).
 
 ## Non-negotiable rules
-- `python -m compileall -q custom_components/escl_scan` must pass before done.
-- CI must stay green: hassfest, HACS validation (`.github/workflows/validate.yml`).
+- `pytest -q` and `ruff check custom_components tests` must pass before done.
+- CI must stay green: hassfest, HACS validation, ruff, pytest (`.github/workflows/validate.yml`).
 - card.js is plain ES module, no framework, no build — keep it that way.
 - All scanner I/O is async (aiohttp); never block the event loop (file I/O via
   `hass.async_add_executor_job`). Never mutate coordinator state from executor threads.
@@ -25,14 +25,16 @@ Lovelace card (`static/card.js`). No build step, no dependencies beyond HA core
 - Commit after each meaningful change (only when user asked for commits).
 
 ## Before-done checklist
-- [ ] compileall passes
-- [ ] version bumped in `manifest.json` if user-facing change
+- [ ] `pytest -q` + `ruff check` pass
+- [ ] version bumped in `manifest.json` if user-facing change; CHANGELOG.md entry added
 - [ ] README/examples updated if config surface changed
+- [ ] release: push tag `vX.Y.Z` (release workflow publishes the GitHub release; HACS installs releases only)
 - [ ] no `__pycache__`/`.pyc` staged
 
 ## Key commands
-- Byte-compile check: `python -m compileall -q custom_components/escl_scan`
-- No test suite yet (see plans/stability-review-2026-07-20.md P4)
+- Setup: `python3 -m venv .venv && .venv/bin/pip install -r requirements-test.txt ruff`
+- Tests: `.venv/bin/pytest -q`
+- Lint: `.venv/bin/ruff check custom_components tests`
 
 ## Workspace structure
 - `custom_components/escl_scan/` — integration

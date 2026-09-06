@@ -1,0 +1,31 @@
+name: Device compatibility report
+description: Tell us whether your scanner works (helps the tested-devices table)
+labels: [device-report]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Scanner make and model
+    validations:
+      required: true
+  - type: dropdown
+    id: works
+    attributes:
+      label: Does it work?
+      options: [Yes, Partially, No]
+    validations:
+      required: true
+  - type: checkboxes
+    id: features
+    attributes:
+      label: What works
+      options:
+        - label: Platen scan
+        - label: ADF multi-page scan
+        - label: Cancel
+        - label: Legacy cipher option needed
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Quirks, settings used, ScannerCapabilities XML if you have it.
