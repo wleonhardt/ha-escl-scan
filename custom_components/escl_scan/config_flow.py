@@ -70,10 +70,11 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
         """eSCL scanners advertise _uscan._tcp (HTTP) / _uscans._tcp (HTTPS).
         TXT keys: `rs` = resource path (usually "eSCL"), `ty` = model name,
         `UUID` = device id. Never creates an entry without confirmation."""
-        props = discovery_info.properties
+        # TXT keys vary in case between vendors (HP: `uuid`, others: `UUID`).
+        props = {str(k).lower(): v for k, v in discovery_info.properties.items()}
         host = discovery_info.host
         self._async_abort_entries_match({CONF_HOST: host})
-        uuid = props.get("UUID")
+        uuid = props.get("uuid")
         name = props.get("ty") or discovery_info.name.split(".", 1)[0]
         self._discovered = {
             CONF_HOST: host,

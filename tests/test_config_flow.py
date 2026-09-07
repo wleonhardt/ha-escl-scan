@@ -112,7 +112,8 @@ async def test_zeroconf_discovery_confirm_creates_entry(hass: HomeAssistant):
 
 
 async def test_zeroconf_plain_http_and_custom_resource_path(hass: HomeAssistant):
-    info = _zeroconf("_uscan._tcp.local.", port=8080, props={"rs": "/escl/", "UUID": "u2"})
+    # HP advertises lowercase `uuid`; the lookup must be case-insensitive.
+    info = _zeroconf("_uscan._tcp.local.", port=8080, props={"rs": "/escl/", "uuid": "u2"})
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_ZEROCONF}, data=info
     )
@@ -121,6 +122,7 @@ async def test_zeroconf_plain_http_and_custom_resource_path(hass: HomeAssistant)
     assert result["data"][CONF_USE_TLS] is False
     assert result["data"][CONF_PORT] == 8080
     assert result["data"][CONF_BASE_PATH] == "escl"
+    assert result["result"].unique_id == "u2"
     # No `ty` → falls back to the service instance name.
     assert result["title"] == "HP LaserJet MFP M234sdw [1234]"
 

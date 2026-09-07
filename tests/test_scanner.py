@@ -39,6 +39,9 @@ async def scanner(aiohttp_server, socket_enabled):
 
     async def status(request):
         backend.peernames.add(request.transport.get_extra_info("peername"))
+        hook = getattr(backend, "on_status", None)
+        if hook:
+            await hook()
         return web.Response(
             body=b"<ScannerStatus><State>" + backend.scanner_state + b"</State>"
             b"<AdfState>ScannerAdfLoaded</AdfState>"
@@ -183,13 +186,38 @@ async def test_create_job_503_purges_stale_jobs_when_idle(scanner):
     assert scanner._backend.create_calls == 2
 
 
-async def test_create_job_503_on_busy_device_never_deletes(scanner):
+async def test_create_job_503_on_busy_device_never_deletes(scanner, monkeypatch):
+    monkeypatch.setattr("custom_components.escl_scan.scanner.SCANNER_IDLE_WAIT_SECONDS", 0.0)
     scanner._backend.create_status = 503
     scanner._backend.scanner_state = b"Processing"
     with pytest.raises(RuntimeError, match="busy"):
         await scanner.create_job(source="Platen", dpi=300, color="color")
     assert scanner._backend.deleted == []
     assert scanner._backend.create_calls == 1
+
+
+async def test_create_job_503_waits_for_idle_after_cancel(scanner, monkeypatch):
+    # Live HP behaviour: right after a cancel the device 503s ScanJobs and
+    # reports Processing for a few seconds, then goes Idle. We must wait,
+    # not fail with "busy".
+    monkeypatch.setattr("custom_components.escl_scan.scanner.asyncio.sleep", _no_sleep)
+    b = scanner._backend
+    b.create_status = 503
+    b.scanner_state = b"Processing"
+    polls = {"n": 0}
+    orig_status = b.scanner_state
+
+    async def flip_after_polls():
+        polls["n"] += 1
+        if polls["n"] >= 3:
+            b.scanner_state = b"Idle"
+            b.create_status = 201
+    b.on_status = flip_after_polls
+    url = await scanner.create_job(source="Platen", dpi=300, color="color")
+    assert url.endswith("/ScanJobs/j1")
+    assert b.deleted == ["stale"]  # idle → stale slot purged before retry
+    assert b.create_calls == 2
+    assert orig_status == b"Processing" and polls["n"] >= 3
 
 
 async def _no_sleep(_seconds):

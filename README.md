@@ -74,7 +74,7 @@ auto-upload to Paperless, etc.).
 
 | Device | Platen | ADF | Duplex | Notes |
 |---|---|---|---|---|
-| HP LaserJet MFP (developer's device; exact model to be confirmed) | ✅ | ✅ | untested | Needs *Allow legacy cipher suites* (non-PFS TLS ciphers) |
+| HP Color LaserJet MFP M283fdw | ✅ | ✅ | n/a (simplex ADF) | Discovered via mDNS; capabilities, DPI snap, cancel, copy-to-folder verified live on HA 2026.9.1 |
 
 Works with yours? Open a [device report](https://github.com/wleonhardt/ha-escl-scan/issues/new?template=device_report.yml)
 and it gets added here.

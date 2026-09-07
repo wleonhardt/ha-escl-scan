@@ -6,6 +6,19 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-07
+
+Live-tested against an HP Color LaserJet MFP M283fdw on HA 2026.9.1.
+
+### Fixed
+- Starting a scan right after a cancel failed with "scanner busy": HP MFPs
+  answer 503 and report *Processing* for a few seconds while the cancelled
+  job winds down. `create_job` now waits (up to 15 s) for the device to go
+  Idle before purging stale jobs and retrying; only a device that stays busy
+  is reported as busy.
+- Zeroconf: TXT keys are matched case-insensitively (HP advertises `uuid`,
+  not `UUID`), so discovered HP devices get their UUID as unique id.
+
 ### Added
 - jsdom test suite for the Lovelace card (`npm run test:card`) in CI: start /
   cancel / 409, hass-setter progress rendering incl. the latched "Open scan"

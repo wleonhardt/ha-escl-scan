@@ -46,6 +46,11 @@ _STREAM_TIMEOUT = aiohttp.ClientTimeout(sock_connect=15, sock_read=90)
 # wall-clock budget so a wedged device can't hang the driver forever.
 NEXT_DOCUMENT_RETRY_SECONDS = 120.0
 
+# After a cancel (or a previous job finishing) HP MFPs answer 503 on ScanJobs
+# and report Processing for a few seconds. Wait this long for Idle before
+# declaring the device busy with someone else's job.
+SCANNER_IDLE_WAIT_SECONDS = 15.0
+
 
 # ── ScanSettings XML template ────────────────────────────────────────────────
 #
@@ -466,22 +471,40 @@ class ScannerClient:
 
         status, loc, err = await _post()
         if status == 503:
-            # Idle device with leftover job slots → stale jobs, purge and
-            # retry. A busy device → someone else is scanning, leave it be.
-            purged = await self._purge_active_jobs(s)
-            if purged:
-                _LOGGER.info(
-                    "eSCL ScanJobs returned 503; purged %d stale job(s), retrying",
-                    purged,
-                )
-                status, loc, err = await _post()
-            else:
+            # A device still winding down its previous/cancelled job reports
+            # non-Idle briefly: wait for Idle. Then purge any stale job slots
+            # (only ever done on an Idle device — a job on a busy device is
+            # someone else's) and retry once. Still not Idle → truly busy.
+            if not await self._wait_idle(s):
                 raise RuntimeError("scanner busy (another job is active)")
+            purged = await self._purge_active_jobs(s)
+            _LOGGER.info(
+                "eSCL ScanJobs returned 503; device idle again, purged %d stale job(s), retrying",
+                purged,
+            )
+            status, loc, err = await _post()
         if status not in (200, 201):
             raise RuntimeError(f"scan create failed: {status} {err or ''}")
         if not loc:
             raise RuntimeError("scan create: no Location header")
         return self._absolute(loc)
+
+    async def _wait_idle(self, session: aiohttp.ClientSession) -> bool:
+        """Poll ScannerStatus until Idle or SCANNER_IDLE_WAIT_SECONDS elapse."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + SCANNER_IDLE_WAIT_SECONDS
+        while True:
+            try:
+                async with session.get(
+                    f"{self._base}/ScannerStatus", timeout=_SHORT_TIMEOUT
+                ) as resp:
+                    if resp.status == 200 and parse_scanner_status(await resp.read()).is_idle:
+                        return True
+            except Exception as exc:  # noqa: BLE001 — keep polling until deadline
+                _LOGGER.debug("ScannerStatus poll failed while waiting for idle: %s", exc)
+            if loop.time() >= deadline:
+                return False
+            await asyncio.sleep(1.0)
 
     async def get_job_info(self, job_url: str) -> JobInfo | None:
         """Fetch JobInfo for an in-flight scan. Returns None on 404
