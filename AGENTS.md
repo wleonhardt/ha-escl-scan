@@ -14,7 +14,7 @@ Lovelace card (`static/card.js`). No build step, no dependencies beyond HA core
 (aiohttp comes from HA). Sister project: ipp_print (shares patterns).
 
 ## Non-negotiable rules
-- `pytest -q` and `ruff check custom_components tests` must pass before done.
+- `pytest -q`, `ruff check custom_components tests`, and `npm run test:card` (after `npm ci`) must pass before done.
 - CI must stay green: hassfest, HACS validation, ruff, pytest (`.github/workflows/validate.yml`).
 - card.js is plain ES module, no framework, no build — keep it that way.
 - All scanner I/O is async (aiohttp); never block the event loop (file I/O via

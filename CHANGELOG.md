@@ -6,6 +6,11 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+### Added
+- jsdom test suite for the Lovelace card (`npm run test:card`) in CI: start /
+  cancel / 409, hass-setter progress rendering incl. the latched "Open scan"
+  link, renamed-sensor auto-detection, error-card healing, editor events.
+
 ## [0.4.1] - 2026-09-06
 
 ### Fixed

@@ -300,6 +300,7 @@ custom_components/escl_scan/
 python3 -m venv .venv && .venv/bin/pip install -r requirements-test.txt
 .venv/bin/pytest -q            # parsers, scanner client, coordinator, flows, services, views
 .venv/bin/ruff check custom_components tests
+npm ci && npm run test:card       # jsdom tests for the card
 ```
 
 Releases: bump `version` in `manifest.json`, add a CHANGELOG section, push a
