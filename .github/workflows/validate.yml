@@ -36,6 +36,16 @@ jobs:
       - name: Byte-compile sources
         run: python -m compileall -q custom_components/escl_scan
 
+  card-syntax:
+    name: Card syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - run: node --check custom_components/escl_scan/static/card.js
+
   ruff:
     name: Ruff lint
     runs-on: ubuntu-latest

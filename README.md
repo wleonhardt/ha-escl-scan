@@ -66,7 +66,7 @@ auto-upload to Paperless, etc.).
 
 ## Requirements
 
-- Home Assistant 2024.8 or newer (2026.3+ for the integration icon)
+- Home Assistant 2024.12 or newer (2026.3+ for the integration icon)
 - A network scanner that supports eSCL / AirScan (most modern MFPs do)
 - The scanner reachable from your HA host (typically port 443 or 80)
 

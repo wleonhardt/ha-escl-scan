@@ -285,7 +285,7 @@ def _ssl_context(*, verify: bool, relaxed_ciphers: bool) -> ssl.SSLContext:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
     if relaxed_ciphers:
-        ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
+        ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
     return ctx
 
 

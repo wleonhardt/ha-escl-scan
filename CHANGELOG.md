@@ -6,6 +6,19 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-06
+
+### Fixed
+- Options flow crashed on Home Assistant 2024.8–2024.11: `self.config_entry`
+  only exists on `OptionsFlow` from 2024.12. Minimum supported version is now
+  2024.12 (declared in `hacs.json`).
+
+### Changed
+- Legacy cipher option uses `SECLEVEL=1` instead of `SECLEVEL=0`: still admits
+  the non-PFS AES suites some HP MFPs need, without export/NULL-grade suites.
+- `hacs.json`: `hide_default_branch`, so HACS offers only tagged releases.
+- CI: `node --check` on the card.
+
 ## [0.4.0] - 2026-09-06
 
 ### Added
