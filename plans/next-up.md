@@ -13,6 +13,11 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-09-06 — v0.4.1: min HA 2024.12 (plain `OptionsFlow.config_entry` only
+  exists from 2024.12; 2024.8–2024.11 crashed the options flow),
+  `hide_default_branch`, SECLEVEL=1, card `node --check` in CI. Cross-checked
+  against the ha-ipp-print review; card already diffs pushed `hass` (no
+  admin-only `subscribe_trigger`), README/brand/changelog/release flow done.
 - 2026-09-06 — v0.4.0 work: capabilities (bed size, duplex, DPI snap, device
   info, serial unique_id), zeroconf, services + button, copy-to-folder,
   diagnostics, card editor, purge scoping, NextDocument retry, view tests.
