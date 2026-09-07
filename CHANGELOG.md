@@ -6,6 +6,19 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-09-07
+
+### Fixed
+- HP MFPs answer 404 for `GET /eSCL/ScanJobs/{uuid}` and only report job
+  state inside `ScannerStatus/Jobs`. JobInfo now falls back to that list, so
+  these devices get live page progress, `state_reasons`
+  (`JobCompletedSuccessfully`, …), the final Aborted check, and correct
+  "job still alive" detection when NextDocument answers 503 between sheets.
+- Page count no longer doubles when the device counter and the document pull
+  both count the same page; the assembled PDF's page count is authoritative.
+- 503 purge skips jobs the device already lists as finished (HP keeps them
+  as history).
+
 ## [0.4.2] - 2026-09-07
 
 Live-tested against an HP Color LaserJet MFP M283fdw on HA 2026.9.1.
@@ -116,7 +129,8 @@ Live-tested against an HP Color LaserJet MFP M283fdw on HA 2026.9.1.
 Last release before the stability review. See GitHub releases for earlier
 history.
 
-[Unreleased]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.3.0...v0.4.0

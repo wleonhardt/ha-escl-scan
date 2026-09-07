@@ -3,9 +3,9 @@
 ## Queue
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
-- Live-test still open: ADF batch (needs paper in the feeder) and zeroconf
-  discovery flow (needs the entry removed; single_config_entry aborts otherwise).
-  Card not visually re-checked in a browser (jsdom suite covers it).
+- Live-test still open: ADF batch *with live progress* (v0.4.3 fallback; needs
+  paper in the feeder) and the zeroconf discovery flow (needs the entry
+  removed; single_config_entry aborts otherwise).
 
 ## Backlog / nice-to-have
 - Image-mode (JPEG) scans converted to PDF (needs Pillow/img2pdf).
@@ -14,6 +14,10 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-09-07 — ADF live test: 3 sheets → one bundle PDF, 3 pages, copied. Found:
+  HP 404s GET ScanJobs/{uuid}; JobInfo only in ScannerStatus/Jobs (no progress
+  before v0.4.3). Fixed + page double-count fixed. Card verified by William in
+  the dashboard. Released v0.4.3.
 - 2026-09-07 — live test on HA 2026.9.1 + HP Color LaserJet MFP M283fdw
   (10.11.30.190, http/80): capabilities (serial VNBKN7J35T, platen 2550x3508,
   ADF 2550x4200 simplex, DPI 75–1200), DPI snap 275→300 / 250→200, service
