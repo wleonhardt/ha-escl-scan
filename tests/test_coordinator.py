@@ -154,6 +154,28 @@ async def test_multi_document_drops_truncated_part(make_coord):
     assert not list(coord._storage.glob("*.part*"))
 
 
+async def test_device_counter_plus_pull_does_not_double_count(make_coord):
+    # Live HP behaviour: ScannerStatus reports ImagesCompleted=1 while the
+    # single platen page is still transferring; pulling the document must
+    # not bump pages_done to 2.
+    gate = asyncio.Event()
+    coord = make_coord(FakeClient(docs=[[real_pdf(1)]], pages=1, gate=gate))
+    scan = await coord.start_scan()
+    await _wait_for(lambda: scan.pages_done == 1)  # counted by the poll loop
+    gate.set()
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    assert scan.pages_done == 1
+
+
+async def test_pdf_page_count_beats_device_counter(make_coord):
+    # Device says 5, file has 3 pages: the file wins.
+    coord = make_coord(FakeClient(docs=[[real_pdf(3)]], pages=5))
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.pages_done == 3
+
+
 async def test_final_jobinfo_reconciles_page_count(make_coord):
     # Single document pulled (pages_done=1) but scanner reports 5 server-side.
     coord = make_coord(FakeClient(docs=[[VALID_PDF]], pages=5))

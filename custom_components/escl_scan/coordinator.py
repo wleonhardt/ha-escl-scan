@@ -469,7 +469,8 @@ class ScanCoordinator:
                 return
 
             # Validate + assemble; marks the scan failed itself on error.
-            if not await self._assemble_result(scan, parts):
+            pdf_pages = await self._assemble_result(scan, parts)
+            if pdf_pages is None:
                 return
 
             # Optional "scan to folder" (e.g. a Paperless consume dir). A
@@ -492,10 +493,15 @@ class ScanCoordinator:
                 if info and info.state in TERMINAL_JOB_STATES:
                     final_state = _ESCL_STATE_MAP.get(info.state, STATE_COMPLETED)
                     final_reasons = info.state_reasons
-                # Single-document scanners report the page count only
-                # server-side; take the higher so completed scans don't
-                # under-report pages if the poll loop was cancelled early.
-                if info and info.pages_completed and info.pages_completed > scan.pages_done:
+                # The PDF's own page count is authoritative when we could
+                # read it; otherwise fall back to the device's counter so
+                # a poll loop cancelled early doesn't under-report.
+                if (
+                    not pdf_pages
+                    and info
+                    and info.pages_completed
+                    and info.pages_completed > scan.pages_done
+                ):
                     scan.pages_done = info.pages_completed
             except Exception:
                 pass
@@ -575,7 +581,9 @@ class ScanCoordinator:
                     break
                 parts.append(writer)
                 doc_index += 1
-                scan.pages_done += 1
+                # The poll loop may already have counted this page from the
+                # device's ImagesCompleted; never add on top of it.
+                scan.pages_done = max(scan.pages_done, doc_index)
                 scan.last_seen = datetime.now(UTC)
                 self._fire(EVENT_STATE_CHANGED, scan)
                 self._notify()
@@ -589,19 +597,20 @@ class ScanCoordinator:
 
     async def _assemble_result(
         self, scan: TrackedScan, parts: list[_PdfFileWriter]
-    ) -> bool:
+    ) -> int | None:
         """Validate the streamed parts and produce scan.file_path.
 
-        Returns True if a usable PDF was written (the scan may proceed to
-        completed), or False after marking the scan failed. Always cleans up
-        the scratch parts. A single valid document is renamed into place (fast
-        path, no pypdf); multiple are concatenated with pypdf.
+        Returns the PDF's page count when a usable PDF was written (0 if the
+        file was written but couldn't be counted), or None after marking the
+        scan failed. Always cleans up the scratch parts. A single valid
+        document is renamed into place (fast path, no pypdf); multiple are
+        concatenated with pypdf.
         """
         if not parts:
             self._mark_terminal(
                 scan, STATE_FAILED, None, error="no document returned from scanner"
             )
-            return False
+            return None
 
         # "Valid" = looks like a complete PDF. HP MFPs occasionally hand back a
         # truncated catalog header (~58 bytes) for an unsupported DPI/colour
@@ -621,7 +630,7 @@ class ScanCoordinator:
                     f"combo isn't supported by the device."
                 )
             self._mark_terminal(scan, STATE_FAILED, None, error=err)
-            return False
+            return None
 
         dropped = len(parts) - len(valid)
         if dropped:
@@ -631,26 +640,27 @@ class ScanCoordinator:
             )
 
         consumed: set[Path] = set()
+        pages: int | None
         try:
             if len(valid) == 1:
                 await self._hass.async_add_executor_job(valid[0].commit, scan.file_path)
                 scan.bytes_written = valid[0].bytes_written
                 consumed = {valid[0].path}
                 # Bundle-mode scanners pack the whole ADF batch into one
-                # document, so the document count (1) understates the pages.
-                # Count the real pages so the sensor/card don't report "1 page"
-                # for an N-page scan.
+                # document, so the document count (1) understates the pages
+                # and the device counter can overstate them. The file itself
+                # is the truth when pypdf can read it.
                 pages = await self._hass.async_add_executor_job(
                     _count_pdf_pages, scan.file_path
                 )
                 if pages:
-                    scan.pages_done = max(scan.pages_done, pages)
+                    scan.pages_done = pages
             else:
                 pages, size = await self._hass.async_add_executor_job(
                     _merge_pdfs, [w.path for w in valid], scan.file_path
                 )
                 scan.bytes_written = size
-                scan.pages_done = max(scan.pages_done, pages)
+                scan.pages_done = pages
                 _LOGGER.info(
                     "scan %s: merged %d documents into a %d-page PDF",
                     scan.scan_id, len(valid), pages,
@@ -662,12 +672,12 @@ class ScanCoordinator:
             self._mark_terminal(
                 scan, STATE_FAILED, None, error=f"could not assemble PDF: {exc}"
             )
-            return False
+            return None
 
         for w in parts:
             if w.path not in consumed:
                 await self._hass.async_add_executor_job(w.cleanup)
-        return True
+        return pages or 0
 
     async def _poll_loop(self, scan: TrackedScan) -> None:
         """Poll JobInfo while the scan is in flight. Updates pages_done
