@@ -93,16 +93,39 @@ def _color_mode(color: str) -> str:
 
 
 @dataclass
+class JobInfo:
+    """Parsed snapshot of a ScanJob's JobInfo."""
+
+    state: str  # "Pending", "Processing", "Completed", "Canceled", "Aborted"
+    state_reasons: str | None
+    pages_completed: int | None
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.state in TERMINAL_JOB_STATES
+
+
+@dataclass
 class ScannerStatus:
     """Parsed snapshot of ScannerStatus."""
 
     state: str  # "Idle", "Processing", "Down", "Testing", "Stopped", ...
     adf_loaded: bool
     active_job_uris: list[str] = field(default_factory=list)
+    # JobInfo per JobUri. HP MFPs answer 404 on GET ScanJobs/{uuid} and only
+    # report job state/ImagesCompleted here (spec: ScannerStatus/Jobs).
+    jobs: dict[str, JobInfo] = field(default_factory=dict)
 
     @property
     def is_idle(self) -> bool:
         return self.state == "Idle"
+
+    def job(self, job_url: str) -> JobInfo | None:
+        """JobInfo for a job URL (absolute or root-relative)."""
+        for uri, info in self.jobs.items():
+            if job_url == uri or job_url.endswith(uri):
+                return info
+        return None
 
 
 @dataclass
@@ -132,19 +155,6 @@ class ScannerCapabilities:
         if not self.resolutions:
             return dpi
         return min(self.resolutions, key=lambda r: (abs(r - dpi), r))
-
-
-@dataclass
-class JobInfo:
-    """Parsed snapshot of a ScanJob's JobInfo."""
-
-    state: str  # "Pending", "Processing", "Completed", "Canceled", "Aborted"
-    state_reasons: str | None
-    pages_completed: int | None
-
-    @property
-    def is_terminal(self) -> bool:
-        return self.state in TERMINAL_JOB_STATES
 
 
 # ── XML parsing helpers ──────────────────────────────────────────────────────
@@ -186,7 +196,16 @@ def parse_scanner_status(xml: bytes) -> ScannerStatus:
     # Active job URIs — these are absolute or root-relative URLs.
     text = xml.decode("utf-8", "replace")
     uris = [m.group(1) for m in re.finditer(r"<[^>]*JobUri[^>]*>([^<]+)</", text)]
-    return ScannerStatus(state=state, adf_loaded=adf_loaded, active_job_uris=uris)
+    jobs: dict[str, JobInfo] = {}
+    for el in root.iter():
+        if _local(el.tag) != "JobInfo":
+            continue
+        uri = _text(_find_local(el, "JobUri"))
+        if uri:
+            jobs[uri] = _job_info_from(el)
+    return ScannerStatus(
+        state=state, adf_loaded=adf_loaded, active_job_uris=uris, jobs=jobs
+    )
 
 
 def _int(text: str | None) -> int | None:
@@ -249,6 +268,10 @@ def parse_job_info(xml: bytes) -> JobInfo:
         root = ET.fromstring(xml)
     except ET.ParseError as exc:
         raise ValueError(f"JobInfo: invalid XML ({exc})") from exc
+    return _job_info_from(root)
+
+
+def _job_info_from(root: ET.Element) -> JobInfo:
     state = _text(_find_local(root, "JobState")) or "Unknown"
     # JobStateReasons is sometimes a leaf with text ("JobCompletedSuccessfully")
     # and sometimes a wrapper around <JobStateReason>…</JobStateReason> children.
@@ -507,14 +530,19 @@ class ScannerClient:
             await asyncio.sleep(1.0)
 
     async def get_job_info(self, job_url: str) -> JobInfo | None:
-        """Fetch JobInfo for an in-flight scan. Returns None on 404
-        (job already cleaned up by device or never existed)."""
+        """Fetch JobInfo for an in-flight scan.
+
+        Tries GET ScanJobs/{uuid} first; devices that 404 there (HP) list
+        the job under ScannerStatus/Jobs instead, so fall back to that.
+        Returns None only when neither knows the job (cleaned up by the
+        device or never existed)."""
         s = await self._session()
         async with s.get(job_url, timeout=_SHORT_TIMEOUT) as resp:
-            if resp.status == 404:
-                return None
-            resp.raise_for_status()
-            return parse_job_info(await resp.read())
+            if resp.status != 404:
+                resp.raise_for_status()
+                return parse_job_info(await resp.read())
+        status = await self.get_scanner_status()
+        return status.job(job_url)
 
     async def iter_next_document(self, job_url: str) -> AsyncIterator[bytes]:
         """Stream one document from ScanJobs/{uuid}/NextDocument.
@@ -601,6 +629,9 @@ class ScannerClient:
             return 0
         purged = 0
         for uri in status.active_job_uris:
+            info = status.jobs.get(uri)
+            if info is not None and info.is_terminal:
+                continue  # HP lists finished jobs as history; nothing to free
             try:
                 async with session.delete(
                     self._absolute(uri), timeout=_SHORT_TIMEOUT

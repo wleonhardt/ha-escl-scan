@@ -116,7 +116,9 @@ Live-tested against an HP Color LaserJet MFP M283fdw on HA 2026.9.1.
 Last release before the stability review. See GitHub releases for earlier
 history.
 
-[Unreleased]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.1.7...v0.3.0
 [0.2.0]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.1.7...v0.3.0

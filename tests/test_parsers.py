@@ -135,6 +135,31 @@ def test_status_job_uris_extracted():
     assert st.active_job_uris == ["/eSCL/ScanJobs/aaa", "/eSCL/ScanJobs/bbb"]
 
 
+HP_STATUS_XML = b"""<scan:ScannerStatus xmlns:scan="s" xmlns:pwg="p">
+<pwg:Version>2.63</pwg:Version><pwg:State>Processing</pwg:State>
+<scan:AdfState>ScannerAdfEmpty</scan:AdfState><scan:Jobs>
+<scan:JobInfo><pwg:JobUri>/eSCL/ScanJobs/yk1l-1002</pwg:JobUri><pwg:JobUuid>yk1l-1002</pwg:JobUuid>
+<scan:Age>7</scan:Age><pwg:ImagesCompleted>1</pwg:ImagesCompleted><pwg:ImagesToTransfer>1</pwg:ImagesToTransfer>
+<pwg:JobState>Processing</pwg:JobState><pwg:JobStateReasons><pwg:JobStateReason>JobScanning</pwg:JobStateReason></pwg:JobStateReasons></scan:JobInfo>
+<scan:JobInfo><pwg:JobUri>/eSCL/ScanJobs/yk1l-1001</pwg:JobUri><pwg:JobUuid>yk1l-1001</pwg:JobUuid>
+<scan:Age>31</scan:Age><pwg:ImagesCompleted>3</pwg:ImagesCompleted><pwg:ImagesToTransfer>0</pwg:ImagesToTransfer>
+<pwg:JobState>Completed</pwg:JobState><pwg:JobStateReasons><pwg:JobStateReason>JobCompletedSuccessfully</pwg:JobStateReason></pwg:JobStateReasons></scan:JobInfo>
+</scan:Jobs></scan:ScannerStatus>"""
+
+
+def test_status_jobs_parsed_from_hp_status():
+    # Real HP M283fdw shape: GET ScanJobs/{uuid} is 404; state lives here.
+    st = parse_scanner_status(HP_STATUS_XML)
+    assert st.state == "Processing"
+    assert list(st.jobs) == ["/eSCL/ScanJobs/yk1l-1002", "/eSCL/ScanJobs/yk1l-1001"]
+    live = st.job("http://10.0.0.5:80/eSCL/ScanJobs/yk1l-1002")
+    assert live.state == "Processing" and live.pages_completed == 1
+    assert live.state_reasons == "JobScanning" and not live.is_terminal
+    done = st.job("/eSCL/ScanJobs/yk1l-1001")
+    assert done.is_terminal and done.pages_completed == 3
+    assert st.job("/eSCL/ScanJobs/nope") is None
+
+
 def test_status_invalid_xml_raises():
     with pytest.raises(ValueError):
         parse_scanner_status(b"<not xml")

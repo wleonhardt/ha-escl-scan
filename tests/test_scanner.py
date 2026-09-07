@@ -29,6 +29,8 @@ class _Backend:
         self.job_state = b"Completed"
         self.scanner_state = b"Idle"
         self.create_status = 201
+        self.jobinfo_404 = False  # HP: GET ScanJobs/{uuid} is always 404
+        self.status_images = b"1"
 
 
 @pytest.fixture
@@ -45,7 +47,10 @@ async def scanner(aiohttp_server, socket_enabled):
         return web.Response(
             body=b"<ScannerStatus><State>" + backend.scanner_state + b"</State>"
             b"<AdfState>ScannerAdfLoaded</AdfState>"
-            b"<Jobs><JobInfo><JobUri>/eSCL/ScanJobs/stale</JobUri></JobInfo></Jobs>"
+            b"<Jobs><JobInfo><JobUri>/eSCL/ScanJobs/stale</JobUri></JobInfo>"
+            b"<JobInfo><JobUri>/eSCL/ScanJobs/j1</JobUri>"
+            b"<ImagesCompleted>" + backend.status_images + b"</ImagesCompleted>"
+            b"<JobState>" + backend.job_state + b"</JobState></JobInfo></Jobs>"
             b"</ScannerStatus>"
         )
 
@@ -57,6 +62,8 @@ async def scanner(aiohttp_server, socket_enabled):
         return web.Response(status=201, headers={"Location": "/eSCL/ScanJobs/j1"})
 
     async def jobinfo(request):
+        if backend.jobinfo_404:
+            raise web.HTTPNotFound()
         return web.Response(
             body=b"<ScanJob><JobState>" + backend.job_state + b"</JobState>"
             b"<ImagesCompleted>1</ImagesCompleted></ScanJob>"
@@ -136,6 +143,31 @@ async def test_job_info_and_delete(scanner):
     info = await scanner.get_job_info(_url(scanner))
     assert info.state == "Completed"
     assert await scanner.delete_job(_url(scanner)) is True
+
+
+async def test_job_info_falls_back_to_scanner_status(scanner):
+    # HP behaviour: job endpoint 404s; ScannerStatus/Jobs carries the info.
+    b = scanner._backend
+    b.jobinfo_404 = True
+    b.job_state = b"Processing"
+    b.status_images = b"2"
+    info = await scanner.get_job_info(_url(scanner))
+    assert info is not None and info.state == "Processing" and info.pages_completed == 2
+    assert await scanner.get_job_info(f"{scanner.base_url}/ScanJobs/unknown") is None
+
+
+async def test_next_document_503_retries_using_status_fallback(scanner, monkeypatch):
+    # With the job endpoint 404ing, a 503 between ADF sheets must still be
+    # read as "job alive" via ScannerStatus, not as "job gone".
+    monkeypatch.setattr("custom_components.escl_scan.scanner.asyncio.sleep", _no_sleep)
+    b = scanner._backend
+    b.jobinfo_404 = True
+    b.job_state = b"Processing"
+    b.next_prelude = [503, 503]
+    buf = bytearray()
+    async for chunk in scanner.iter_next_document(_url(scanner)):
+        buf.extend(chunk)
+    assert bytes(buf) == VALID_PDF
 
 
 async def test_many_calls_reuse_one_connection(scanner):
