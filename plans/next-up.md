@@ -3,9 +3,8 @@
 ## Queue
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
-- Live-test still open: ADF batch *with live progress* (v0.4.3 fallback; needs
-  paper in the feeder) and the zeroconf discovery flow (needs the entry
-  removed; single_config_entry aborts otherwise).
+- Live-test still open: zeroconf discovery flow only (needs the entry removed;
+  single_config_entry aborts otherwise).
 
 ## Backlog / nice-to-have
 - Image-mode (JPEG) scans converted to PDF (needs Pillow/img2pdf).
@@ -14,6 +13,8 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-09-12 — ADF live test on v0.4.3: progress 1→2→3 with `JobScanning`,
+  completed 3 pages = PDF pages, copy-to-folder OK. Live progress on HP confirmed.
 - 2026-09-07 — ADF live test: 3 sheets → one bundle PDF, 3 pages, copied. Found:
   HP 404s GET ScanJobs/{uuid}; JobInfo only in ScannerStatus/Jobs (no progress
   before v0.4.3). Fixed + page double-count fixed. Card verified by William in
