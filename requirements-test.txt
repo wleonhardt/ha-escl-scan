@@ -6,5 +6,5 @@ pytest-aiohttp==1.1.1
 # frontend is a hard dependency of the integration (add_extra_js_url)
 home-assistant-frontend==20260826.6
 # runtime requirement from manifest.json, needed by the merge/page-count tests
-pypdf==6.17.0
+pypdf==6.19.0
 ruff==0.16.6
