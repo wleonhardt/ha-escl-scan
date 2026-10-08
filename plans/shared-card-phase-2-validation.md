@@ -97,6 +97,7 @@ Regression coverage includes capability schemas/targets/staleness/failures,
 coalescing and cache expiry, native disconnect, download retries/invalid bodies,
 expired files, idle retention, late responses, consumed-result deduplication,
 print completion snapshots and late prior-job updates.
+All six hosted checks passed for scan `d3ca268` and print `c945729`.
 
 Both sensors were idle for installation. Backup:
 `/config/.document-card-backups/before-card-fixes-v071-v061-20261008.tar.gz`.
@@ -116,6 +117,8 @@ matched the source, then the action returned to Scan. This verifies browser
 handoff using a fixture response, not a newly produced physical scan.
 Paired layouts at 320/390/768px had no horizontal overflow, matching 202px outer
 card heights and 44px action targets. Dark-theme screenshots at 320/390px pass.
-Physical Android download handling still needs the user's check. The earlier
-four-sheet print count/orientation confirmation and HACS release tags remain
-pending; no additional physical print or scan was submitted for these UI checks.
+The user subsequently confirmed the physical phone flow: Download PDF works
+and the action returns to Scan. This closes the phone download check. The
+earlier four-sheet print count/orientation confirmation and HACS release tags
+remain pending; no additional physical print or scan was submitted by the agent
+for these UI checks.

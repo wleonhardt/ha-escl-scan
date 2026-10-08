@@ -6,7 +6,8 @@
   Physical phone loading confirmed; minimum-version native-host runtime probe
   remains before Phase 5. [Validation](shared-card-phase-1-validation.md).
   Phase 2 capability/upload APIs implemented and installed as scan v0.7.0 /
-  print v0.6.0, followed by card fixes scan v0.7.1 / print v0.6.1. Live API and print jobs pass; physical four-sheet confirmation
+  print v0.6.0, followed by card fixes scan v0.7.1 / print v0.6.1. Live API,
+  print jobs and physical phone downloads pass; physical four-sheet confirmation
   and release tags pending. [Phase 2 validation](shared-card-phase-2-validation.md).
   Next implementation: Phase 3 options.
   [Full plan](shared-card-rollout-2026-10-08.md).
@@ -32,8 +33,9 @@
 - 2026-10-08 — Card feedback fixes installed as scan v0.7.1 / print v0.6.1.
   Fresh capability labels, retained Download PDF primary action and finished
   print filename cleanup. All 433 tests pass; live HP capability wording,
-  isolated browser download and narrow paired layouts verified. Phone download
-  behavior and earlier physical print matrix confirmation remain pending.
+  isolated browser download and narrow paired layouts verified. User confirmed
+  Download PDF works on the phone and the action returns to Scan. Earlier
+  physical print matrix confirmation remains pending.
   [Details](shared-card-phase-2-validation.md).
 - 2026-10-08 — First paired UI release: scan v0.6.0 / print v0.5.0. Compact
   Two-sided switch, explicit staged printing, common theme styling and Sections
