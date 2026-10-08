@@ -276,6 +276,8 @@ def test_origin_keeps_nondefault_port_and_formats_ipv6(host, port, tls, origin):
 
 @pytest.mark.parametrize("uri", [
     "http://other-host/eSCL/ScanJobs/j1", "//other-host/eSCL/ScanJobs/j1",
+    "http://scanner:8080/eSCL/ScanJobs/j1", "https://scanner/eSCL/ScanJobs/j1",
+    "http://user@scanner/eSCL/ScanJobs/j1",
     "/admin/reset", "../reset",
 ])
 def test_job_uri_cannot_escape_scanner_job_endpoint(uri):
@@ -288,6 +290,18 @@ def test_job_uri_resolves_relative_and_absolute_paths():
     client = ScannerClient(host="scanner", use_tls=False, port=80)
     for uri in ("ScanJobs/j1", "/eSCL/ScanJobs/j1", "http://scanner/eSCL/ScanJobs/j1"):
         assert client._absolute(uri) == "http://scanner/eSCL/ScanJobs/j1"
+
+
+@pytest.mark.parametrize(("tls", "port", "uri"), [
+    (False, 80, "http://scanner:80/eSCL/ScanJobs/j1"),
+    (True, 443, "https://scanner:443/eSCL/ScanJobs/j1"),
+])
+def test_job_and_redirect_origin_accept_explicit_default_ports(tls, port, uri):
+    from yarl import URL
+
+    client = ScannerClient(host="scanner", use_tls=tls, port=port)
+    assert client._is_scanner_origin(URL(uri))
+    assert client._absolute(uri) == uri.replace(f":{port}/", "/")
 
 
 async def test_document_retry_deadline_is_failure_not_end_of_batch(scanner, monkeypatch):

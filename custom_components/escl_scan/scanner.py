@@ -390,11 +390,22 @@ class ScannerClient:
     def _absolute(self, uri: str) -> str:
         """Resolve a job URI (may be absolute or root-relative)."""
         url = URL(self._base + "/").join(URL(uri))
-        if url.origin() != URL(self._origin).origin() or url.user is not None:
+        if not self._is_scanner_origin(url):
             raise ValueError("scanner returned a job URL outside its origin")
         if not url.path.startswith(URL(self._base).path + "/ScanJobs/"):
             raise ValueError("scanner returned a job URL outside ScanJobs")
         return str(url)
+
+    def _is_scanner_origin(self, url: URL) -> bool:
+        """Compare effective ports: explicit :80/:443 are the same origin.
+
+        Yarl's URL equality distinguishes explicit default ports even though
+        their rendered URLs match. HP returns an explicit :80 in Location.
+        """
+        origin = URL(self._origin)
+        return url.user is None and (
+            url.scheme, url.host, url.port
+        ) == (origin.scheme, origin.host, origin.port)
 
     def _auth(self) -> aiohttp.BasicAuth | None:
         return (
@@ -435,7 +446,7 @@ class ScannerClient:
                 location = params.response.headers.get("Location")
                 if location:
                     target = params.url.join(URL(location))
-                    if target.origin() != URL(self._origin).origin() or target.user is not None:
+                    if not self._is_scanner_origin(target):
                         raise ValueError("scanner redirected outside its origin")
 
             trace.on_request_redirect.append(_check_redirect)

@@ -6,6 +6,14 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-10-08
+
+### Fixed
+- Accept scanner job addresses and redirects with an explicit default port
+  (`:80` for HTTP or `:443` for HTTPS). HP scanners return these addresses;
+  v0.4.6 incorrectly rejected them. Other hosts, protocols, ports, and URLs
+  containing credentials remain blocked.
+
 ## [0.4.6] - 2026-10-08
 
 ### Fixed

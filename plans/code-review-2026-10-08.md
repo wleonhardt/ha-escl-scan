@@ -154,6 +154,25 @@ that the patched paths are broken.
 - `npm ci`: completed; audit reported zero vulnerabilities.
 - `npm run test:card`: **20 passed** (baseline: 12), including syntax check.
 - Python compilation, JSON/workflow syntax, and `git diff --check`: **passed**.
-- No files staged; no bytecode artifacts staged; changes remain uncommitted.
-- Hosted hassfest/HACS validation, minimum-version testing, and live scanner
-  testing were **not run**; no release/tag was pushed.
+- Review fixes committed as `683de82`, pushed to main, and released as v0.4.6.
+- Hosted validation run `37802691253` passed, including hassfest/HACS;
+  release run `37802932419` passed. Minimum-version testing remains open.
+
+## Live test follow-up
+
+- Installed v0.4.6 on HA 2026.9.4 after backing up the integration and passing
+  the configuration check. Loaded the new content-hashed dashboard card.
+- HP M283fdw returned `http://10.11.30.190:80/eSCL/ScanJobs/{id}`. Yarl treats
+  explicit default ports as unequal to omitted ports, so the new origin check
+  rejected the correct job URL. The device had already scanned three pages.
+- Recovered the single three-page PDF from that specific newly created job,
+  then cleaned up that job. The integration correctly reported failure and
+  did not publish a misleading completed PDF or watched-folder copy.
+- v0.4.7 compares scheme, normalized host, and effective port for both job
+  addresses and redirects, preserving cross-origin and user-info rejection.
+  Regression tests cover HTTP :80, HTTPS :443, changed ports/schemes, and
+  embedded credentials. Local checks: 137 Python tests, 20 card tests, Ruff.
+- Recovered sheets are in order 1, 2, 3, upside down from physical loading.
+  Color patches, small text, fine lines, and four frame corners survived.
+  Scanner output uses 612x1008-point pages for its maximum ADF region, leaving
+  white space below Letter paper. Fixed-version dashboard retry pending reload.
