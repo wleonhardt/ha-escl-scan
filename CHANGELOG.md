@@ -6,6 +6,16 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-08
+
+### Changed
+- Use fresh scanner capabilities to label two-sided scans as Automatic duplex
+  or Two passes required; unknown/older backends retain cautious wording.
+- Make Download PDF the primary action after completion, retaining it across
+  the server's idle reset until the PDF is handed to the browser. Failed
+  downloads remain retryable; expired files offer Scan again. Results remain
+  local to the mounted card and a newer scan replaces the previous result.
+
 ## [0.7.0] - 2026-10-08
 
 ### Added

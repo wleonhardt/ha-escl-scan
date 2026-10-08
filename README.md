@@ -144,7 +144,18 @@ switch only changes the next scan; it never starts one. Off explicitly requests
 one-sided scanning, while on selects the feeder. The card's `duplex` default
 overrides the integration's duplex default; DPI and color still use integration
 defaults. The switch remembers changes while the card stays mounted and resets
-on reload. Settings are locked while a scan is starting or running.
+on reload. Settings are locked while a scan is starting, running or awaiting
+download. With fresh scanner capabilities, the card shows **Automatic duplex**
+or **Two passes required**. Unknown/stale support retains **may need two passes**;
+the printer's ability to print double-sided does not imply duplex scanning.
+
+After completion, the main action becomes **Download PDF**. It stays available
+after the scanner returns to idle and switches back to **Scan** once the PDF
+has been handed to your browser's download handler. A failed download can be
+retried; an expired file offers Scan again. The browser controls saving the file
+and does not report whether you cancel its save dialog. The result is retained
+only in the current card instance; reloading the dashboard, changing its scanner
+or starting a newer scan elsewhere can replace it. Persistent history is planned.
 
 Both scan and print cards inherit the dashboard theme's surface and shape. Add
 them directly to a Sections view for automatic sizing, or keep an existing

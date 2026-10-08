@@ -48,7 +48,17 @@ default intentionally overrides the integration's duplex default so the switch
 always describes the request. Other scan defaults still come from the backend.
 Remember the switch only for the current card instance, reset on a new explicit
 card default or remount, and freeze it from submission through job completion.
-Source selection and capability-specific method labels belong to later phases.
+Source selection belongs to later phases. The Phase 2 user-feedback follow-up
+uses fresh scanner capability data for Automatic duplex / Two passes required;
+stale, unknown or incompatible metadata retains the cautious label. Fetch only
+when two-sided is selected, cache by resolved sensor, and never block submission.
+
+A completed PDF takes over the primary action until a successful authenticated
+fetch hands the file to the browser's download handler. Failures retain Retry
+through the same Download PDF action; expired files restore Scan with guidance.
+Keep results across the server's idle reset, but only in the current card
+instance. New scans or a changed target supersede them. Browsers cannot confirm
+the user's final save choice; persistent history remains a later phase.
 
 ## Print intent
 
@@ -61,7 +71,8 @@ Release the selected file after an accepted submission. An ambiguous transport
 failure must not auto-retry or leave an inviting repeat-Print action: clear the
 staged selection and explain that the printer queue must be checked. A known
 validation rejection can retain the file for correction. Print copies/sides
-controls wait for the upload API extension.
+controls wait for the upload API extension. Release the displayed submitted
+filename when tracking ends; a late prior-job update cannot clear the next file.
 
 ## Capability boundary
 

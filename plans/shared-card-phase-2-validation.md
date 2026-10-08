@@ -21,7 +21,8 @@ Existing omitted-field requests retain their behavior.
 Scan keeps resolution/color profiles separate by source and automatic-duplex
 mode, rejects known unsupported sources/colors, and freezes the scan region
 through manual front/back passes. Missing vendor data remains permissive.
-Capability XML is bounded to 1 MiB. No frontend card changes in this phase.
+Capability XML is bounded to 1 MiB. The initial Phase 2 change was backend-only;
+subsequent user-feedback card fixes are recorded below.
 
 ## Automated checks
 
@@ -73,3 +74,48 @@ is pending; protocol completion alone does not prove the paper layout.
 Automatic-duplex scanning needs another scanner; the HP feeder is simplex.
 Multiple-printer routing and unavailable-device behavior have automated coverage;
 no second physical printer is available. Settings controls ship in Phase 3.
+
+## User-feedback card fixes — scan v0.7.1 / print v0.6.1
+
+Installed as a follow-up to the Phase 2 backend work. The scan card reads fresh,
+entity-scoped capabilities for its existing two-sided label: Automatic duplex
+or Two passes required. Unknown/stale/older backends retain cautious wording.
+Requests coalesce, use bounded caching/backoff, and abort on target change or
+native disconnect. The HP's live response correctly yields Two passes required.
+
+Download PDF replaces Scan on completion and remains through the server's idle
+reset. Authenticated fetch failures keep the retry action, expired PDFs restore
+Scan with guidance, and stale responses cannot overwrite a new scan or target.
+Successful handoff to the browser restores Scan; actual save-dialog decisions
+are not observable. This is card-instance retention, not persistent history.
+The print card clears the submitted filename when job tracking ends, including
+immediate completion; old updates cannot affect a new staged file or job.
+
+Validation: scan 182 Python / 42 card tests, print 180 Python / 29 card tests,
+Ruff in both, print compileall, npm ci and diff whitespace checks pass (433 tests).
+Regression coverage includes capability schemas/targets/staleness/failures,
+coalescing and cache expiry, native disconnect, download retries/invalid bodies,
+expired files, idle retention, late responses, consumed-result deduplication,
+print completion snapshots and late prior-job updates.
+
+Both sensors were idle for installation. Backup:
+`/config/.document-card-backups/before-card-fixes-v071-v061-20261008.tar.gz`.
+Copied card/manifest changes only and reloaded both entries (200,
+require_restart=false). Deployed card hashes match local files. After a fresh
+browser reload, exactly one resource per card is registered and loaded:
+`/escl_scan/card-f10c82bb7e7e.js` and `/ipp_print/card-00e35129a20e.js`.
+Both real dashboard cards load without Configuration error.
+
+Used the installed components in an isolated browser fixture on real HA,
+with device submissions blocked and the capability read using real auth.
+Simulated print completion cleared the filename; a scan completion followed by
+idle retained Download PDF. Clicking the real button downloaded the one-page
+Phase 2 test PDF as `card-download-verification.pdf`; byte count 2061 and SHA-256
+`0d909118730fc3a42850077e010d90944d83f8cd869975cfcc36413ec6fe8276`
+matched the source, then the action returned to Scan. This verifies browser
+handoff using a fixture response, not a newly produced physical scan.
+Paired layouts at 320/390/768px had no horizontal overflow, matching 202px outer
+card heights and 44px action targets. Dark-theme screenshots at 320/390px pass.
+Physical Android download handling still needs the user's check. The earlier
+four-sheet print count/orientation confirmation and HACS release tags remain
+pending; no additional physical print or scan was submitted for these UI checks.

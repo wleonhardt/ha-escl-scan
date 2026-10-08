@@ -2,7 +2,8 @@
 
 Status: in-progress. Phase 0 contract and current-host experiment complete;
 Phase 1 released and installed as scan v0.6.0 and print v0.5.0; physical phone
-loading confirmed. Phase 2 implemented and installed; physical print confirmation
+loading confirmed. Phase 2 implemented and installed, including follow-up card
+fixes scan v0.7.1 / print v0.6.1; physical print confirmation
 and release tags pending. [Phase 2 validation](shared-card-phase-2-validation.md).
 Remaining host/version checks are tracked in [Phase 1 validation](shared-card-phase-1-validation.md).
 

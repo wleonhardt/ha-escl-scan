@@ -34,4 +34,6 @@ No accepted/ambiguous job is retried automatically.
 
 The additive response advertises the backend's accepted request fields. Phase 3
 must check this metadata and leave options unavailable on an older backend.
-No additional settings UI ships in Phase 2. Existing card modules remain unchanged.
+No additional settings UI ships in Phase 2. A subsequent user-feedback fix uses
+scan capability metadata for the existing Two-sided label; new settings remain
+Phase 3 work.

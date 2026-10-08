@@ -6,7 +6,7 @@
   Physical phone loading confirmed; minimum-version native-host runtime probe
   remains before Phase 5. [Validation](shared-card-phase-1-validation.md).
   Phase 2 capability/upload APIs implemented and installed as scan v0.7.0 /
-  print v0.6.0. Live API and print jobs pass; physical four-sheet confirmation
+  print v0.6.0, followed by card fixes scan v0.7.1 / print v0.6.1. Live API and print jobs pass; physical four-sheet confirmation
   and release tags pending. [Phase 2 validation](shared-card-phase-2-validation.md).
   Next implementation: Phase 3 options.
   [Full plan](shared-card-rollout-2026-10-08.md).
@@ -22,13 +22,19 @@
 - Reconfigure flow for host/creds (options flow currently edits them).
 - Per-scan override for rotate_duplex_backs (service field / card toggle).
 - Card: localisation of status strings.
-- Card: keep the most recent completed scan accessible beyond the 30-second
-  result latch, or add a scan history/download control.
+- Card: persistent scan history/download access across dashboard reloads.
+  The mounted card now retains its latest result until download or a newer scan.
 - Paper size/scan-region selection: HP's maximum ADF region produces Legal-size
   PDFs with extra white space when scanning Letter sheets.
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-10-08 — Card feedback fixes installed as scan v0.7.1 / print v0.6.1.
+  Fresh capability labels, retained Download PDF primary action and finished
+  print filename cleanup. All 433 tests pass; live HP capability wording,
+  isolated browser download and narrow paired layouts verified. Phone download
+  behavior and earlier physical print matrix confirmation remain pending.
+  [Details](shared-card-phase-2-validation.md).
 - 2026-10-08 — First paired UI release: scan v0.6.0 / print v0.5.0. Compact
   Two-sided switch, explicit staged printing, common theme styling and Sections
   sizing. Live reload found and fixed recovery leaving HA's owned element as an

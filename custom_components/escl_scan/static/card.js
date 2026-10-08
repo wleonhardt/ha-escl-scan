@@ -11,7 +11,10 @@
 const TAG = 'escl-scan-card';
 
 if (!customElements.get(TAG)) {
-  customElements.define(TAG, class extends HTMLElement {});
+  customElements.define(TAG, class extends HTMLElement {
+    connectedCallback() { this._onHass?.(); }
+    disconnectedCallback() { this._capabilityRequest?.abort(); }
+  });
 }
 
 const C = customElements.get(TAG);
@@ -175,16 +178,20 @@ C.prototype._render = function () {
   this._primaryEl = root.querySelector('.primary');
   this._twoSidedEl = root.querySelector('.two-sided');
   this._titleEl.textContent = this._config.title;
-  this._primaryEl.addEventListener('click', () => this._startScan());
+  this._primaryEl.addEventListener('click', () => {
+    if (this._completedScan) this._downloadScan();
+    else this._startScan();
+  });
   this._cancelEl.addEventListener('click', () => this._cancelScan());
   this._twoSidedEl.addEventListener('change', () => {
-    if (this._busy || this._activeScanId) {
+    if (this._busy || this._activeScanId || this._completedScan) {
       this._syncControls();
       return;
     }
     this._duplex = this._twoSidedEl.checked;
     this._clearResultTimer();
     this._setStatus('');
+    this._refreshCapabilities();
   });
   this._rendered = true;
   this._syncControls();
@@ -203,15 +210,58 @@ C.prototype._syncControls = function () {
     ? current?.duplex_mode : null;
   this._twoSidedEl.checked = activeMode
     ? activeMode === 'manual' || activeMode === 'automatic' : !!this._duplex;
-  this._twoSidedEl.disabled = locked;
-  this._primaryEl.disabled = locked;
+  const downloading = this._completedScan && this._downloadRequest === this._completedScan;
+  this._twoSidedEl.disabled = locked || !!this._completedScan;
+  this._primaryEl.disabled = locked || !!downloading;
   this._primaryEl.hidden = !!this._showCancel;
-  this._primaryEl.textContent = this._busy ? 'Starting…' : 'Scan';
+  this._primaryEl.textContent = this._busy ? 'Starting…' : downloading ? 'Downloading…'
+    : this._completedScan ? 'Download PDF' : 'Scan';
   if (this._showingIdle) this._statusEl.textContent = this._idleStatus();
 };
 
 C.prototype._idleStatus = function () {
-  return this._duplex ? 'Feeder · may need two passes' : 'Automatic source';
+  if (!this._duplex) return 'Automatic source';
+  const caps = this._capabilities;
+  if (caps?.expires > Date.now()) {
+    if (caps.automatic === true) return 'Feeder · Automatic duplex';
+    if (caps.automatic === false && caps.manual === true) return 'Feeder · Two passes required';
+  }
+  return 'Feeder · may need two passes';
+};
+
+// Read only when the two-sided option is relevant. Cache per selected sensor,
+// coalesce hass pushes, and retry unknown/older backends without blocking Scan.
+C.prototype._refreshCapabilities = async function () {
+  const entity = this._scanState()?.entity_id;
+  if (!this.isConnected || !this._duplex || !entity || !this._hass
+      || this._capabilityRequest || this._capabilities?.expires > Date.now()) return;
+  const request = new AbortController();
+  this._capabilityRequest = request;
+  const caps = { automatic: null, manual: null, expires: Date.now() + 300_000 };
+  this._capabilities = caps;
+  this._syncControls();
+  const timeout = setTimeout(() => request.abort(), 20_000);
+  try {
+    const response = await this._apiFetch('/api/escl_scan/capabilities?entity_id=' + encodeURIComponent(entity),
+      { signal: request.signal });
+    if (!response.ok) return;
+    const body = await response.json();
+    if (request.signal.aborted || this._capabilities !== caps || body?.schema_version !== 1
+        || body.domain !== 'escl_scan' || body.entity_id !== entity || body.status !== 'fresh') return;
+    caps.automatic = body.supported?.automatic_duplex;
+    caps.manual = body.supported?.manual_duplex;
+    const ttl = body.refresh_after_seconds;
+    caps.expires = Date.now() + (Number.isFinite(ttl) ? Math.max(1, Math.min(900, ttl)) : 300) * 1000;
+  } catch {
+    // Capability discovery is optional. Unknown support must not imply manual.
+  } finally {
+    clearTimeout(timeout);
+    if (this._capabilityRequest === request) {
+      this._capabilityRequest = null;
+      if (request.signal.aborted && !this.isConnected) this._capabilities = null;
+      this._syncControls();
+    }
+  }
 };
 
 // All API calls go through hass.fetchWithAuth, which injects the auth header
@@ -258,7 +308,7 @@ C.prototype._setCancelVisible = function (visible) {
 };
 
 C.prototype._startScan = async function (overrides) {
-  if (this._busy || this._activeScanId) return;
+  if (this._busy || this._activeScanId || this._completedScan) return;
   const request = overrides || (this._duplex
     ? { source: 'Feeder', duplex: true } : { duplex: false });
   this._busy = true;
@@ -394,8 +444,7 @@ C.prototype._scanState = function () {
 
 const TERMINAL_STATES = new Set(['completed', 'canceled', 'aborted', 'failed']);
 const ACTIVE_STATES = new Set(['pending', 'processing', 'processing-stopped', 'awaiting-back-sides']);
-// How long a finished result (esp. the "Open scan" link) stays on the card
-// after the server drops the scan back to idle.
+// Non-download results briefly remain after the server returns to idle.
 const RESULT_LATCH_MS = 30_000;
 
 C.prototype._clearResultTimer = function () {
@@ -410,6 +459,18 @@ C.prototype._clearResultTimer = function () {
 C.prototype._onHass = function () {
   if (!this._rendered) return;
   const st = this._scanState();
+  const entity = st?.entity_id || this._config?.entity || null;
+  if (this._resultEntity !== entity) {
+    this._resultEntity = entity;
+    this._completedScan = null;
+    this._downloadedScanId = null;
+    this._capabilityRequest?.abort();
+    this._capabilityRequest = null;
+    this._capabilities = null;
+    this._lastSig = null;
+    this._clearResultTimer();
+  }
+  this._refreshCapabilities();
   if (!st) {
     this._activeScanId = null;
     this._lastSig = null;
@@ -425,13 +486,14 @@ C.prototype._onHass = function () {
   const sid = attrs.scan_id ?? null;
   const sig = JSON.stringify([
     st.entity_id, sid, state, attrs.pages_done, attrs.source,
-    attrs.state_reasons, attrs.error, attrs.file_url,
+    attrs.state_reasons, attrs.error, attrs.file_url, attrs.filename,
     attrs.duplex_mode, attrs.scan_phase, attrs.front_pages,
   ]);
   if (sig === this._lastSig) return;
   this._lastSig = sig;
 
   if (ACTIVE_STATES.has(state)) {
+    this._completedScan = null;
     if (this._activeScanId !== sid) {
       this._backError = null;
       this._reverseBackOrder = false;
@@ -441,17 +503,19 @@ C.prototype._onHass = function () {
     this._renderScanState(state, attrs);
   } else if (TERMINAL_STATES.has(state)) {
     this._activeScanId = null;
+    if (state !== 'completed') this._completedScan = null;
     this._renderScanState(state, attrs);
-    // Latch the result so the "Open scan" link stays clickable even after
-    // the server drops `current` back to idle (~8s later).
     this._clearResultTimer();
-    this._resultTimer = setTimeout(() => {
-      this._resultTimer = null;
-      this._lastSig = null;
-      this._setStatus('');
-      this._setCancelVisible(false);
-    }, RESULT_LATCH_MS);
-  } else if (!this._resultTimer && !this._busy) {
+    // A downloadable result stays until handed to the browser or superseded
+    // by a new scan. The backend's short terminal hold must not erase it.
+    if (!this._completedScan) {
+      this._resultTimer = setTimeout(() => {
+        this._resultTimer = null;
+        this._setStatus('');
+        this._setCancelVisible(false);
+      }, RESULT_LATCH_MS);
+    }
+  } else if (!this._resultTimer && !this._busy && !this._completedScan) {
     this._activeScanId = null;
     // idle / unavailable — clear, unless a fresh result is still latched
     // or a local start is mid-flight.
@@ -461,45 +525,49 @@ C.prototype._onHass = function () {
   }
 };
 
-C.prototype._buildOpenLink = function (attrs) {
-  const url = attrs?.file_url;
-  if (typeof url !== 'string' || !/^\/api\/escl_scan\/file\/[a-zA-Z0-9._-]+$/.test(url)) return null;
-  const a = document.createElement('a');
-  // href kept for accessibility / right-click, but the click handler does
-  // the authenticated fetch — HA's view rejects plain navigation (no auth).
-  a.href = url;
-  a.target = '_blank';
-  a.rel = 'noopener';
-  a.textContent = 'Open scan';
-  a.addEventListener('click', async (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    // Reserve the tab during the user gesture; popup blockers reject an
-    // open performed only after fetching a large PDF. Setting opener to
-    // null keeps the new tab isolated without window.open's noopener mode,
-    // which returns null even when the tab opened successfully.
-    const preview = window.open('', '_blank');
-    if (preview) preview.opener = null;
-    try {
-      const resp = await this._apiFetch(url);
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const blob = await resp.blob();
-      const objUrl = URL.createObjectURL(blob);
-      if (preview && !preview.closed) {
-        preview.location.href = objUrl;
-      } else {
-        const download = document.createElement('a');
-        download.href = objUrl;
-        download.download = attrs.filename || 'scan.pdf';
-        download.click();
-      }
-      setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
-    } catch (err) {
-      if (preview) preview.close();
-      this._setStatus('Open failed: ' + (err?.message || err), 'err');
+C.prototype._downloadScan = async function () {
+  const result = this._completedScan;
+  if (!result || this._busy || this._activeScanId || this._downloadRequest === result) return;
+  this._downloadRequest = result;
+  this._syncControls();
+  try {
+    const response = await this._apiFetch(result.url);
+    if (this._completedScan !== result) return;
+    if (response.status === 404 || response.status === 410) {
+      this._completedScan = null;
+      this._downloadedScanId = result.scanId;
+      this._setStatus('This PDF is no longer available. Scan the document again.', 'err');
+      return;
     }
-  });
-  return a;
+    if (!response.ok) throw new Error('Please try again.');
+    const blob = await response.blob();
+    if (this._completedScan !== result) return;
+    if (!blob.size || (blob.type && !['application/pdf', 'application/octet-stream'].includes(blob.type))) {
+      throw new Error('The server did not return a PDF. Please try again.');
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = result.filename;
+    link.hidden = true;
+    document.body.appendChild(link);
+    try { link.click(); } finally {
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    }
+    // Browsers do not report whether the user ultimately saves the file.
+    // Consume only after the authenticated PDF has been handed to Downloads.
+    this._completedScan = null;
+    this._downloadedScanId = result.scanId;
+    this._setStatus('');
+  } catch (err) {
+    if (this._completedScan === result) {
+      this._setStatus('Download failed. ' + (err?.message || 'Please try again.'), 'err');
+    }
+  } finally {
+    if (this._downloadRequest === result) this._downloadRequest = null;
+    this._syncControls();
+  }
 };
 
 C.prototype._renderScanState = function (state, attrs) {
@@ -547,12 +615,20 @@ C.prototype._renderScanState = function (state, attrs) {
     this._setStatus(wrap);
     this._setCancelVisible(true);
   } else if (state === 'completed') {
+    if (attrs.scan_id && attrs.scan_id === this._downloadedScanId) {
+      this._setCancelVisible(false);
+      return;
+    }
     const pages = pagesDone || 1;
-    const link = this._buildOpenLink(attrs);
-    const wrap = document.createElement('span');
-    wrap.append(`Scan ready ✓ (${pages} page${pages > 1 ? 's' : ''}) — `);
-    if (link) wrap.appendChild(link);
-    this._setStatus(wrap, 'ok');
+    if (typeof attrs.file_url === 'string' && /^\/api\/escl_scan\/file\/[a-zA-Z0-9._-]+$/.test(attrs.file_url)) {
+      if (this._completedScan?.scanId !== attrs.scan_id || this._completedScan?.url !== attrs.file_url) {
+        this._completedScan = {
+          scanId: attrs.scan_id, url: attrs.file_url,
+          filename: typeof attrs.filename === 'string' && attrs.filename ? attrs.filename : 'scan.pdf',
+        };
+      }
+    } else this._completedScan = null;
+    this._setStatus(`Scan ready ✓ (${pages} page${pages > 1 ? 's' : ''})`, 'ok');
     this._setCancelVisible(false);
   } else if (state === 'canceled') {
     this._setStatus('Scan canceled', 'err');

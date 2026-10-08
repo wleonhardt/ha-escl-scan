@@ -56,6 +56,12 @@ function boot() {
     runScripts: 'outside-only',
     pretendToBeVisual: true,
   });
+  dom.window.downloads = [];
+  dom.window.HTMLAnchorElement.prototype.click = function () {
+    dom.window.downloads.push({ href: this.href, filename: this.download, attached: this.isConnected });
+  };
+  dom.window.URL.createObjectURL = () => 'blob:scan';
+  dom.window.URL.revokeObjectURL = () => {};
   dom.window.eval(CARD_SRC);
   windows.push(dom.window);
   return dom.window;
@@ -72,12 +78,16 @@ function jsonResponse(body, status = 200) {
 
 // A hass object the card can diff. `push(entityState)` simulates lovelace
 // handing the card a fresh hass after a state change.
-function makeHass(el, { fetchImpl } = {}) {
-  const calls = { fetch: [] };
+function makeHass(el, { fetchImpl, capabilitiesImpl } = {}) {
+  const calls = { fetch: [], capabilities: [] };
   const states = {};
   const hass = {
     states,
     fetchWithAuth: async (url, init) => {
+      if (url.startsWith('/api/escl_scan/capabilities?')) {
+        calls.capabilities.push({ url, init });
+        return capabilitiesImpl ? capabilitiesImpl(url, init) : jsonResponse({}, 404);
+      }
       calls.fetch.push({ url, init });
       return fetchImpl ? fetchImpl(url, init) : jsonResponse({});
     },
@@ -276,7 +286,7 @@ test('back-side conflicts without JSON give guidance and retain retry controls',
   assert.equal(status(el).querySelector('button').disabled, false);
 });
 
-test('hass setter drives progress: pending → processing → completed with Open scan link', async () => {
+test('hass setter drives progress: pending → processing → completed with Download PDF action', async () => {
   const win = boot();
   const el = mount(win);
   const { push, calls } = makeHass(el, {
@@ -299,20 +309,21 @@ test('hass setter drives progress: pending → processing → completed with Ope
   assert.match(status(el).textContent, /^Scan ready ✓ \(3 pages\)/);
   assert.ok(status(el).classList.contains('ok'));
   assert.ok(!cancelShown(el));
-  const link = status(el).querySelector('a');
-  assert.ok(link, 'Open scan link rendered');
-  assert.equal(link.textContent, 'Open scan');
+  const primary = el.shadowRoot.querySelector('.primary');
+  assert.equal(primary.textContent, 'Download PDF');
+  assert.equal(primary.disabled, false);
 
-  // Result latches: an idle push right after does NOT clear the link.
+  // A result survives the server's idle reset without a 30-second timeout.
   push(SENSOR, 'idle', { scan_id: null });
-  assert.ok(status(el).querySelector('a'), 'link still latched');
-
-  // Clicking the link fetches with auth rather than navigating.
-  win.URL.createObjectURL = () => 'blob:x';
-  win.URL.revokeObjectURL = () => {};
-  win.open = () => ({ location: {} });
-  link.dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.equal(primary.textContent, 'Download PDF');
+  assert.ok(!el._resultTimer);
+  primary.click();
   await new Promise((r) => setTimeout(r, 0));
+  assert.equal(primary.textContent, 'Scan');
+  assert.equal(el.shadowRoot.querySelector('.two-sided').disabled, false);
+  assert.equal(win.downloads.length, 1);
+  assert.equal(win.downloads[0].attached, true);
+  assert.equal(win.document.querySelector('a[download]'), null);
   assert.equal(calls.fetch.at(-1).url, '/api/escl_scan/file/s1.pdf');
   // The click must not have started a new scan.
   assert.ok(!calls.fetch.some((c) => c.url === '/api/escl_scan/start'));
@@ -437,7 +448,7 @@ test('start response cannot overwrite an earlier terminal sensor update', async 
   respond(jsonResponse({ scan_id: 's1', source: 'Feeder' }));
   await request;
   assert.match(status(el).textContent, /Scan ready/);
-  assert.ok(status(el).querySelector('a'));
+  assert.equal(el.shadowRoot.querySelector('.primary').textContent, 'Download PDF');
   assert.equal(el._activeScanId, null);
   assert.ok(!cancelShown(el));
 });
@@ -469,7 +480,7 @@ test('attribute changes refresh status even with unchanged state and page count'
   push(SENSOR, 'completed', { scan_id: 's2' });
   assert.equal(status(el).querySelector('a'), null);
   push(SENSOR, 'completed', { scan_id: 's2', file_url: '/api/escl_scan/file/s2' });
-  assert.ok(status(el).querySelector('a'));
+  assert.equal(el.shadowRoot.querySelector('.primary').textContent, 'Download PDF');
 });
 
 test('changing configured entity updates immediately and missing sensors clear cancel', () => {
@@ -486,33 +497,37 @@ test('changing configured entity updates immediately and missing sensors clear c
   assert.ok(!cancelShown(el));
 });
 
-test('Open scan reserves an isolated tab before the authenticated fetch finishes', async () => {
+test('Download PDF fetches once and only returns to Scan after receiving the file', async () => {
   const win = boot();
   const el = mount(win);
   let respond;
-  const { push } = makeHass(el, {
+  const { push, calls } = makeHass(el, {
     fetchImpl: () => new Promise((resolve) => { respond = resolve; }),
   });
-  const preview = { location: {}, opener: 'parent' };
-  let opened = 0;
-  win.open = () => { opened += 1; return preview; };
-  win.URL.createObjectURL = () => 'blob:scan';
-  win.URL.revokeObjectURL = () => {};
-  push(SENSOR, 'completed', { scan_id: 's1', file_url: '/api/escl_scan/file/s1' });
-  status(el).querySelector('a').dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true }));
-  assert.equal(opened, 1);
-  assert.equal(preview.opener, null);
-  respond({ ok: true, blob: async () => new win.Blob(['PDF']) });
+  push(SENSOR, 'completed', { scan_id: 's1', filename: 'document.pdf', file_url: '/api/escl_scan/file/s1' });
+  const primary = el.shadowRoot.querySelector('.primary');
+  primary.click();
+  primary.click();
+  assert.equal(calls.fetch.length, 1);
+  assert.equal(primary.textContent, 'Downloading…');
+  assert.equal(primary.disabled, true);
+  assert.equal(win.downloads.length, 0);
+  respond({ ok: true, blob: async () => new win.Blob(['PDF'], { type: 'application/pdf' }) });
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(preview.location.href, 'blob:scan');
+  assert.equal(win.downloads[0].filename, 'document.pdf');
+  assert.equal(primary.textContent, 'Scan');
+  // Even a changed terminal snapshot must not resurrect a consumed download.
+  push(SENSOR, 'completed', { scan_id: 's1', pages_done: 3, file_url: '/api/escl_scan/file/s1' });
+  assert.equal(primary.textContent, 'Scan');
 });
 
-test('Open scan refuses external URLs from sensor attributes', () => {
+test('Download PDF refuses external URLs from sensor attributes', () => {
   const win = boot();
   const el = mount(win);
-  const { push } = makeHass(el);
+  const { push, calls } = makeHass(el);
   push(SENSOR, 'completed', { scan_id: 's1', file_url: 'https://other-host/collect' });
-  assert.equal(status(el).querySelector('a'), null);
+  assert.equal(el.shadowRoot.querySelector('.primary').textContent, 'Scan');
+  assert.equal(calls.fetch.length, 0);
 });
 
 test('malformed successful start responses show an error with no cancel control', async () => {
@@ -593,4 +608,136 @@ test('an external duplex job displays its actual mode without changing next-job 
   push(SENSOR, 'completed', { scan_id: 'external', duplex_mode: 'manual' });
   assert.equal(toggle.checked, false);
   assert.equal(toggle.disabled, false);
+});
+
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+const capabilities = (entity = SENSOR, automatic = false, manual = true) => ({
+  schema_version: 1, domain: 'escl_scan', entity_id: entity, status: 'fresh',
+  refresh_after_seconds: 900, supported: { automatic_duplex: automatic, manual_duplex: manual },
+});
+
+test('two-sided label distinguishes automatic, manual and unknown scanner support', async () => {
+  for (const [body, expected] of [
+    [capabilities(SENSOR, true), 'Feeder · Automatic duplex'],
+    [capabilities(), 'Feeder · Two passes required'],
+    [capabilities(SENSOR, null, true), 'Feeder · may need two passes'],
+    [{ ...capabilities(), status: 'stale' }, 'Feeder · may need two passes'],
+    [{ ...capabilities(), schema_version: 2 }, 'Feeder · may need two passes'],
+    [capabilities('sensor.other'), 'Feeder · may need two passes'],
+    [{ ...capabilities(), domain: 'ipp_print' }, 'Feeder · may need two passes'],
+  ]) {
+    const el = mount(boot(), { duplex: true });
+    const { push, calls } = makeHass(el, { capabilitiesImpl: async () => jsonResponse(body) });
+    push(SENSOR, 'idle');
+    await tick();
+    assert.equal(status(el).textContent, expected);
+    push(SENSOR, 'idle');
+    assert.equal(calls.capabilities.length, 1, 'hass updates use the cache');
+    assert.equal(calls.fetch.length, 0, 'discovery never starts a job');
+  }
+});
+
+test('capability failures use bounded retries and never prevent starting a scan', async () => {
+  for (const capabilitiesImpl of [async () => jsonResponse({}, 404), async () => { throw new Error('offline'); }]) {
+    const el = mount(boot(), { duplex: true });
+    const { push, calls } = makeHass(el, {
+      capabilitiesImpl, fetchImpl: async () => jsonResponse({ scan_id: 'new' }),
+    });
+    push(SENSOR, 'idle');
+    await tick();
+    push(SENSOR, 'idle');
+    assert.match(status(el).textContent, /may need two passes/);
+    assert.equal(calls.capabilities.length, 1);
+    await el._startScan();
+    assert.equal(calls.fetch.length, 1);
+    assert.equal(el._activeScanId, 'new');
+  }
+});
+
+test('capability requests coalesce and an old sensor response cannot relabel a new target', async () => {
+  const el = mount(boot(), { duplex: true });
+  const pending = [];
+  const { push, calls } = makeHass(el, {
+    capabilitiesImpl: () => new Promise(resolve => pending.push(resolve)),
+  });
+  push(SENSOR, 'idle');
+  push(SENSOR, 'idle');
+  assert.equal(calls.capabilities.length, 1);
+  push('sensor.other', 'idle');
+  el.setConfig({ entity: 'sensor.other', duplex: true });
+  assert.equal(calls.capabilities[0].init.signal.aborted, true);
+  assert.equal(calls.capabilities.length, 2);
+  pending[1](jsonResponse(capabilities('sensor.other', true)));
+  await tick();
+  pending[0](jsonResponse(capabilities()));
+  await tick();
+  assert.equal(status(el).textContent, 'Feeder · Automatic duplex');
+  el._capabilities.expires = 0;
+  push('sensor.other', 'idle');
+  assert.match(status(el).textContent, /may need two passes/, 'expired data stops promising automatic duplex');
+  assert.equal(calls.capabilities.length, 3);
+  el.remove();
+  assert.equal(calls.capabilities[2].init.signal.aborted, true, 'native detach aborts the request');
+  pending[2](jsonResponse(capabilities('sensor.other')));
+  await tick();
+});
+
+test('a failed or invalid PDF download keeps the primary action available for retry', async () => {
+  const win = boot();
+  for (const failure of [
+    async () => jsonResponse({}, 500),
+    async () => { throw new Error('Connection lost'); },
+    async () => ({ ok: true, blob: async () => new win.Blob([]) }),
+    async () => ({ ok: true, blob: async () => new win.Blob(['login'], { type: 'text/html' }) }),
+  ]) {
+    const el = mount(win);
+    let fetchImpl = failure;
+    const { push } = makeHass(el, { fetchImpl: (...args) => fetchImpl(...args) });
+    push(SENSOR, 'completed', { scan_id: 's1', file_url: '/api/escl_scan/file/s1' });
+    await el._downloadScan();
+    assert.match(status(el).textContent, /Download failed/);
+    assert.equal(el._primaryEl.textContent, 'Download PDF');
+    assert.equal(el._primaryEl.disabled, false);
+    push(SENSOR, 'idle');
+    assert.equal(el._primaryEl.textContent, 'Download PDF');
+    fetchImpl = async () => ({ ok: true, blob: async () => new win.Blob(['PDF']) });
+    await el._downloadScan();
+    assert.equal(el._primaryEl.textContent, 'Scan');
+  }
+});
+
+test('an expired PDF offers Scan again instead of trapping the user in a failed download', async () => {
+  const el = mount(boot());
+  const { push } = makeHass(el, { fetchImpl: async () => jsonResponse({}, 404) });
+  push(SENSOR, 'completed', { scan_id: 'expired', file_url: '/api/escl_scan/file/expired' });
+  await el._downloadScan();
+  assert.match(status(el).textContent, /no longer available/);
+  assert.equal(el._primaryEl.textContent, 'Scan');
+  push(SENSOR, 'completed', { scan_id: 'expired', pages_done: 2, file_url: '/api/escl_scan/file/expired' });
+  assert.equal(el._primaryEl.textContent, 'Scan');
+});
+
+test('late download success or failure cannot overwrite another scan or target', async () => {
+  for (const transition of ['scan', 'entity']) {
+    for (const success of [true, false]) {
+      const win = boot();
+      const el = mount(win);
+      let respond;
+      const { push } = makeHass(el, { fetchImpl: () => new Promise(resolve => { respond = resolve; }) });
+      push(SENSOR, 'completed', { scan_id: 'old', file_url: '/api/escl_scan/file/old' });
+      const downloading = el._downloadScan();
+      if (transition === 'entity') {
+        push('sensor.other', 'idle');
+        el.setConfig({ entity: 'sensor.other' });
+      } else {
+        push(SENSOR, 'processing', { scan_id: 'new' });
+        push(SENSOR, 'completed', { scan_id: 'new', file_url: '/api/escl_scan/file/new', pages_done: 2 });
+      }
+      respond({ ok: success, status: success ? 200 : 500, blob: async () => new win.Blob(['PDF']) });
+      await downloading;
+      assert.equal(win.downloads.length, 0, 'obsolete download is discarded');
+      assert.equal(el._primaryEl.textContent, transition === 'entity' ? 'Scan' : 'Download PDF');
+      if (transition === 'scan') assert.match(status(el).textContent, /2 pages/);
+    }
+  }
 });
