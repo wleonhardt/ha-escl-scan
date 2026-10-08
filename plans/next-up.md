@@ -24,9 +24,12 @@
   implemented for v0.5.0. Card controls, resume API/service, private front-side
   storage, matched-count interleaving, cancellation/shutdown, and reload
   timeout covered by 158 Python tests and 24 card tests. Three double-sided
-  test sheets printed (six labeled sides). First live scan completed with six
-  upright pages; whole-stack flipping reversed the backs, so an explicit
-  back-order choice was added. Paired repeat test pending.
+  test sheets printed (six labeled sides). Live HP manual scan verified
+  1F,1B,2F,2B,3F,3B, all upright, using Last sheet first for a flipped stack.
+  Progress 1→2→3→reload pause→4→5→6; storage/copy/download hashes match and
+  isolated six-page preview opens. Added wait-before-flipping guidance and
+  fixed stale card module registration on integration reload. Local and
+  hosted checks green; automatic duplex hardware testing needs another scanner.
   See `decisions/2026-10-08-manual-duplex.md`.
 - 2026-10-08 — Full code review: lifecycle/cancellation, PDF integrity,
   retention races, URL/auth bounds, diagnostics, and card fixes released as

@@ -58,7 +58,7 @@ supersedes the silent simplex downgrade in the 2026-09-06 capabilities decision.
 - Reload fed backs 3B,2B,1B instead of the instructed 1B,2B,3B. Actual output
   is 1F,3B,2F,2B,3F,1B: interleaving preserves input order, but physical pairs
   do not match. A back-order choice would support flipping the whole stack;
-  paired hardware verification and release tag remain pending.
+  this prompted the explicit back-order choice verified below.
 - Back-order update committed as 4cb0ff8; hosted validation 37811279681 passed.
   Repeated front attempt `7b593a90a58b` consumed an extra sheet 1; user confirmed
   the stack was mishandled. Canceled while awaiting backs; private scratch files
@@ -73,3 +73,29 @@ supersedes the silent simplex downgrade in the 2026-09-06 capabilities decision.
   routes registered but removes old module URLs before adding the current URL.
   Regression test verifies changed hashes, restoring an earlier hash without
   duplicate routes, and preservation of unrelated card modules.
+
+## Successful paired hardware verification
+
+- Installed final code e8e1e5e on HA 2026.9.4; core configuration check/restart
+  succeeded, installed source hashes match the checkout, and hosted validation
+  run 37814129989 passed all jobs. Fresh dashboard loads only
+  `/escl_scan/card-0752992e08b6.js` and displays the wait-before-flipping guidance.
+- Scan `6b4941c5a349` at 300 dpi RGB: fronts 14:11:24–14:12:11 EDT, exactly
+  1F,2F,3F upright; paused before the user flipped/reloaded the whole stack.
+  Selected Last sheet first in the actual card control and resumed at 14:17:06.
+  Backs completed at 14:17:44, with progress 4→5→6 and
+  `reverse_back_order=true`. Sensor returned Idle at 14:17:52.
+- Rendered and visually checked all six final pages: **1F,1B,2F,2B,3F,3B**,
+  all upright with four corner marks, readable small text and color/line
+  patches. No missing or duplicated side. Legal-size 612×1008 page boxes and
+  paper show-through remain the known device/fixture limitations.
+- Final PDF: 3,854,953 bytes. Storage, media copy, authenticated HTTP download
+  (200), and local inspection file have identical SHA-256:
+  `2c98f207b8e98c7e8f532b5fcda6a2733670fb3737a82fdda20868414af12a28`.
+  Only the final PDF remains in scan storage; no scan scratch files remain.
+  The actual Open scan link opened a PDF viewer with six thumbnails and
+  `window.opener === null`.
+- Fixture header/IDs retain v0.4.7 because sheets were printed before the new
+  feature; the tested integration is v0.5.0. Automatic duplex selection is
+  covered by automated tests; this simplex-only HP cannot verify an automatic
+  duplex hardware pass.
