@@ -175,4 +175,25 @@ that the patched paths are broken.
 - Recovered sheets are in order 1, 2, 3, upside down from physical loading.
   Color patches, small text, fine lines, and four frame corners survived.
   Scanner output uses 612x1008-point pages for its maximum ADF region, leaving
-  white space below Letter paper. Fixed-version dashboard retry pending reload.
+  white space below Letter paper.
+- v0.4.7 dashboard retry succeeded: scan `c1853ec38286`, Feeder, 300 dpi,
+  color, simplex; pending → processing, progress 1 → 2 → 3, completed after
+  about 51 seconds. Concurrent start returned HTTP 409 without another job.
+- Completed PDF: 3 pages, 1,743,971 bytes; saved to `.storage/escl_scan` and
+  copied to `/media/escl_scan`. Authenticated download returned 200/PDF;
+  its SHA-256 matched both stored files. Unauthenticated download returned
+  401, and a missing scan returned 404. No scratch files remained; scanner
+  returned Idle and HA returned idle after its terminal hold.
+- Rendered and inspected all three pages: unique sheet IDs in order 01/02/03,
+  distinct color patches and grayscale steps, readable small text, separate
+  fine lines, intact corner marks. All sheets remained upside down on retry;
+  physical orientation still needs adjustment. No auto-orientation is applied.
+- Replayed the recorded completed result into the card after its 30-second
+  display latch expired, then clicked its actual Open scan link. The browser
+  opened a three-page PDF preview with `window.opener === null`; no new scan
+  was created. Restored the card to idle and left the preview open.
+- The unrelated HPPrinter integration still points to the previous printer
+  address, so the dashboard's printer status says Offline despite working
+  eSCL scans. It was not modified during this integration's live test.
+- v0.4.7 fix committed as `36fe068`, pushed and released. Hosted validation
+  `37805169418` and release workflow `37805439166` both passed.

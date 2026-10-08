@@ -13,12 +13,20 @@
 - Reconfigure flow for host/creds (options flow currently edits them).
 - Per-scan override for rotate_duplex_backs (service field / card toggle).
 - Card: localisation of status strings.
+- Card: keep the most recent completed scan accessible beyond the 30-second
+  result latch, or add a scan history/download control.
+- Paper size/scan-region selection: HP's maximum ADF region produces Legal-size
+  PDFs with extra white space when scanning Letter sheets.
 - Community forum thread + device compatibility reports.
 
 ## Done
 - 2026-10-08 — Full code review: lifecycle/cancellation, PDF integrity,
-  retention races, URL/auth bounds, diagnostics, and card fixes prepared as
-  v0.4.6. See `code-review-2026-10-08.md`; live device and release checks pending.
+  retention races, URL/auth bounds, diagnostics, and card fixes released as
+  v0.4.6. Live HP test caught explicit-default-port origin equality; fixed and
+  released v0.4.7. HA 2026.9.4 dashboard retry: 3-page color ADF at 300 dpi,
+  progress 1→2→3, busy guard 409, folder copy/download hashes match, PDF preview
+  opens with isolated opener. Local and hosted checks green. See
+  `code-review-2026-10-08.md` for results and remaining physical/UX limits.
 - 2026-10-08 — #5: v0.4.4 duplex region from AdfDuplexInputCaps; v0.4.5 rotate-back-sides
   option + 900 s download stall/retry budget (fixed, not configurable).
 - 2026-09-12 — ADF live test on v0.4.3: progress 1→2→3 with `JobScanning`,
