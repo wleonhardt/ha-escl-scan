@@ -1,10 +1,12 @@
 # Next up
 
 ## Queue
-- Shared scan/print card design proposal: one primary action, Two-sided setting,
-  optional settings panel, native Tile/custom-feature host, and shared UI contract.
-  Review and implementation phases: [design review](design-review-2026-10-08.md).
-  Proposal only; print upload copies/sides require backend work before controls.
+- Shared scan/print card rollout, queued: visible Two-sided switch, one primary
+  action, common options and native Tile features with compatible wrappers.
+  Start Phase 0 contract/host experiment, then Phase 1 mobile polish.
+  [Phases, dependencies and release gates](shared-card-rollout-2026-10-08.md);
+  [design review](design-review-2026-10-08.md). Print upload copies/sides must
+  land before their controls. Implementation has not started.
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
 - Live-test still open: zeroconf discovery flow only (needs the entry removed;
