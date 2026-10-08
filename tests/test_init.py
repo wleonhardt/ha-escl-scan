@@ -23,6 +23,104 @@ async def _noop_reap(*args, **kwargs):
     return None
 
 
+async def test_dashboard_resource_sync_loads_storage_and_serializes_updates(hass):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from custom_components.escl_scan import _sync_lovelace_resources
+
+    unrelated = {"id": "other", "url": "/other-card.js", "type": "module"}
+    stored = [unrelated, {"id": "scan", "url": "/escl_scan/card-old.js", "type": "js"},
+              {"id": "duplicate", "url": "/escl_scan/card-old.js", "type": "module"}]
+    items = []
+    coll = SimpleNamespace(loaded=False, async_items=lambda: items)
+
+    async def load():
+        await asyncio.sleep(0)
+        items.extend(stored)
+
+    async def update(item_id, data):
+        await asyncio.sleep(0)
+        item = next(item for item in items if item["id"] == item_id)
+        item.update(url=data["url"], type=data["res_type"])
+
+    async def delete(item_id):
+        items[:] = [item for item in items if item["id"] != item_id]
+
+    coll.async_load = AsyncMock(side_effect=load)
+    coll.async_create_item = AsyncMock()
+    coll.async_update_item = AsyncMock(side_effect=update)
+    coll.async_delete_item = AsyncMock(side_effect=delete)
+    hass.data["lovelace_resources"] = coll
+    hass.data[DOMAIN] = {"entry": {"card_url": "/escl_scan/card-new.js"}}
+    await asyncio.gather(_sync_lovelace_resources(hass), _sync_lovelace_resources(hass))
+    assert coll.loaded
+    coll.async_load.assert_awaited_once()
+    coll.async_create_item.assert_not_awaited()
+    coll.async_update_item.assert_awaited_once()
+    assert items == [unrelated, {"id": "scan", "url": "/escl_scan/card-new.js", "type": "module"}]
+
+
+async def test_dashboard_resource_sync_creates_latest_hash_after_storage_load(hass):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from custom_components.escl_scan import _sync_lovelace_resources
+
+    hass.data[DOMAIN] = {"entry": {"card_url": "/escl_scan/card-old.js"}}
+
+    async def load():
+        hass.data[DOMAIN]["entry"]["card_url"] = "/escl_scan/card-new.js"
+
+    coll = SimpleNamespace(
+        loaded=False, async_load=AsyncMock(side_effect=load), async_items=lambda: [],
+        async_create_item=AsyncMock(return_value={"id": "scan"}),
+    )
+    hass.data["lovelace_resources"] = coll
+    await _sync_lovelace_resources(hass)
+    coll.async_create_item.assert_awaited_once_with(
+        {"res_type": "module", "url": "/escl_scan/card-new.js"}
+    )
+
+
+async def test_dashboard_resource_sync_skips_unloaded_entry_and_yaml(hass):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from custom_components.escl_scan import _sync_lovelace_resources
+
+    hass.data[DOMAIN] = {}
+    coll = SimpleNamespace(loaded=True, async_items=lambda: [], async_create_item=AsyncMock())
+    hass.data["lovelace_resources"] = coll
+    await _sync_lovelace_resources(hass)
+    coll.async_create_item.assert_not_awaited()
+    hass.data[DOMAIN]["entry"] = {"card_url": "/escl_scan/card-new.js"}
+    hass.data["lovelace_resources"] = SimpleNamespace(async_items=lambda: [])
+    await _sync_lovelace_resources(hass)  # Read-only YAML collection has no mutations.
+
+
+async def test_dashboard_resource_sync_failure_keeps_extra_module_fallback(hass, caplog):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, add_extra_js_url
+
+    from custom_components.escl_scan import _sync_lovelace_resources
+
+    await async_setup_component(hass, "frontend", {})
+    url = "/escl_scan/card-new.js"
+    add_extra_js_url(hass, url)
+    hass.data[DOMAIN] = {"entry": {"card_url": url}}
+    hass.data["lovelace_resources"] = SimpleNamespace(
+        loaded=False, async_load=AsyncMock(side_effect=OSError("cannot load")),
+        async_create_item=AsyncMock(),
+    )
+    await _sync_lovelace_resources(hass)
+    assert url in hass.data[DATA_EXTRA_MODULE_URL].urls
+    assert "dashboard resource sync failed" in caplog.text
+
+
 async def test_setup_and_unload(hass):
     await async_setup_component(hass, "http", {})
     await hass.async_block_till_done()
@@ -36,7 +134,7 @@ async def test_setup_and_unload(hass):
     # harness cleanup check).
     caps = ScannerCapabilities(make_and_model="HP LaserJet MFP M234sdw", serial_number="SN1")
     with (
-        patch("custom_components.escl_scan._reap_lovelace_resources", _noop_reap),
+        patch("custom_components.escl_scan._sync_lovelace_resources", _noop_reap),
         patch(_CAPS, return_value=caps),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -71,7 +169,7 @@ async def test_copy_dir_outside_allowlist_is_ignored(hass, caplog):
     )
     entry.add_to_hass(hass)
     with (
-        patch("custom_components.escl_scan._reap_lovelace_resources", _noop_reap),
+        patch("custom_components.escl_scan._sync_lovelace_resources", _noop_reap),
         patch(_CAPS, side_effect=OSError("no caps")),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -92,7 +190,7 @@ async def test_card_update_loads_only_current_module_and_can_restore_old_hash(ha
     new = "/escl_scan/card-new.js"
     unrelated = "/other-card.js"
     with (
-        patch("custom_components.escl_scan._reap_lovelace_resources", _noop_reap),
+        patch("custom_components.escl_scan._sync_lovelace_resources", _noop_reap),
         patch(_CAPS, return_value=ScannerCapabilities()),
         patch("custom_components.escl_scan._card_url_sync", side_effect=[old, new, old]),
     ):
@@ -113,6 +211,31 @@ async def test_card_update_loads_only_current_module_and_can_restore_old_hash(ha
         await hass.async_block_till_done()
 
 
+async def test_setup_registers_dashboard_resource_and_updates_it_on_reload(hass):
+    assert await async_setup_component(hass, "lovelace", {})
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "192.0.2.10"})
+    entry.add_to_hass(hass)
+    with (
+        patch(_CAPS, return_value=ScannerCapabilities()),
+        patch("custom_components.escl_scan._card_url_sync", side_effect=[
+            "/escl_scan/card-old.js", "/escl_scan/card-new.js",
+        ]),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        coll = hass.data["lovelace"].resources
+        before = list(coll.async_items())
+        assert len(before) == 1
+        assert before[0]["url"] == "/escl_scan/card-old.js"
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert list(coll.async_items()) == [{
+            "id": before[0]["id"], "url": "/escl_scan/card-new.js", "type": "module",
+        }]
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+
 async def test_diagnostics(hass):
     from custom_components.escl_scan.diagnostics import (
         async_get_config_entry_diagnostics,
@@ -127,7 +250,7 @@ async def test_diagnostics(hass):
     entry.add_to_hass(hass)
     caps = ScannerCapabilities(make_and_model="Canon TR8600", serial_number="SN1")
     with (
-        patch("custom_components.escl_scan._reap_lovelace_resources", _noop_reap),
+        patch("custom_components.escl_scan._sync_lovelace_resources", _noop_reap),
         patch(_CAPS, return_value=caps),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -208,7 +331,7 @@ async def test_homeassistant_stop_closes_client_and_cleans_active_scan(hass, tmp
     entry.add_to_hass(hass)
     with (
         patch("custom_components.escl_scan.ScannerClient", return_value=client),
-        patch("custom_components.escl_scan._reap_lovelace_resources", _noop_reap),
+        patch("custom_components.escl_scan._sync_lovelace_resources", _noop_reap),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()

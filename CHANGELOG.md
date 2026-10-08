@@ -6,6 +6,14 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-08
+
+### Fixed
+- Register the scan card as a dashboard resource as well as an extra module,
+  so mobile clients can load it when their app shell stays open across updates.
+- Update the resource in place, remove stale duplicates, and serialize reloads.
+  YAML dashboards and resource failures retain extra module loading.
+
 ## [0.5.1] - 2026-10-08
 
 ### Changed
@@ -226,7 +234,8 @@ Live-tested against an HP Color LaserJet MFP M283fdw on HA 2026.9.1.
 Last release before the stability review. See GitHub releases for earlier
 history.
 
-[Unreleased]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.5.1...v0.5.2
 [0.4.3]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/wleonhardt/ha-escl-scan/compare/v0.4.0...v0.4.1

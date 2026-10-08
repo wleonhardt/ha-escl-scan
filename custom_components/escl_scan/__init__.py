@@ -155,9 +155,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             remove_extra_js_url(hass, old_url)
         add_extra_js_url(hass, card_url)
         hass.data[DOMAIN][entry.entry_id]["card_url"] = card_url
-        if not hass.data[DOMAIN].get("_resources_reaped"):
-            hass.data[DOMAIN]["_resources_reaped"] = True
-            hass.async_create_task(_reap_lovelace_resources(hass))
+        # Dashboard resource loading also covers mobile clients that keep the
+        # app shell alive across reconnects and integration updates.
+        hass.async_create_task(_sync_lovelace_resources(hass))
 
         entry.async_on_unload(entry.add_update_listener(_async_update_listener))
         entry.async_on_unload(
@@ -188,14 +188,13 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def _reap_lovelace_resources(hass: HomeAssistant) -> None:
-    """One-shot cleanup of lovelace resource entries this integration
-    auto-registered in older versions. The card now loads solely via
-    add_extra_js_url, so any `escl_scan/card-*.js` resource entry is redundant
-    and its content-hash URL 404s after an update. We only ever DELETE here —
-    never create — which sidesteps the concurrent-reload duplicate-entry race
-    the old sync had. Touching lovelace internals is best-effort and must
-    never fail setup."""
+async def _sync_lovelace_resources(hass: HomeAssistant) -> None:
+    """Keep one current dashboard resource; extra module loading is a fallback.
+
+    Serialize reloads, load storage before inspecting items, and update an
+    existing resource in place so clients don't briefly lose the resource.
+    YAML resources are read-only. Collection failures must not fail setup.
+    """
     coll = None
     for _ in range(30):
         lovelace = hass.data.get("lovelace")
@@ -207,17 +206,37 @@ async def _reap_lovelace_resources(hass: HomeAssistant) -> None:
         if coll is not None:
             break
         await asyncio.sleep(1)
-    if coll is None:
+    if coll is None or not hasattr(coll, "async_create_item"):
         return
-    try:
-        for item in list(coll.async_items()):
-            url = item.get("url", "")
-            sid = item.get("id")
-            if sid and url.startswith(CARD_URL_PREFIX):
-                await coll.async_delete_item(sid)
-                _LOGGER.info("removed redundant lovelace resource %s", url)
-    except Exception:
-        _LOGGER.debug("lovelace resource cleanup skipped", exc_info=True)
+    async with hass.data[DOMAIN].setdefault("_resource_sync_lock", asyncio.Lock()):
+        try:
+            if not getattr(coll, "loaded", True):
+                await coll.async_load()
+                coll.loaded = True
+            # Read the latest loaded entry after waiting for the collection
+            # and lock; an older queued task must not restore an obsolete hash.
+            card_url = next((
+                data["card_url"] for key, data in hass.data[DOMAIN].items()
+                if not key.startswith("_") and isinstance(data, dict) and data.get("card_url")
+            ), None)
+            if card_url is None:
+                return
+            owned = [item for item in coll.async_items()
+                     if item.get("id") and item.get("url", "").startswith(CARD_URL_PREFIX)]
+            current = next((item for item in owned if item["url"] == card_url), None)
+            if current is None and owned:
+                current = owned[0]
+            if current is None:
+                current = await coll.async_create_item({"res_type": "module", "url": card_url})
+            elif current["url"] != card_url or current.get("type") != "module":
+                await coll.async_update_item(current["id"], {"res_type": "module", "url": card_url})
+            for item in owned:
+                if item["id"] != current["id"]:
+                    await coll.async_delete_item(item["id"])
+        except Exception:
+            _LOGGER.warning(
+                "dashboard resource sync failed; using extra module loading", exc_info=True
+            )
 
 
 def _current_coordinator(hass: HomeAssistant) -> ScanCoordinator | None:

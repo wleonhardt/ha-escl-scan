@@ -20,6 +20,15 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-10-08 — v0.5.2: restore dashboard resource registration alongside extra
+  module loading after a phone continued to show Configuration error despite
+  clearing cache. A fresh desktop/mobile-width browser loads correctly;
+  physical phone confirmation is pending. The print card had a dashboard
+  resource while the scan card did not. Sync loads storage first, updates one
+  resource in place, removes stale duplicates, serializes reloads, and selects
+  the latest loaded entry after waiting. YAML/error paths keep extra modules.
+  Validation: 166 Python tests, 30 card tests, and ruff pass; real HA resource
+  collection preserves its ID and updates its URL on integration reload.
 - 2026-10-08 — v0.5.1 card polish: larger Scan Duplex control (48px minimum
   height) and actionable conflict guidance for running scans, waiting backs,
   finishing scans, empty/busy feeders, and missing/older 409 response bodies.

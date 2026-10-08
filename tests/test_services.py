@@ -24,7 +24,7 @@ async def setup(hass):
     entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "192.0.2.10", CONF_USE_TLS: False})
     entry.add_to_hass(hass)
     with (
-        patch("custom_components.escl_scan._reap_lovelace_resources", _noop_reap),
+        patch("custom_components.escl_scan._sync_lovelace_resources", _noop_reap),
         patch("custom_components.escl_scan.ScannerClient", return_value=client),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)

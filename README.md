@@ -132,7 +132,9 @@ and file retention.
 
 ## Adding the card to a dashboard
 
-The integration registers the card globally — no `resources:` block needed.
+The integration registers the card as a dashboard resource automatically — no
+`resources:` block needed. It also injects the module globally as a fallback
+for YAML resource configurations.
 
 ```yaml
 type: custom:escl-scan-card
