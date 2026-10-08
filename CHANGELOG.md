@@ -23,6 +23,8 @@ match `custom_components/escl_scan/manifest.json`.
 - Shared card contract, paired fixtures and direct Sections dashboard example.
 
 ### Fixed
+- Recover slow-loading cards through Home Assistant's card wrapper so later
+  state updates cannot reinsert a stale Configuration error beside the card.
 - Editing a title/default no longer resets active scan controls before a sensor
   update arrives. Apply a changed duplex default after the current scan finishes.
 - Show unavailable scan state instead of an idle source hint.
