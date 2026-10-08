@@ -1,6 +1,6 @@
 # Phase 2 capability and upload contract
 
-Status: implementation in progress. Schema version 1; independent local modules.
+Status: accepted and implemented. Schema version 1; independent local modules.
 
 Expose authenticated GET /api/{escl_scan,ipp_print}/capabilities with optional
 entity_id. Resolve the integration's sensor through the entity registry on each

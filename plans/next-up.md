@@ -5,7 +5,10 @@
   experiment and Phase 1 released and installed as scan v0.6.0 / print v0.5.0.
   Physical phone loading confirmed; minimum-version native-host runtime probe
   remains before Phase 5. [Validation](shared-card-phase-1-validation.md).
-  Next implementation: Phase 2 capability/upload APIs, then Phase 3 options.
+  Phase 2 capability/upload APIs implemented and installed as scan v0.7.0 /
+  print v0.6.0. Live API and print jobs pass; physical four-sheet confirmation
+  and release tags pending. [Phase 2 validation](shared-card-phase-2-validation.md).
+  Next implementation: Phase 3 options.
   [Full plan](shared-card-rollout-2026-10-08.md).
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.

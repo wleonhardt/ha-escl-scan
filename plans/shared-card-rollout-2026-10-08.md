@@ -2,8 +2,9 @@
 
 Status: in-progress. Phase 0 contract and current-host experiment complete;
 Phase 1 released and installed as scan v0.6.0 and print v0.5.0; physical phone
-loading confirmed. Phase 2 is next. Remaining host/version checks are tracked
-in [validation](shared-card-phase-1-validation.md).
+loading confirmed. Phase 2 implemented and installed; physical print confirmation
+and release tags pending. [Phase 2 validation](shared-card-phase-2-validation.md).
+Remaining host/version checks are tracked in [Phase 1 validation](shared-card-phase-1-validation.md).
 
 Bring scanning and printing onto one Home Assistant visual and interaction
 contract, starting with the visible Two-sided switch selected in the design
@@ -133,26 +134,26 @@ Add the missing data and request support before showing additional controls.
 Keep capability reads shared and cached in the backend, rather than initiating
 device probes on every card render or separately in each dashboard card.
 
-- [ ] Publish a bounded, versioned capability snapshot available while idle:
+- [x] Publish a bounded, versioned capability snapshot available while idle:
   identity, supported/unknown sources and resolutions, automatic/manual scan
   method, supported print sides, copies limit and accepted formats. Define
   fetched time, refresh policy and missing/stale semantics. Represent source
   and duplex-dependent resolution lists accurately.
-- [ ] Choose compact sensor attributes or an authenticated capability view in
+- [x] Choose compact sensor attributes or an authenticated capability view in
   the Phase 0 decision. Avoid large raw capability blobs and unnecessary
   recorder churn. Preserve existing job sensor attributes for automations.
-- [ ] Extend print multipart upload with optional `copies` and `sides`, routing
+- [x] Extend print multipart upload with optional `copies` and `sides`, routing
   by the existing sensor `entity_id`. Reject duplicate/unexpected fields,
   malformed or out-of-range copies and invalid sides before submission. Copies
   must be a positive decimal integer, not a coerced float or boolean value.
   Preserve bounded metadata, the 50 MiB document limit and format sniffing.
-- [ ] Reuse `_submit` for service/upload validation, advertised printer limits
+- [x] Reuse `_submit` for service/upload validation, advertised printer limits
   and fresh default media on explicit sides requests. Keep the sized streaming
   payload and do not retry an ambiguous accepted print automatically.
-- [ ] Use additive response metadata to advertise available request options.
+- [x] Use additive response metadata to advertise available request options.
   An older backend must leave unsupported controls unavailable with useful
   guidance, rather than receiving newly invented fields.
-- [ ] Cover unknown capabilities and device refresh failures without claiming
+- [x] Cover unknown capabilities and device refresh failures without claiming
   unsupported hardware. Validate all overrides on the server even when a
   frontend selector has already restricted them.
 
