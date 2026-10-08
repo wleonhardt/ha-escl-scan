@@ -137,6 +137,7 @@ class ScannerCapabilities:
     uuid: str | None = None
     platen_max: tuple[int, int] | None = None  # (width, height) in 1/300"
     adf_max: tuple[int, int] | None = None
+    adf_duplex_max: tuple[int, int] | None = None
     adf_duplex: bool = False
     resolutions: list[int] = field(default_factory=list)  # sorted, discrete
     color_modes: list[str] = field(default_factory=list)
@@ -146,7 +147,9 @@ class ScannerCapabilities:
         """Stable identifier for unique_id: serial first, then UUID."""
         return self.serial_number or self.uuid
 
-    def region_for(self, source: str) -> tuple[int, int]:
+    def region_for(self, source: str, duplex: bool = False) -> tuple[int, int]:
+        if source == "Feeder" and duplex and self.adf_duplex_max:
+            return self.adf_duplex_max
         caps = self.adf_max if source == "Feeder" else self.platen_max
         return caps or DEFAULT_REGION
 
@@ -256,6 +259,7 @@ def parse_scanner_capabilities(xml: bytes) -> ScannerCapabilities:
         uuid=_text(_find_local(root, "UUID")),
         platen_max=_max_region("PlatenInputCaps"),
         adf_max=_max_region("AdfSimplexInputCaps") or _max_region("AdfDuplexInputCaps"),
+        adf_duplex_max=_max_region("AdfDuplexInputCaps"),
         adf_duplex=adf_duplex,
         resolutions=sorted(resolutions),
         color_modes=color_modes,

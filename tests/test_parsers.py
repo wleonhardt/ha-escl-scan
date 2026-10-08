@@ -215,3 +215,16 @@ def test_jobinfo_missing_state_defaults_unknown():
 def test_jobinfo_invalid_xml_raises():
     with pytest.raises(ValueError):
         parse_job_info(b"<broken")
+
+
+def test_duplex_region_uses_duplex_caps():
+    xml = CAPS_XML.replace(
+        b"</scan:AdfSimplexInputCaps>",
+        b"</scan:AdfSimplexInputCaps><scan:AdfDuplexInputCaps>"
+        b"<scan:MaxWidth>2550</scan:MaxWidth><scan:MaxHeight>3510</scan:MaxHeight>"
+        b"</scan:AdfDuplexInputCaps>",
+    )
+    caps = parse_scanner_capabilities(xml)
+    assert caps.region_for("Feeder") == (2550, 4200)
+    assert caps.region_for("Feeder", duplex=True) == (2550, 3510)
+    assert caps.region_for("Platen", duplex=True) == (2550, 3508)

@@ -437,7 +437,9 @@ class ScanCoordinator:
         """Foreground orchestration of a single scan job."""
         try:
             region = (
-                self._caps.region_for(scan.source) if self._caps else DEFAULT_REGION
+                self._caps.region_for(scan.source, scan.duplex)
+                if self._caps
+                else DEFAULT_REGION
             )
             try:
                 scan.job_url = await self._client.create_job(

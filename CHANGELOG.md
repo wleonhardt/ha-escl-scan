@@ -6,6 +6,13 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-10-08
+
+### Fixed
+- Duplex Feeder scans used the simplex ADF size limit and failed with
+  `409` on devices whose duplex limit is smaller (e.g. Epson ET-4950).
+  Duplex jobs now use `AdfDuplexInputCaps` (#5).
+
 ## [0.4.3] - 2026-09-07
 
 ### Fixed
