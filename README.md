@@ -10,8 +10,8 @@ eSCL/AirScan-capable network scanner and surfaces **per-job state** through
 a sensor — including live page progress for ADF batches, completion,
 cancellation, and the scanner's own error reasons.
 
-Ships with a companion Lovelace card so a "Scan now" tile on your dashboard
-is a single tap.
+Ships with a companion Lovelace card with a Scan action, a compact Two-sided
+switch and live progress.
 
 > 💡 **Sister project:** for printing PDFs to the same multifunction
 > printers, see [**ha-ipp-print**](https://github.com/wleonhardt/ha-ipp-print)
@@ -19,11 +19,7 @@ is a single tap.
 > IPP/IPPS instead of eSCL.
 
 <p align="center">
-  <img src="assets/card-idle.png" width="320" alt="Idle card" />
-  <img src="assets/card-scanning.png" width="320" alt="Scanning card" />
-  <br/>
-  <img src="assets/card-complete.png" width="320" alt="Complete card" />
-  <img src="assets/card-failed.png" width="320" alt="Failed card" />
+  <img src="assets/card-pair.png" width="390" alt="Matching scan and print cards with a Two-sided switch and explicit actions" />
 </p>
 
 ## Why this exists
@@ -138,11 +134,25 @@ for YAML resource configurations.
 
 ```yaml
 type: custom:escl-scan-card
-title: Scan now        # optional, defaults to "Scan now"
+title: Scan            # optional, defaults to "Scan"
 entity: sensor.printer_current_scan   # optional; auto-detected if renamed
+duplex: false          # optional; initial Two-sided setting
 ```
 
-Choose **Scan Duplex** for a two-sided feeder document. Automatic duplex
+Set **Two-sided**, then press **Scan** for a two-sided feeder document. The
+switch only changes the next scan; it never starts one. Off explicitly requests
+one-sided scanning, while on selects the feeder. The card's `duplex` default
+overrides the integration's duplex default; DPI and color still use integration
+defaults. The switch remembers changes while the card stays mounted and resets
+on reload. Settings are locked while a scan is starting or running.
+
+Both scan and print cards inherit the dashboard theme's surface and shape. Add
+them directly to a Sections view for automatic sizing, or keep an existing
+horizontal stack. See [paired Sections example](examples/dashboard-sections.yaml).
+Explicit titles and existing card types continue to work. Long scan conflicts
+show a short summary that expands to recovery details.
+
+Automatic duplex
 is used when advertised by the scanner. Otherwise, the card scans the fronts
 and pauses with reload instructions. **Wait for the reload prompt before
 flipping**; some scanners keep the first job open after sheets leave the

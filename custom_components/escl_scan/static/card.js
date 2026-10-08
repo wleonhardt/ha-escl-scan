@@ -4,7 +4,7 @@
 //
 // Type:  custom:escl-scan-card
 // Options:
-//   title:   string, default "Scan now"
+//   title:   string, default "Scan"
 //   entity:  the scan sensor, default sensor.printer_current_scan (auto-
 //            detected if that entity was renamed)
 
@@ -30,13 +30,25 @@ function responseErrorMessage(response, body, conflictFallback) {
 }
 
 C.prototype.setConfig = function (config) {
-  this._config = Object.assign({ title: 'Scan now' }, config || {});
+  if (config?.duplex !== undefined && typeof config.duplex !== 'boolean') {
+    throw new Error('Two-sided default must be true or false.');
+  }
+  const previousDefault = this._config?.duplex;
+  const previousEntity = this._config?.entity;
+  this._config = Object.assign({ title: 'Scan', duplex: false }, config || {});
+  if (this._duplex === undefined || previousDefault !== this._config.duplex) {
+    if (this._busy || this._activeScanId) this._resetDuplex = true;
+    else this._duplex = this._config.duplex;
+  }
   this._render();
   // _render() no-ops after the first call, so apply title changes (e.g. the
   // dashboard editor's live preview) directly to the already-rendered node.
   if (this._titleEl) this._titleEl.textContent = this._config.title;
-  this._lastSig = null;
-  this._onHass();
+  if (previousEntity !== this._config.entity) {
+    this._lastSig = null;
+    this._onHass();
+  }
+  this._syncControls();
 };
 
 Object.defineProperty(C.prototype, 'hass', {
@@ -53,18 +65,20 @@ Object.defineProperty(C.prototype, 'hass', {
   configurable: true,
 });
 
-C.prototype.getCardSize = function () { return 2; };
+C.prototype.getCardSize = function () { return 3; };
+C.prototype.getGridOptions = function () { return { columns: 6, rows: 4, min_columns: 6, min_rows: 4 }; };
 
 // Dashboard picker support: a default config and a visual editor built on
 // HA's own <ha-form>, so the card is configurable without YAML.
-C.getStubConfig = function () { return { title: 'Scan now' }; };
+C.getStubConfig = function () { return { title: 'Scan' }; };
 C.getConfigElement = function () { return document.createElement(TAG + '-editor'); };
 
 const EDITOR_SCHEMA = [
   { name: 'title', selector: { text: {} } },
+  { name: 'duplex', selector: { boolean: {} } },
   { name: 'entity', selector: { entity: { domain: 'sensor', integration: 'escl_scan' } } },
 ];
-const EDITOR_LABELS = { title: 'Title', entity: 'Scan sensor (optional)' };
+const EDITOR_LABELS = { title: 'Title', entity: 'Scan sensor (optional)', duplex: 'Two-sided by default (uses feeder)' };
 
 if (!customElements.get(TAG + '-editor')) {
   customElements.define(TAG + '-editor', class extends HTMLElement {
@@ -97,147 +111,107 @@ C.prototype._render = function () {
   const root = this.attachShadow({ mode: 'open' });
   root.innerHTML = `
     <style>
-      :host {
-        display: block;
-        /* Set up a size-based container so children can adapt to the
-           card's own width — covers the case where a horizontal-stack
-           shrinks each card narrow even on a wide viewport. */
-        container-type: inline-size;
-      }
+      /* Shared document-card contract v1. Keep this base identical in both cards. */
+      :host { display: block; height: 100%; }
+      [hidden] { display: none !important; }
       ha-card {
-        padding: 18px 14px;
-        border-radius: 18px;
-        min-height: 130px;
-        /* Tint from the active theme's accent; fall back to the original
-           blue so themes without --rgb-primary-color look unchanged. */
-        background: rgba(var(--rgb-primary-color, 147,197,253), 0.18);
-        border: 1px solid rgba(var(--rgb-primary-color, 147,197,253), 0.55);
-        display: flex; flex-direction: column;
-        align-items: center; justify-content: center;
-        gap: 6px;
-        cursor: pointer;
-        transition: transform .08s ease, background .15s ease;
-        box-sizing: border-box;
+        box-sizing: border-box; height: 100%; min-height: 200px; padding: 12px;
+        display: flex; flex-direction: column; gap: 8px;
+        color: var(--primary-text-color);
       }
-      ha-card:hover { background: rgba(var(--rgb-primary-color, 147,197,253), 0.26); }
-      ha-card:active { transform: scale(.99); }
-      ha-card.busy { cursor: progress; opacity: .85; }
-      .icon { width: 36px; height: 36px; color: var(--primary-color, #93c5fd); flex-shrink: 0; }
-      .title { font-weight: 700; font-size: 20px; color: var(--primary-text-color, #fff); line-height: 1.1; text-align: center; }
-      .status {
-        font-size: 13px;
-        min-height: 16px;
-        color: var(--secondary-text-color, rgba(255,255,255,0.75));
-        text-align: center;
-        padding: 0 4px;
-        line-height: 1.3;
-        word-break: break-word;
-      }
-      /* When the card itself is narrow (typically a phone, or a two-card
-         horizontal-stack on a sidebar-split desktop), shrink the title
-         and icon so multi-line status messages like "Scanning (platen)
-         page 3…" don't push the cancel link off the card or collide
-         with the title. Container query fires on the card's own width,
-         not the viewport. */
-      @container (max-width: 260px) {
-        ha-card { padding: 14px 10px; gap: 4px; }
-        .icon { width: 30px; height: 30px; }
-        .title { font-size: 17px; }
-        .status { font-size: 12px; }
-      }
-      @container (max-width: 200px) {
-        .title { font-size: 15px; }
-        .status { font-size: 11px; }
-        .icon { width: 26px; height: 26px; }
-      }
-      .status.err { color: var(--error-color, #fca5a5); }
-      .status.ok  { color: var(--success-color, #6ee7b7); }
-      .status a   { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
-      .cancel {
-        font-size: 11px;
-        color: var(--error-color, #fca5a5);
-        cursor: pointer;
-        text-decoration: underline;
-        text-underline-offset: 2px;
-        margin-top: -4px;
-        display: none;
-      }
-      .cancel.show { display: inline; }
-      .cancel:hover { filter: brightness(1.15); }
+      .header { display: flex; align-items: center; gap: 8px; min-width: 0; }
+      .icon { --mdc-icon-size: 24px; width: 24px; height: 24px; color: var(--primary-color); flex: none; }
+      .title { font-size: 16px; font-weight: 500; line-height: 24px; overflow-wrap: anywhere; }
+      .status { color: var(--secondary-text-color); font-size: 14px; line-height: 20px; min-height: 40px; overflow-wrap: anywhere; }
+      .status.err { color: var(--error-color); }
+      .status.ok { color: var(--success-color, var(--primary-color)); }
+      .status a { color: inherit; text-underline-offset: 2px; display: inline-flex; align-items: center; min-height: 44px; }
+      .status summary { cursor: pointer; min-height: 44px; }
+      .status details > div { padding-top: 8px; }
+      .controls { min-height: 44px; }
+      .actions { margin-top: auto; }
+      button, select { font: inherit; font-size: 14px; }
       button {
-        font: inherit; color: var(--primary-text-color, #fff);
-        background: transparent; border: 1px solid var(--divider-color, #889);
-        border-radius: 8px; padding: 5px 9px; cursor: pointer;
+        min-height: 44px; padding: 8px 12px; border: 0;
+        border-radius: var(--ha-card-border-radius, 12px);
+        background: var(--secondary-background-color); color: var(--primary-text-color);
+        cursor: pointer; line-height: 20px; box-sizing: border-box;
       }
       button:disabled { opacity: .5; cursor: default; }
-      .status select {
-        font: inherit; max-width: 100%; margin: 5px 0;
-        color: var(--primary-text-color, #fff);
-        background: var(--card-background-color, #1c1c1c);
-        border: 1px solid var(--divider-color, #889); border-radius: 8px; padding: 5px;
+      button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible {
+        outline: 2px solid var(--primary-color); outline-offset: 2px;
       }
-      .two-sided {
-        width: 100%; max-width: 240px; min-height: 48px;
-        font-size: 16px; font-weight: 700; padding: 12px 18px; margin-top: 6px;
-        border: 2px solid var(--primary-color, #93c5fd);
-        background: rgba(var(--rgb-primary-color, 147,197,253), 0.22);
-      }
+      .primary, .cancel { width: 100%; font-weight: 500; }
+      .cancel { display: none; color: var(--error-color); }
+      .cancel.show { display: block; }
+      @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+      /* End shared document-card base. */
+      .toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; font-size: 14px; cursor: pointer; }
+      .toggle small { display: block; color: var(--secondary-text-color); font-size: 12px; }
+      .two-sided { appearance: none; position: relative; margin: 0; width: 36px; height: 22px; flex: none; border-radius: 12px; background: var(--disabled-text-color); cursor: pointer; }
+      .two-sided::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; border-radius: 50%; background: var(--card-background-color); }
+      .two-sided:checked { background: var(--primary-color); }
+      .two-sided:checked::before { left: 17px; }
+      .two-sided:disabled { opacity: .5; cursor: default; }
+      .status select { display: block; width: 100%; min-height: 44px; margin: 8px 0; padding: 4px; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 8px; }
+      .status button { width: 100%; margin-top: 4px; }
     </style>
-    <ha-card role="button" tabindex="0">
-      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <!-- Scanner glyph: flatbed + document peeking out -->
-        <rect x="3" y="10" width="18" height="9" rx="1.5"/>
-        <path d="M7 10V4h10v6"/>
-        <line x1="7" y1="14.5" x2="17" y2="14.5"/>
-      </svg>
-      <div class="title"></div>
-      <div class="status" aria-live="polite"></div>
-      <button class="two-sided" type="button" title="Scan both sides of a feeder document">Scan Duplex</button>
-      <div class="cancel" role="button" tabindex="0">Cancel</div>
+    <ha-card>
+      <div class="header"><ha-icon class="icon" icon="mdi:scanner" aria-hidden="true"></ha-icon><div class="title"></div></div>
+      <div class="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="controls">
+        <label class="toggle"><span>Two-sided<small>Uses feeder</small></span><input class="two-sided" type="checkbox" role="switch" aria-label="Two-sided scan using feeder"></label>
+      </div>
+      <div class="actions">
+        <button class="primary" type="button">Scan</button>
+        <button class="cancel" type="button">Cancel scan</button>
+      </div>
     </ha-card>
   `;
   this._card = root.querySelector('ha-card');
   this._titleEl = root.querySelector('.title');
   this._statusEl = root.querySelector('.status');
   this._cancelEl = root.querySelector('.cancel');
+  this._primaryEl = root.querySelector('.primary');
   this._twoSidedEl = root.querySelector('.two-sided');
   this._titleEl.textContent = this._config.title;
-
-  this._card.addEventListener('click', (ev) => {
-    if (ev.target === this._cancelEl) return;
-    // Bail if the click landed on (or inside) any anchor — the "Open scan"
-    // link lives in the .status div and bubbles up here.
-    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a,button,select')) return;
-    this._startScan();
-  });
-  this._card.addEventListener('keydown', (ev) => {
-    if (ev.target === this._cancelEl) return;
-    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a,button,select')) return;
-    if (ev.key === 'Enter' || ev.key === ' ') {
-      ev.preventDefault();
-      this._startScan();
+  this._primaryEl.addEventListener('click', () => this._startScan());
+  this._cancelEl.addEventListener('click', () => this._cancelScan());
+  this._twoSidedEl.addEventListener('change', () => {
+    if (this._busy || this._activeScanId) {
+      this._syncControls();
+      return;
     }
-  });
-  this._cancelEl.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    this._cancelScan();
-  });
-  this._twoSidedEl.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    this._startScan({ source: 'Feeder', duplex: true });
-  });
-  this._cancelEl.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter' || ev.key === ' ') {
-      ev.preventDefault();
-      ev.stopPropagation();
-      this._cancelScan();
-    }
+    this._duplex = this._twoSidedEl.checked;
+    this._clearResultTimer();
+    this._setStatus('');
   });
   this._rendered = true;
-  // Reflect any scan already in progress (e.g. started from another device
-  // before this card mounted).
+  this._syncControls();
   this._onHass();
+};
+
+C.prototype._syncControls = function () {
+  if (!this._primaryEl) return;
+  const locked = !!this._busy || !!this._activeScanId;
+  if (!locked && this._resetDuplex) {
+    this._duplex = this._config.duplex;
+    this._resetDuplex = false;
+  }
+  const current = this._scanState()?.attributes;
+  const activeMode = locked && current?.scan_id === this._activeScanId
+    ? current?.duplex_mode : null;
+  this._twoSidedEl.checked = activeMode
+    ? activeMode === 'manual' || activeMode === 'automatic' : !!this._duplex;
+  this._twoSidedEl.disabled = locked;
+  this._primaryEl.disabled = locked;
+  this._primaryEl.hidden = !!this._showCancel;
+  this._primaryEl.textContent = this._busy ? 'Starting…' : 'Scan';
+  if (this._showingIdle) this._statusEl.textContent = this._idleStatus();
+};
+
+C.prototype._idleStatus = function () {
+  return this._duplex ? 'Feeder · may need two passes' : 'Automatic source';
 };
 
 // All API calls go through hass.fetchWithAuth, which injects the auth header
@@ -258,19 +232,35 @@ C.prototype._apiFetch = function (path, init = {}) {
 };
 
 C.prototype._setStatus = function (text, cls = '') {
+  this._showingIdle = !text;
   this._statusEl.textContent = '';
   if (text instanceof Node) this._statusEl.appendChild(text);
-  else this._statusEl.textContent = text || '';
+  else {
+    const message = text || this._idleStatus();
+    const split = cls === 'err' && message.length > 100 ? message.indexOf('. ') : -1;
+    if (split > 0) {
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = message.slice(0, split + 2);
+      const recovery = document.createElement('div');
+      recovery.textContent = message.slice(split + 2);
+      details.append(summary, recovery);
+      this._statusEl.appendChild(details);
+    } else this._statusEl.textContent = message;
+  }
   this._statusEl.className = 'status' + (cls ? ' ' + cls : '');
 };
 
 C.prototype._setCancelVisible = function (visible) {
+  this._showCancel = !!visible;
   this._cancelEl.classList.toggle('show', !!visible);
-  this._twoSidedEl.disabled = !!visible || !!this._busy;
+  this._syncControls();
 };
 
-C.prototype._startScan = async function (overrides = {}) {
+C.prototype._startScan = async function (overrides) {
   if (this._busy || this._activeScanId) return;
+  const request = overrides || (this._duplex
+    ? { source: 'Feeder', duplex: true } : { duplex: false });
   this._busy = true;
   this._backError = null;
   this._reverseBackOrder = false;
@@ -282,7 +272,7 @@ C.prototype._startScan = async function (overrides = {}) {
     const resp = await this._apiFetch('/api/escl_scan/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(overrides),
+      body: JSON.stringify(request),
     });
     let body = null;
     try { body = await resp.json(); } catch {}
@@ -314,7 +304,7 @@ C.prototype._startScan = async function (overrides = {}) {
   } finally {
     this._busy = false;
     this._card.classList.remove('busy');
-    this._twoSidedEl.disabled = !!this._activeScanId;
+    this._syncControls();
   }
 };
 
@@ -465,7 +455,8 @@ C.prototype._onHass = function () {
     this._activeScanId = null;
     // idle / unavailable — clear, unless a fresh result is still latched
     // or a local start is mid-flight.
-    this._setStatus('');
+    this._setStatus(state === 'unavailable' || state === 'unknown' ? 'Scan status unavailable' : '',
+      state === 'unavailable' || state === 'unknown' ? 'err' : '');
     this._setCancelVisible(false);
   }
 };

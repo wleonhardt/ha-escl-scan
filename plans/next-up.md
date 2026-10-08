@@ -1,12 +1,12 @@
 # Next up
 
 ## Queue
-- Shared scan/print card rollout, queued: visible Two-sided switch, one primary
-  action, common options and native Tile features with compatible wrappers.
-  Start Phase 0 contract/host experiment, then Phase 1 mobile polish.
-  [Phases, dependencies and release gates](shared-card-rollout-2026-10-08.md);
-  [design review](design-review-2026-10-08.md). Print upload copies/sides must
-  land before their controls. Implementation has not started.
+- Shared scan/print card rollout, in progress: Phase 0 contract/current-host
+  experiment and Phase 1 implementation complete. Scan v0.6.0 / print v0.5.0
+  ready for hosted validation and installation; physical Android confirmation
+  pending. [Validation](shared-card-phase-1-validation.md).
+  Next implementation: Phase 2 capability/upload APIs, then Phase 3 options.
+  [Full plan](shared-card-rollout-2026-10-08.md).
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
 - Live-test still open: zeroconf discovery flow only (needs the entry removed;

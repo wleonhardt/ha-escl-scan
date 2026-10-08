@@ -6,6 +6,27 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-08
+
+### Changed
+- Replace Scan Duplex with a compact, labelled Two-sided switch and one Scan
+  action. Changing the switch never starts a scan; job controls lock while active.
+- Match the sister print card with neutral theme surfaces, native icons, readable
+  text, real buttons, keyboard focus and matching Sections sizing. Long conflict
+  messages expand from a summary to recovery guidance.
+- Default title is Scan. Existing explicit titles and card types remain valid.
+
+### Added
+- Boolean `duplex` card default and visual editor field (default false). The
+  switch explicitly overrides the integration duplex default; enabled scans use
+  the feeder with the existing automatic/manual fallback.
+- Shared card contract, paired fixtures and direct Sections dashboard example.
+
+### Fixed
+- Editing a title/default no longer resets active scan controls before a sensor
+  update arrives. Apply a changed duplex default after the current scan finishes.
+- Show unavailable scan state instead of an idle source hint.
+
 ## [0.5.2] - 2026-10-08
 
 ### Fixed

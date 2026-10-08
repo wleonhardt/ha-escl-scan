@@ -67,18 +67,27 @@ function mount(win, config = {}) {
 const status = (el) => el.shadowRoot.querySelector('.status');
 const cancelShown = (el) => el.shadowRoot.querySelector('.cancel').classList.contains('show');
 
-test('Scan Duplex requests a duplex feeder scan without a second start', async () => {
+test('Two-sided changes intent without submitting; Scan submits the frozen feeder intent once', async () => {
   const win = boot();
   const el = mount(win);
   const { calls } = makeHass(el, {
     fetchImpl: async () => jsonResponse({ scan_id: 'duplex1', source: 'Feeder' }),
   });
-  assert.equal(el.shadowRoot.querySelector('.two-sided').textContent, 'Scan Duplex');
-  el.shadowRoot.querySelector('.two-sided').click();
+  const toggle = el.shadowRoot.querySelector('.two-sided');
+  assert.equal(toggle.getAttribute('role'), 'switch');
+  toggle.click();
+  assert.equal(calls.fetch.length, 0);
+  assert.equal(toggle.checked, true);
+  assert.match(status(el).textContent, /Feeder.*two passes/);
+  const primary = el.shadowRoot.querySelector('.primary');
+  primary.click();
+  primary.click();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(calls.fetch.length, 1);
   assert.deepEqual(JSON.parse(calls.fetch[0].init.body), { source: 'Feeder', duplex: true });
-  assert.equal(el.shadowRoot.querySelector('.two-sided').disabled, true);
+  assert.equal(toggle.disabled, true);
+  toggle.click();
+  assert.equal(toggle.checked, true);
 });
 
 test('manual duplex waiting shows instructions and resumes once without overwriting progress', async () => {
@@ -158,7 +167,7 @@ test('registers card + editor, picker entry, stub config', () => {
   const win = boot();
   const C = win.customElements.get(TAG);
   assert.ok(C);
-  assert.equal(C.getStubConfig().title, 'Scan now');
+  assert.equal(C.getStubConfig().title, 'Scan');
   assert.ok(win.customElements.get(TAG + '-editor'), 'editor element defined');
   assert.equal(C.getConfigElement().tagName.toLowerCase(), TAG + '-editor');
   const entry = win.customCards.find((c) => c.type === TAG);
@@ -439,7 +448,7 @@ test('changing configured entity updates immediately and missing sensors clear c
   el.setConfig({ entity: 'sensor.other' });
   assert.equal(status(el).textContent, 'Scan failed: jam');
   el.setConfig({ entity: 'sensor.missing' });
-  assert.equal(status(el).textContent, '');
+  assert.equal(status(el).textContent, 'Automatic source');
   assert.equal(el._activeScanId, null);
   assert.ok(!cancelShown(el));
 });
@@ -480,4 +489,75 @@ test('malformed successful start responses show an error with no cancel control'
   await el._startScan();
   assert.match(status(el).textContent, /Invalid response/);
   assert.ok(!cancelShown(el));
+});
+
+test('one-sided switch explicitly overrides integration duplex defaults', async () => {
+  const win = boot();
+  const el = mount(win, { duplex: true });
+  const { calls } = makeHass(el, { fetchImpl: async () => jsonResponse({ scan_id: 'one' }) });
+  el.shadowRoot.querySelector('.two-sided').click();
+  el.shadowRoot.querySelector('.primary').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(JSON.parse(calls.fetch[0].init.body), { duplex: false });
+});
+
+test('card surface and switch keyboard events do not start a scan', () => {
+  const win = boot();
+  const el = mount(win);
+  const { calls } = makeHass(el);
+  const card = el.shadowRoot.querySelector('ha-card');
+  assert.equal(card.getAttribute('role'), null);
+  assert.equal(card.getAttribute('tabindex'), null);
+  for (const node of [card, el.shadowRoot.querySelector('.two-sided')]) {
+    node.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    node.dispatchEvent(new win.KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+  }
+  card.click();
+  assert.equal(calls.fetch.length, 0);
+  assert.equal(el.shadowRoot.querySelector('.cancel').tagName, 'BUTTON');
+});
+
+test('duplex preference survives title edits and freezes during an active scan', async () => {
+  const win = boot();
+  const el = mount(win);
+  const { push, calls } = makeHass(el, { fetchImpl: async () => jsonResponse({ scan_id: 's1' }) });
+  const toggle = el.shadowRoot.querySelector('.two-sided');
+  toggle.click();
+  el.setConfig({ title: 'Desk' });
+  assert.equal(toggle.checked, true);
+  await el._startScan();
+  el.setConfig({ title: 'Desk', duplex: true });
+  el.setConfig({ title: 'Desk', duplex: false });
+  assert.equal(toggle.checked, true, 'submitted intent stays visible');
+  assert.equal(toggle.disabled, true);
+  assert.deepEqual(JSON.parse(calls.fetch[0].init.body), { source: 'Feeder', duplex: true });
+  push(SENSOR, 'completed', { scan_id: 's1', pages_done: 1 });
+  assert.equal(toggle.checked, false, 'new default applies after completion');
+  assert.equal(toggle.disabled, false);
+});
+
+test('long scan conflict exposes summary and recovery details without starting jobs', async () => {
+  const win = boot();
+  const el = mount(win);
+  const { calls } = makeHass(el, { fetchImpl: async () => jsonResponse({}, 409) });
+  await el._startScan();
+  const details = status(el).querySelector('details');
+  assert.match(details.querySelector('summary').textContent, /scanner is busy/);
+  assert.match(details.querySelector('div').textContent, /Wait.*cancel/);
+  details.querySelector('summary').click();
+  assert.equal(calls.fetch.length, 1);
+  assert.equal(details.open, true);
+});
+
+test('an external duplex job displays its actual mode without changing next-job intent', () => {
+  const win = boot();
+  const el = mount(win);
+  const { push } = makeHass(el);
+  const toggle = el.shadowRoot.querySelector('.two-sided');
+  push(SENSOR, 'processing', { scan_id: 'external', duplex_mode: 'manual' });
+  assert.equal(toggle.checked, true);
+  assert.equal(toggle.disabled, true);
+  push(SENSOR, 'completed', { scan_id: 'external', duplex_mode: 'manual' });
+  assert.equal(toggle.checked, false);
+  assert.equal(toggle.disabled, false);
 });

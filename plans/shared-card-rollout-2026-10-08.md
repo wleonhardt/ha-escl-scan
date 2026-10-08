@@ -1,6 +1,8 @@
 # Shared scan and print card rollout plan
 
-Status: queued. Direction agreed on 2026-10-08; implementation has not started.
+Status: in-progress. Phase 0 contract and current-host experiment complete;
+Phase 1 implemented for scan v0.6.0 and print v0.5.0. Release/live gates are
+tracked in [validation](shared-card-phase-1-validation.md).
 
 Bring scanning and printing onto one Home Assistant visual and interaction
 contract, starting with the visible Two-sided switch selected in the design
@@ -64,18 +66,18 @@ requirement to release both repositories at precisely the same time.
 
 Agree on the small reusable surface before extracting production code.
 
-- [ ] Record a structural decision covering independent distribution, legacy
+- [x] Record a structural decision covering independent distribution, legacy
   wrappers, domain-specific adapters and the shared contract version.
-- [ ] Define presentation states: Ready, Preparing, Running, Needs attention,
+- [x] Define presentation states: Ready, Preparing, Running, Needs attention,
   Complete, Error and Unavailable. Keep device availability separate from job
   activity; map unknown backend states conservatively.
-- [ ] Define common spacing, typography, icons, action hierarchy, status text,
+- [x] Define common spacing, typography, icons, action hierarchy, status text,
   options entry, cancellation and disabled behavior. Inherit host surfaces,
   borders, radius and shadow. Inventory existing custom styling and require a
   concrete layout or accessibility reason for retained overrides.
-- [ ] Create common fixtures for idle, selected file, running, manual reload,
+- [x] Create common fixtures for idle, selected file, running, manual reload,
   errors, unavailable and completion. Include long names and narrow cards.
-- [ ] Prototype a plain-JS custom feature in native Tile and current Mushroom
+- [x] Prototype a plain-JS custom feature in native Tile and current Mushroom
   Template. Check entity context, action/switch separation, feature row sizing,
   options panel, keyboard behavior and registration on refresh/update.
 - [ ] Test the currently declared minimum HA version, current installed HA,
@@ -93,25 +95,25 @@ Deliver the improvement the user can see first, within the existing standalone
 cards. Share conventions and fixtures now; extract code only where both cards
 actually use the same behavior.
 
-- [ ] Replace Scan Duplex with a compact labelled Two-sided switch and one Scan
+- [x] Replace Scan Duplex with a compact labelled Two-sided switch and one Scan
   button. Keep existing manual reload, back-order and cancel paths intact.
   Show the feeder/manual-pass explanation before starting when applicable.
-- [ ] Give print the same header, status, main action and control treatment.
+- [x] Give print the same header, status, main action and control treatment.
   Rename Print PDF to Print and stage PDF/JPEG/PNG selection with filename,
   Replace/Clear and explicit Print. Handle file-picker cancellation without
   clearing an already staged file. Keep the file local until Print is pressed.
-- [ ] Replace nested clickable card regions and the small cancel div with
+- [x] Replace nested clickable card regions and the small cancel div with
   separate real controls. Prevent duplicate starts and keyboard/toggle events
   from triggering the outer action. Snapshot next-job settings on submission
   and disable changes while that job runs.
-- [ ] Remove permanent scan tint and fixed scan radius. Use theme text and
+- [x] Remove permanent scan tint and fixed scan radius. Use theme text and
   status colors, native icons, visible focus and comfortable touch targets.
   Reflow long text instead of shrinking essential text to 11px.
-- [ ] Add matching standalone Sections sizing through `getGridOptions`, retain
+- [x] Add matching standalone Sections sizing through `getGridOptions`, retain
   masonry sizing, and publish direct Sections examples plus existing stack
   examples. Use consistent idle and ordinary running dimensions. Attention
   and detailed error content may expand for readability.
-- [ ] Keep a concise readable error summary and a discoverable detail action.
+- [x] Keep a concise readable error summary and a discoverable detail action.
   Surface actionable scan conflicts already supported by v0.5.1; a generic
   HTTP code must not be the only recovery guidance.
 
