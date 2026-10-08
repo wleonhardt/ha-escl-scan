@@ -83,6 +83,36 @@ async def test_copy_dir_outside_allowlist_is_ignored(hass, caplog):
         await hass.async_block_till_done()
 
 
+async def test_card_update_loads_only_current_module_and_can_restore_old_hash(hass):
+    from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, add_extra_js_url
+
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "192.0.2.10"})
+    entry.add_to_hass(hass)
+    old = "/escl_scan/card-old.js"
+    new = "/escl_scan/card-new.js"
+    unrelated = "/other-card.js"
+    with (
+        patch("custom_components.escl_scan._reap_lovelace_resources", _noop_reap),
+        patch(_CAPS, return_value=ScannerCapabilities()),
+        patch("custom_components.escl_scan._card_url_sync", side_effect=[old, new, old]),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        add_extra_js_url(hass, unrelated)
+        assert hass.data[DATA_EXTRA_MODULE_URL].urls == {old, unrelated}
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert hass.data[DATA_EXTRA_MODULE_URL].urls == {new, unrelated}
+        # Returning to a registered route must not duplicate it, and must
+        # re-add its module URL even though it was removed on the last reload.
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert hass.data[DATA_EXTRA_MODULE_URL].urls == {old, unrelated}
+        assert hass.data[DOMAIN]["_card_urls_registered"] == {old, new}
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+
 async def test_diagnostics(hass):
     from custom_components.escl_scan.diagnostics import (
         async_get_config_entry_diagnostics,

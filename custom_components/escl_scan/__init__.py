@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 
 from aiohttp import web
-from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.frontend import add_extra_js_url, remove_extra_js_url
 from homeassistant.components.http import HomeAssistantView, StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
@@ -147,8 +147,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await hass.http.async_register_static_paths(
                 [StaticPathConfig(card_url, str(_CARD_FILE), False)]
             )
-            add_extra_js_url(hass, card_url)
             registered.add(card_url)
+        # Keep the routes registered, but load only the current module. An old
+        # cached module can otherwise register the custom element first and
+        # suppress the updated card, even after the browser page is refreshed.
+        for old_url in registered - {card_url}:
+            remove_extra_js_url(hass, old_url)
+        add_extra_js_url(hass, card_url)
         hass.data[DOMAIN][entry.entry_id]["card_url"] = card_url
         if not hass.data[DOMAIN].get("_resources_reaped"):
             hass.data[DOMAIN]["_resources_reaped"] = True

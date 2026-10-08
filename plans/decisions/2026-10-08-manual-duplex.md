@@ -29,7 +29,7 @@ supersedes the silent simplex downgrade in the 2026-09-06 capabilities decision.
 
 ## Validation
 
-- 157 Python tests, 24 card tests, Ruff and diff checks pass. Coverage includes
+- 158 Python tests, 24 card tests, Ruff and diff checks pass. Coverage includes
   bundled PDFs, exact interleaving, rotation, mismatched counts, private fronts,
   cancel/timeout/shutdown while waiting, cancel/shutdown during the second POST,
   concurrent resume/cancel, loaded/idle feeder checks, HTTP/service behavior,
@@ -67,3 +67,9 @@ supersedes the silent simplex downgrade in the 2026-09-06 capabilities decision.
   the same first device job (scanner itself reports six). Likely reloaded
   before the first job closed; canceled this attempt too. Card/README now
   explicitly tell users to wait for the reload prompt before flipping.
+- Card-only installation plus entry reload exposed stale frontend module
+  registration: both old/new content hashes remained in extra module URLs,
+  and the old module could register the custom element first. Setup now keeps
+  routes registered but removes old module URLs before adding the current URL.
+  Regression test verifies changed hashes, restoring an earlier hash without
+  duplicate routes, and preservation of unrelated card modules.

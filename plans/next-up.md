@@ -23,7 +23,7 @@
 - 2026-10-08 — Automatic duplex detection plus a manual two-pass fallback
   implemented for v0.5.0. Card controls, resume API/service, private front-side
   storage, matched-count interleaving, cancellation/shutdown, and reload
-  timeout covered by 157 Python tests and 24 card tests. Three double-sided
+  timeout covered by 158 Python tests and 24 card tests. Three double-sided
   test sheets printed (six labeled sides). First live scan completed with six
   upright pages; whole-stack flipping reversed the backs, so an explicit
   back-order choice was added. Paired repeat test pending.

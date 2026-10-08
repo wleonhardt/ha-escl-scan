@@ -8,6 +8,10 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [0.5.0] - 2026-10-08
 
+### Fixed
+- Integration reloads load only the current card module, preventing a cached
+  older module from registering first and hiding updated controls.
+
 ### Added
 - Two-sided feeder scans detect automatic duplex support. Simplex scanners
   and scanners with unavailable capabilities use a manual two-pass workflow:
