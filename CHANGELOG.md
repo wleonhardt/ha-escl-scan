@@ -6,6 +6,15 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-08
+
+### Changed
+- Larger, more prominent **Scan Duplex** button, with a 48px minimum height.
+- Scan conflicts now explain whether another scan is running, backs need to
+  be scanned, or the previous scan is finishing, and tell users what to do.
+  Busy and empty feeders get separate back-side resume messages. Missing or
+  older 409 response bodies also show friendly guidance instead of HTTP codes.
+
 ## [0.5.0] - 2026-10-08
 
 ### Fixed

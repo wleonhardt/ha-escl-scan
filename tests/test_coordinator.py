@@ -167,11 +167,14 @@ async def test_manual_duplex_resume_checks_loaded_idle_feeder(make_coord, monkey
     coord = make_coord(client)
     scan = await coord.start_scan(duplex=True)
     await _wait_for(lambda: scan.state == "awaiting-back-sides")
-    for state, loaded in [("Idle", False), ("Processing", True)]:
+    for state, loaded, message in [
+        ("Idle", False, "feeder is empty.*Load the back sides"),
+        ("Processing", True, "scanner is busy.*Wait"),
+    ]:
         async def status(state=state, loaded=loaded):
             return ScannerStatus(state=state, adf_loaded=loaded)
         monkeypatch.setattr(client, "get_scanner_status", status)
-        with pytest.raises(ValueError, match="load the back sides"):
+        with pytest.raises(ValueError, match=message):
             await coord.async_scan_backs(scan.scan_id)
         assert scan.state == "awaiting-back-sides" and client.create_calls == 1
     assert await coord.async_cancel(scan.scan_id)

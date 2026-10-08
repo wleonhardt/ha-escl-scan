@@ -281,7 +281,24 @@ class ScanStartView(HomeAssistantView):
                 source=source, dpi=dpi, color=color, duplex=duplex
             )
         except ScanBusyError:
-            return self.json_message("a scan is already running", status_code=409)
+            current = coord.current
+            if current is not None and current.state == "awaiting-back-sides":
+                message = (
+                    "A two-sided scan is waiting for the back sides. Load them and choose "
+                    "Scan back sides, or cancel that scan before starting a new one."
+                )
+            elif current is not None and current.is_terminal():
+                message = "The previous scan is finishing. Wait a few seconds, then try again."
+            elif current is not None:
+                message = (
+                    "Another scan is in progress. Wait for it to finish, or cancel it "
+                    "before starting a new scan."
+                )
+            else:
+                message = (
+                    "The scanner is starting or reconnecting. Wait a few seconds, then try again."
+                )
+            return self.json_message(message, status_code=409)
         except Exception as exc:
             _LOGGER.exception("scan kickoff failed")
             return self.json_message(f"scan kickoff failed: {exc}", status_code=502)

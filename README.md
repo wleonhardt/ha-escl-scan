@@ -140,7 +140,7 @@ title: Scan now        # optional, defaults to "Scan now"
 entity: sensor.printer_current_scan   # optional; auto-detected if renamed
 ```
 
-Choose **Scan both sides** for a two-sided feeder document. Automatic duplex
+Choose **Scan Duplex** for a two-sided feeder document. Automatic duplex
 is used when advertised by the scanner. Otherwise, the card scans the fronts
 and pauses with reload instructions. **Wait for the reload prompt before
 flipping**; some scanners keep the first job open after sheets leave the

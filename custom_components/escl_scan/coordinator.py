@@ -512,19 +512,25 @@ class ScanCoordinator:
         scan = self._scans.get(scan_id)
         event = self._back_events.get(scan_id)
         if self._shutting_down or scan is None or scan.state != STATE_AWAITING_BACKS:
-            raise ValueError("scan is not waiting for back sides")
+            raise ValueError("This scan is not waiting for back sides. Start a new scan if needed.")
         if event is None or scan_id in self._back_resuming:
-            raise ValueError("back-side scan is already starting")
+            raise ValueError("The back-side scan is already starting. Please wait.")
         self._back_resuming.add(scan_id)
         try:
             status = await self._client.get_scanner_status()
-            if not status.is_idle or not status.adf_loaded:
-                raise ValueError("load the back sides into the idle feeder first")
+            if not status.is_idle:
+                raise ValueError("The scanner is busy. Wait for it to become idle, then try again.")
+            if not status.adf_loaded:
+                raise ValueError(
+                    "The feeder is empty. Load the back sides, then choose Scan back sides."
+                )
             if (
                 scan.is_terminal() or self._shutting_down
                 or self._back_events.get(scan_id) is not event
             ):
-                raise ValueError("scan is no longer waiting for back sides")
+                raise ValueError(
+                    "This scan is no longer waiting for back sides. Start a new scan if needed."
+                )
             scan.reverse_back_order = reverse_back_order
             scan.scan_phase = "backs"
             scan.state = STATE_PENDING

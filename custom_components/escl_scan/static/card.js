@@ -16,6 +16,19 @@ if (!customElements.get(TAG)) {
 
 const C = customElements.get(TAG);
 
+function responseErrorMessage(response, body, conflictFallback) {
+  const message = [body?.message, body?.error]
+    .find(value => typeof value === 'string' && value.trim());
+  if (response.status === 409) {
+    // Older servers (and proxies without JSON bodies) lack actionable detail.
+    if (!message || /^(a )?scan (is )?already (running|in progress)$/i.test(message.trim())
+        || /^(HTTP )?409( Conflict)?$/i.test(message.trim())) {
+      return conflictFallback;
+    }
+  }
+  return message || `HTTP ${response.status}`;
+}
+
 C.prototype.setConfig = function (config) {
   this._config = Object.assign({ title: 'Scan now' }, config || {});
   this._render();
@@ -163,7 +176,12 @@ C.prototype._render = function () {
         background: var(--card-background-color, #1c1c1c);
         border: 1px solid var(--divider-color, #889); border-radius: 8px; padding: 5px;
       }
-      .two-sided { font-size: 12px; }
+      .two-sided {
+        width: 100%; max-width: 240px; min-height: 48px;
+        font-size: 16px; font-weight: 700; padding: 12px 18px; margin-top: 6px;
+        border: 2px solid var(--primary-color, #93c5fd);
+        background: rgba(var(--rgb-primary-color, 147,197,253), 0.22);
+      }
     </style>
     <ha-card role="button" tabindex="0">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -175,7 +193,7 @@ C.prototype._render = function () {
       </svg>
       <div class="title"></div>
       <div class="status" aria-live="polite"></div>
-      <button class="two-sided" type="button">Scan both sides</button>
+      <button class="two-sided" type="button" title="Scan both sides of a feeder document">Scan Duplex</button>
       <div class="cancel" role="button" tabindex="0">Cancel</div>
     </ha-card>
   `;
@@ -269,9 +287,8 @@ C.prototype._startScan = async function (overrides = {}) {
     let body = null;
     try { body = await resp.json(); } catch {}
     if (!resp.ok) {
-      // 409 = a scan is already running (busy guard). Surface it plainly.
-      const msg = (body && (body.message || body.error)) || `HTTP ${resp.status}`;
-      throw new Error(msg);
+      throw new Error(responseErrorMessage(resp, body,
+        'The scanner is busy. Wait for the current scan to finish, or cancel it before starting a new scan.'));
     }
     if (typeof body?.scan_id !== 'string' || !body.scan_id) {
       throw new Error('Invalid response from scan service');
@@ -292,7 +309,7 @@ C.prototype._startScan = async function (overrides = {}) {
       this._lastSig = null;
       this._onHass();
     } else {
-      this._setStatus('Scan failed: ' + (err?.message || err), 'err');
+      this._setStatus('Cannot start scan: ' + (err?.message || err), 'err');
     }
   } finally {
     this._busy = false;
@@ -317,7 +334,8 @@ C.prototype._scanBacks = async function () {
     if (!r.ok) {
       let body = null;
       try { body = await r.json(); } catch {}
-      throw new Error(body?.message || `HTTP ${r.status}`);
+      throw new Error(responseErrorMessage(r, body,
+        'Cannot scan the backs yet. Check that the scanner is idle and the back sides are loaded, then try again.'));
     }
     if (this._scanState()?.state === 'awaiting-back-sides'
         && this._activeScanId === scanId) this._setStatus('Starting back sides…');

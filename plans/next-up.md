@@ -20,6 +20,11 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-10-08 — v0.5.1 card polish: larger Scan Duplex control (48px minimum
+  height) and actionable conflict guidance for running scans, waiting backs,
+  finishing scans, empty/busy feeders, and missing/older 409 response bodies.
+  No scan lifecycle changes; existing busy guards remain enforced. Validation:
+  161 Python tests, 30 card tests, and ruff pass.
 - 2026-10-08 — Automatic duplex detection plus a manual two-pass fallback
   implemented for v0.5.0. Card controls, resume API/service, private front-side
   storage, matched-count interleaving, cancellation/shutdown, and reload

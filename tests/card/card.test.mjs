@@ -67,12 +67,13 @@ function mount(win, config = {}) {
 const status = (el) => el.shadowRoot.querySelector('.status');
 const cancelShown = (el) => el.shadowRoot.querySelector('.cancel').classList.contains('show');
 
-test('Scan both sides requests a duplex feeder scan without a second start', async () => {
+test('Scan Duplex requests a duplex feeder scan without a second start', async () => {
   const win = boot();
   const el = mount(win);
   const { calls } = makeHass(el, {
     fetchImpl: async () => jsonResponse({ scan_id: 'duplex1', source: 'Feeder' }),
   });
+  assert.equal(el.shadowRoot.querySelector('.two-sided').textContent, 'Scan Duplex');
   el.shadowRoot.querySelector('.two-sided').click();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(calls.fetch.length, 1);
@@ -194,9 +195,43 @@ test('409 busy guard and other errors are surfaced', async () => {
   const el = mount(win);
   makeHass(el, { fetchImpl: async () => jsonResponse({ message: 'scan already running' }, 409) });
   await el._startScan();
-  assert.equal(status(el).textContent, 'Scan failed: scan already running');
+  assert.match(status(el).textContent, /scanner is busy.*Wait.*cancel/);
+  assert.doesNotMatch(status(el).textContent, /409/);
   assert.ok(status(el).classList.contains('err'));
   assert.ok(!cancelShown(el));
+});
+
+for (const [name, response, expected] of [
+  ['non-JSON 409', { ok: false, status: 409, json: async () => { throw new Error('HTML'); } }, /scanner is busy.*Wait/],
+  ['invalid message type', jsonResponse({ message: { technical: 409 } }, 409), /scanner is busy.*Wait/],
+  ['technical status message', jsonResponse({ message: 'HTTP 409' }, 409), /scanner is busy.*Wait/],
+  ['waiting for backs', jsonResponse({ message: 'A two-sided scan is waiting for the back sides. Choose Scan back sides.' }, 409), /waiting for the back sides.*Scan back sides/],
+  ['other errors', jsonResponse({ message: 'Connection unavailable' }, 502), /Connection unavailable/],
+]) {
+  test(`start error explains ${name}`, async () => {
+    const win = boot();
+    const el = mount(win);
+    makeHass(el, { fetchImpl: async () => response });
+    await el._startScan({ source: 'Feeder', duplex: true });
+    assert.match(status(el).textContent, expected);
+    assert.ok(status(el).classList.contains('err'));
+    assert.equal(el._activeScanId, null);
+    assert.equal(el.shadowRoot.querySelector('.two-sided').disabled, false);
+  });
+}
+
+test('back-side conflicts without JSON give guidance and retain retry controls', async () => {
+  const win = boot();
+  const el = mount(win);
+  const { push } = makeHass(el, {
+    fetchImpl: async () => ({ ok: false, status: 409, json: async () => { throw new Error('HTML'); } }),
+  });
+  push(SENSOR, 'awaiting-back-sides', { scan_id: 'manual1', front_pages: 3 });
+  await el._scanBacks();
+  assert.match(status(el).textContent, /Check.*idle.*loaded.*try again/);
+  assert.doesNotMatch(status(el).textContent, /HTTP 409/);
+  assert.ok(cancelShown(el));
+  assert.equal(status(el).querySelector('button').disabled, false);
 });
 
 test('hass setter drives progress: pending → processing → completed with Open scan link', async () => {

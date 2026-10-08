@@ -57,7 +57,9 @@ async def test_manual_duplex_views_reject_early_download_and_stale_resume(api):
     scan = coord.get(data["scan_id"])
     await _wait_for(lambda: scan.state == "awaiting-back-sides")
     assert (await http.get(f"/api/escl_scan/file/{scan.scan_id}")).status == 409
-    assert (await http.post("/api/escl_scan/start", json={})).status == 409
+    blocked = await http.post("/api/escl_scan/start", json={})
+    assert blocked.status == 409
+    assert "Scan back sides" in (await blocked.json())["message"]
     client._docs = [[VALID_PDF]]
     back_response = await http.post("/api/escl_scan/scan_backs", json={
         "scan_id": scan.scan_id, "reverse_back_order": True,
@@ -87,6 +89,29 @@ async def test_start_validates_body(api):
 async def test_start_accepts_empty_body(api):
     http, _, _ = api
     assert (await http.post("/api/escl_scan/start")).status == 200
+
+
+@pytest.mark.parametrize("state, guidance", [
+    (None, "starting or reconnecting"),
+    ("processing", "Wait for it to finish, or cancel"),
+    ("canceled", "previous scan is finishing"),
+])
+async def test_start_conflict_explains_next_step(api, state, guidance):
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock
+
+    from custom_components.escl_scan.coordinator import ScanBusyError, TrackedScan
+
+    http, _, coord = api
+    if state:
+        coord._current = TrackedScan(
+            scan_id="existing", source="Feeder", dpi=300, color="color",
+            submitted_at=datetime.now(UTC), state=state,
+        )
+    with patch.object(coord, "start_scan", AsyncMock(side_effect=ScanBusyError("busy"))):
+        response = await http.post("/api/escl_scan/start", json={"duplex": True})
+    assert response.status == 409
+    assert guidance in (await response.json())["message"]
 
 
 async def test_start_then_file_download(api):
