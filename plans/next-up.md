@@ -6,13 +6,18 @@
 - Live-test still open: zeroconf discovery flow only (needs the entry removed;
   single_config_entry aborts otherwise).
 
+- Awaiting reporter feedback on #5 (v0.4.4/v0.4.5 on Epson ET-4950 / WF-4830).
+
 ## Backlog / nice-to-have
 - Image-mode (JPEG) scans converted to PDF (needs Pillow/img2pdf).
 - Reconfigure flow for host/creds (options flow currently edits them).
+- Per-scan override for rotate_duplex_backs (service field / card toggle).
 - Card: localisation of status strings.
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-10-08 — #5: v0.4.4 duplex region from AdfDuplexInputCaps; v0.4.5 rotate-back-sides
+  option + 900 s download stall/retry budget (fixed, not configurable).
 - 2026-09-12 — ADF live test on v0.4.3: progress 1→2→3 with `JobScanning`,
   completed 3 pages = PDF pages, copy-to-folder OK. Live progress on HP confirmed.
 - 2026-09-07 — ADF live test: 3 sheets → one bundle PDF, 3 pages, copied. Found:
