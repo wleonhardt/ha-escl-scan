@@ -30,6 +30,7 @@ import uuid
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
+from .capability_cache import CapabilityCache
 from .const import DOMAIN, EVENT_COMPLETED, EVENT_STATE_CHANGED
 from .scanner import (
     DEFAULT_REGION,
@@ -43,7 +44,6 @@ _LOGGER = logging.getLogger(__name__)
 
 POLL_INTERVAL = 1.5
 TERMINAL_HOLD_SECONDS = 8.0
-CAPABILITIES_RETRY_SECONDS = 300.0
 MANUAL_RELOAD_TIMEOUT_SECONDS = 900.0
 
 # Sensor states (lowercase kebab; mirror IPP integration's vocabulary).
@@ -250,6 +250,7 @@ class TrackedScan:
     dpi: int
     color: str
     submitted_at: datetime
+    region: tuple[int, int] = DEFAULT_REGION
     duplex: bool = False
     duplex_mode: str = "simplex"
     scan_phase: str | None = None
@@ -330,7 +331,7 @@ class ScanCoordinator:
         self._file_ttl = file_ttl_seconds
         self._copy_dir = copy_dir
         self._caps: ScannerCapabilities | None = None
-        self._caps_retry_at = 0.0
+        self.capability_cache = CapabilityCache(lambda: self._client.get_capabilities())
         self._scans: dict[str, TrackedScan] = {}
         self._current: TrackedScan | None = None
         self._driver_tasks: dict[str, asyncio.Task] = {}
@@ -379,14 +380,8 @@ class ScanCoordinator:
         )
 
     async def async_refresh_capabilities(self) -> ScannerCapabilities | None:
-        """Cache capabilities; back off unavailable endpoints for five minutes
-        without losing the chance to recover from a transient probe failure."""
-        if self._caps is None and self._hass.loop.time() >= self._caps_retry_at:
-            try:
-                self._caps = await self._client.get_capabilities()
-            except Exception as exc:
-                _LOGGER.debug("ScannerCapabilities unavailable: %s", exc)
-                self._caps_retry_at = self._hass.loop.time() + CAPABILITIES_RETRY_SECONDS
+        """Share the same bounded on-demand cache with capability views."""
+        self._caps = await self.capability_cache.async_get()
         return self._caps
 
     def get(self, scan_id: str) -> TrackedScan | None:
@@ -426,6 +421,14 @@ class ScanCoordinator:
         Raises ScanBusyError if a scan is already in progress — the scanner
         is single-job hardware and a second create would 503 and purge the
         running job."""
+        if source not in (None, "Platen", "Feeder"):
+            raise ValueError("invalid scan source")
+        if dpi is not None and (type(dpi) is not int or not 50 <= dpi <= 1200):
+            raise ValueError("dpi must be an integer from 50 to 1200")
+        if color not in (None, "color", "gray"):
+            raise ValueError("invalid scan color")
+        if duplex is not None and type(duplex) is not bool:
+            raise ValueError("duplex must be a boolean")
         if self._shutting_down:
             raise ScanBusyError("scanner integration is shutting down")
         if self._starting or self._driver_tasks or (
@@ -449,6 +452,8 @@ class ScanCoordinator:
                 and caps is not None and caps.adf_duplex
             )
             manual_duplex = want_duplex and actual_source == "Feeder" and not actual_duplex
+            if caps is not None:
+                caps.validate_options(actual_source, actual_color, actual_duplex)
             if caps is not None and (
                 snapped := caps.snap_dpi(actual_dpi, actual_source, actual_duplex)
             ) != actual_dpi:
@@ -464,6 +469,7 @@ class ScanCoordinator:
                 source=actual_source,
                 dpi=actual_dpi,
                 color=actual_color,
+                region=caps.region_for(actual_source, actual_duplex) if caps else DEFAULT_REGION,
                 duplex=actual_duplex,
                 duplex_mode="manual" if manual_duplex else (
                     "automatic" if actual_duplex else "simplex"
@@ -563,6 +569,7 @@ class ScanCoordinator:
         self._driver_tasks.clear()
         self._hold_tasks.clear()
         self._purge_tasks.clear()
+        await self.capability_cache.async_close()
         try:
             await self._client.async_close()
         except Exception:  # noqa: BLE001
@@ -588,7 +595,7 @@ class ScanCoordinator:
 
     async def _create_device_job(self, scan: TrackedScan) -> None:
         """Recover the created job's address even if shutdown interrupts POST."""
-        region = self._caps.region_for(scan.source, scan.duplex) if self._caps else DEFAULT_REGION
+        region = scan.region
         create = self._hass.loop.create_task(self._client.create_job(
             source=scan.source, dpi=scan.dpi, color=scan.color, duplex=scan.duplex,
             width=region[0], height=region[1],

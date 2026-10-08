@@ -524,7 +524,7 @@ async def test_duplex_only_for_feeder_on_capable_adf(make_coord):
     assert scan.duplex is False and client.create_kwargs["duplex"] is False
 
     client.caps = ScannerCapabilities(adf_duplex=False)
-    coord._caps = client.caps
+    coord.capability_cache._expires_at = 0
     client._docs = [[VALID_PDF]]
     scan = await coord.start_scan(source="Feeder", duplex=True)
     await _wait_for(lambda: scan.state == "awaiting-back-sides")
@@ -777,7 +777,7 @@ async def test_capabilities_failure_backs_off_and_recovers(make_coord, monkeypat
     assert await coord.async_refresh_capabilities() is None
     assert await coord.async_refresh_capabilities() is None
     get_caps.assert_awaited_once()
-    coord._caps_retry_at = 0
+    coord.capability_cache._retry_at = 0
     get_caps.side_effect = None
     get_caps.return_value = CAPS
     assert await coord.async_refresh_capabilities() is CAPS
@@ -962,3 +962,20 @@ async def test_merge_preserves_content_streams_after_inputs_close(make_coord):
     assert scan.state == "completed"
     pages = PdfReader(scan.file_path).pages
     assert [page.get_contents().get_data() for page in pages] == expected
+
+
+async def test_capability_refresh_cannot_change_region_between_manual_passes(make_coord):
+    client = TwoPassClient(marked_pdf([101]), marked_pdf([201]))
+    client.caps = ScannerCapabilities(adf_max=(2550, 3300))
+    coord = make_coord(client)
+    scan = await coord.start_scan(duplex=True)
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
+    assert scan.region == (2550, 3300)
+    assert client.create_kwargs["height"] == 3300
+    client.caps = ScannerCapabilities(adf_max=(2550, 4200))
+    coord.capability_cache._expires_at = 0
+    await coord.async_refresh_capabilities()
+    await coord.async_scan_backs(scan.scan_id)
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    assert client.create_kwargs["height"] == 3300

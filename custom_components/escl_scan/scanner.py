@@ -142,6 +142,9 @@ class ScannerCapabilities:
     resolutions: list[int] = field(default_factory=list)  # sorted, discrete
     color_modes: list[str] = field(default_factory=list)
     source_resolutions: dict[str, list[int]] = field(default_factory=dict)
+    source_color_modes: dict[str, list[str]] = field(default_factory=dict)
+    sources: list[str] = field(default_factory=list)
+    adf_duplex_known: bool = False
 
     @property
     def device_id(self) -> str | None:
@@ -157,10 +160,21 @@ class ScannerCapabilities:
     def snap_dpi(self, dpi: int, source: str | None = None, duplex: bool = False) -> int:
         """Nearest supported discrete resolution (or dpi itself if unknown)."""
         key = "FeederDuplex" if source == "Feeder" and duplex else source
-        resolutions = self.source_resolutions.get(key, self.resolutions)
+        # A missing source list cannot borrow a different source's DPI modes.
+        resolutions = (self.source_resolutions.get(key, [])
+                       if source is not None and self.source_resolutions else self.resolutions)
         if not resolutions:
             return dpi
         return min(resolutions, key=lambda r: (abs(r - dpi), r))
+
+    def validate_options(self, source: str, color: str, duplex: bool) -> None:
+        """Reject known unsupported options; missing vendor data stays permissive."""
+        if self.sources and source not in self.sources:
+            raise ValueError(f"scanner does not support source={source}")
+        key = "FeederDuplex" if source == "Feeder" and duplex else source
+        modes = self.source_color_modes.get(key, [])
+        if modes and _color_mode(color) not in modes:
+            raise ValueError(f"scanner does not support color={color} for {key}")
 
 
 # ── XML parsing helpers ──────────────────────────────────────────────────────
@@ -258,12 +272,17 @@ def parse_scanner_capabilities(xml: bytes) -> ScannerCapabilities:
         return sorted(values)
 
     source_resolutions = {}
+    source_color_modes = {}
     for source, name in (
         ("Platen", "PlatenInputCaps"), ("Feeder", "AdfSimplexInputCaps"),
         ("FeederDuplex", "AdfDuplexInputCaps"),
     ):
         if (node := _find_local(root, name)) is not None:
             source_resolutions[source] = _resolutions(node)
+            source_color_modes[source] = list(dict.fromkeys(
+                mode for el in node.iter() if _local(el.tag) == "ColorMode"
+                and (mode := _text(el))
+            ))
     color_modes: list[str] = []
     for el in root.iter():
         if _local(el.tag) == "ColorMode" and (t := _text(el)) and t not in color_modes:
@@ -279,6 +298,10 @@ def parse_scanner_capabilities(xml: bytes) -> ScannerCapabilities:
         resolutions=_resolutions(root),
         color_modes=color_modes,
         source_resolutions=source_resolutions,
+        source_color_modes=source_color_modes,
+        sources=(["Platen"] if "Platen" in source_resolutions else [])
+        + (["Feeder"] if adf is not None else []),
+        adf_duplex_known=adf is not None,
     )
 
 
@@ -480,7 +503,12 @@ class ScannerClient:
             f"{self._base}/ScannerCapabilities", timeout=_SHORT_TIMEOUT
         ) as resp:
             resp.raise_for_status()
-            return parse_scanner_capabilities(await resp.read())
+            data = bytearray()
+            async for chunk in resp.content.iter_chunked(64 * 1024):
+                if len(data) + len(chunk) > 1024 * 1024:
+                    raise ValueError("scanner capabilities exceed the 1 MiB limit")
+                data.extend(chunk)
+            return parse_scanner_capabilities(bytes(data))
 
     # ── ScanJob lifecycle ───────────────────────────────────────────────
 

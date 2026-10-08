@@ -246,7 +246,27 @@ Both carry the full scan dict as `event.data`.
 
 ## REST API
 
-The integration registers four HA HTTP views (all `requires_auth = true`):
+The integration registers five HA HTTP views (all `requires_auth = true`):
+
+### `GET /api/escl_scan/capabilities?entity_id=sensor.printer_current_scan`
+
+Returns schema version 1, the resolved sensor, bounded model identity, supported
+sources and per-source `Platen` / `Feeder` / `FeederDuplex` profiles, automatic
+and manual duplex support, accepted request fields and DPI limits. The sensor
+target is optional with one loaded scanner. No active scan or admin role is needed.
+
+Capabilities are read at setup and on demand after 15 minutes. Concurrent reads
+share one refresh; failures back off for five minutes, with a 15-second fetch
+limit. `status` is `fresh`, `stale` (last success retained), or `unknown`.
+`fetched_at`, `attempted_at`, `refresh_after_seconds` and a generic
+`refresh_failed` error describe the cache, not current device availability.
+`null` means a capability was not reported; an empty supported list means no
+integration-supported choices were advertised. Missing feeder/duplex resolutions
+are never borrowed from the glass. Existing job sensor attributes are unchanged.
+
+Unknown targets return 404, malformed queries 400 and unloaded integration 503.
+Consumers should check `schema_version` and `request_options` before exposing
+new controls. See the [capability contract](plans/decisions/2026-10-08-capability-api.md).
 
 ### `POST /api/escl_scan/start`
 

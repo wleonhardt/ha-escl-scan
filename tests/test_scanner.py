@@ -338,3 +338,25 @@ async def test_redirect_cannot_forward_credentials_to_other_origin(scanner, aioh
 async def test_redirect_within_scanner_origin_is_supported(scanner):
     scanner._backend.redirect_url = scanner.origin + "/redirected-status"
     assert (await scanner.get_scanner_status()).is_idle
+
+
+@pytest.mark.parametrize("oversized", [False, True])
+async def test_capability_response_is_bounded(aiohttp_server, socket_enabled, oversized):
+    async def caps(request):
+        body = b"x" * (1024 * 1024 + 1) if oversized else (
+            b"<ScannerCapabilities><MakeAndModel>Test</MakeAndModel></ScannerCapabilities>"
+        )
+        return web.Response(body=body)
+
+    app = web.Application()
+    app.router.add_get("/eSCL/ScannerCapabilities", caps)
+    server = await aiohttp_server(app)
+    client = ScannerClient(host=server.host, port=server.port, use_tls=False)
+    try:
+        if oversized:
+            with pytest.raises(ValueError, match="1 MiB"):
+                await client.get_capabilities()
+        else:
+            assert (await client.get_capabilities()).make_and_model == "Test"
+    finally:
+        await client.async_close()

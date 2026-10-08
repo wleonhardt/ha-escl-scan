@@ -15,9 +15,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType
 
+from .capabilities import capability_snapshot
 from .const import (
     CARD_FILENAME,
     CARD_URL_PREFIX,
@@ -129,6 +131,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.http.register_view(ScanCancelView(hass))
             hass.http.register_view(ScanBacksView(hass))
             hass.http.register_view(ScanFileView(hass))
+            hass.http.register_view(ScanCapabilitiesView(hass))
             hass.data[DOMAIN]["_views_registered"] = True
         _LOGGER.info(
             "%s: endpoints ready at /api/%s/{start,cancel,scan_backs,file/<id>} (scanner=%s)",
@@ -254,6 +257,46 @@ def _current_coordinator(hass: HomeAssistant) -> ScanCoordinator | None:
     return None
 
 
+class ScanCapabilitiesView(HomeAssistantView):
+    """Read-only capability snapshot, available without an active scan."""
+
+    url = "/api/escl_scan/capabilities"
+    name = "api:escl_scan:capabilities"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def get(self, request: web.Request) -> web.Response:
+        if set(request.query) - {"entity_id"} or len(request.query.getall("entity_id", [])) > 1:
+            return self.json_message("invalid capability query", status_code=400)
+        live = {key: data for key, data in self._hass.data.get(DOMAIN, {}).items()
+                if not key.startswith("_") and isinstance(data, dict) and "coordinator" in data}
+        entity_id = request.query.get("entity_id")
+        if not live:
+            return self.json_message("integration not configured", status_code=503)
+        registry = er.async_get(self._hass)
+        if entity_id is not None:
+            entity = registry.async_get(entity_id)
+            if not entity or entity.platform != DOMAIN or entity.domain != "sensor":
+                return self.json_message("target is not an eSCL scan sensor", status_code=404)
+            entry_id = entity.config_entry_id
+            if entry_id not in live:
+                return self.json_message("target scanner is not loaded", status_code=404)
+        elif len(live) == 1:
+            entry_id = next(iter(live))
+            entity_id = next((entry.entity_id for entry in er.async_entries_for_config_entry(
+                registry, entry_id
+            ) if entry.domain == "sensor"), None)
+        else:
+            return self.json_message("select a scanner with entity_id", status_code=400)
+        coord = live[entry_id]["coordinator"]
+        await coord.async_refresh_capabilities()
+        if coord.capability_cache.closed:
+            return self.json_message("integration unloaded", status_code=503)
+        return self.json(capability_snapshot(coord.capability_cache, entity_id))
+
+
 class ScanStartView(HomeAssistantView):
     """POST /api/escl_scan/start
 
@@ -318,6 +361,8 @@ class ScanStartView(HomeAssistantView):
                     "The scanner is starting or reconnecting. Wait a few seconds, then try again."
                 )
             return self.json_message(message, status_code=409)
+        except ValueError as exc:
+            return self.json_message(str(exc), status_code=400)
         except Exception as exc:
             _LOGGER.exception("scan kickoff failed")
             return self.json_message(f"scan kickoff failed: {exc}", status_code=502)

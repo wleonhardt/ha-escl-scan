@@ -6,6 +6,22 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-08
+
+### Added
+- Authenticated, entity-scoped capability API available without an active scan:
+  bounded identity, per-source and duplex resolutions/colors, automatic/manual
+  duplex support, request fields and integration limits.
+- Shared cache policy: 15-minute lifetime, five-minute failure backoff, serialized
+  reads, bounded fetch time and explicit fresh/stale/unknown metadata.
+
+### Fixed
+- Validate known unsupported source/color choices before creating a job, while
+  preserving permissive behavior when vendors omit capability fields.
+- Do not borrow another source's DPI list when automatic-duplex modes are unknown.
+- Freeze scan region across manual front/back passes, including capability refresh.
+- Limit scanner capability responses to 1 MiB before XML parsing.
+
 ## [0.6.0] - 2026-10-08
 
 ### Changed
