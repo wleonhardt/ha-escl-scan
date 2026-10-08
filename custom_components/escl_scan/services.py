@@ -84,7 +84,7 @@ def async_register_services(hass: HomeAssistant) -> None:
                 translation_domain=DOMAIN, translation_key="no_active_scan"
             )
         if not await coord.async_cancel(scan.scan_id):
-            raise HomeAssistantError("scanner refused cancel")
+            raise ServiceValidationError("scan is already finishing or terminal")
 
     hass.services.async_register(
         DOMAIN, SERVICE_START, _start, schema=START_SCHEMA,

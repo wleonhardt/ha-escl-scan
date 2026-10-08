@@ -16,6 +16,9 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-10-08 — Full code review: lifecycle/cancellation, PDF integrity,
+  retention races, URL/auth bounds, diagnostics, and card fixes prepared as
+  v0.4.6. See `code-review-2026-10-08.md`; live device and release checks pending.
 - 2026-10-08 — #5: v0.4.4 duplex region from AdfDuplexInputCaps; v0.4.5 rotate-back-sides
   option + 900 s download stall/retry budget (fixed, not configurable).
 - 2026-09-12 — ADF live test on v0.4.3: progress 1→2→3 with `JobScanning`,

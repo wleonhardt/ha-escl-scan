@@ -90,6 +90,58 @@ def test_capabilities_invalid_xml_raises():
         parse_scanner_capabilities(b"<nope")
 
 
+def test_dpi_snap_uses_source_and_duplex_limits():
+    def caps(name, dpi):
+        return (
+            f"<{name}><DiscreteResolution><XResolution>{dpi}</XResolution>"
+            f"<YResolution>{dpi}</YResolution></DiscreteResolution></{name}>"
+        )
+
+    xml = (
+        "<ScannerCapabilities>" + caps("PlatenInputCaps", 1200)
+        + "<Adf>" + caps("AdfSimplexInputCaps", 600)
+        + caps("AdfDuplexInputCaps", 300) + "</Adf></ScannerCapabilities>"
+    ).encode()
+    parsed = parse_scanner_capabilities(xml)
+    assert parsed.snap_dpi(1200, "Platen") == 1200
+    assert parsed.snap_dpi(1200, "Feeder") == 600
+    assert parsed.snap_dpi(1200, "Feeder", True) == 300
+
+
+def test_missing_source_resolutions_do_not_borrow_other_source_modes():
+    caps = parse_scanner_capabilities(CAPS_XML)
+    assert caps.snap_dpi(200, "Feeder") == 200
+
+
+def test_invalid_capability_dimensions_and_resolutions_are_ignored():
+    caps = parse_scanner_capabilities(
+        b"<ScannerCapabilities><PlatenInputCaps><MaxWidth>-1</MaxWidth>"
+        b"<MaxHeight>100</MaxHeight><DiscreteResolution><XResolution>-300</XResolution>"
+        b"</DiscreteResolution><DiscreteResolution><XResolution>300</XResolution>"
+        b"<YResolution>600</YResolution></DiscreteResolution></PlatenInputCaps>"
+        b"</ScannerCapabilities>"
+    )
+    assert caps.platen_max is None
+    assert caps.resolutions == []
+
+
+def test_whitespace_reason_wrapper_uses_child_reason():
+    info = parse_job_info(
+        b"<ScanJob><JobState>Cancelled</JobState><JobStateReasons>\n  "
+        b"<JobStateReason>UserCancel</JobStateReason></JobStateReasons></ScanJob>"
+    )
+    assert info.state_reasons == "UserCancel"
+    assert info.is_terminal
+
+
+def test_job_uris_are_trimmed_decoded_and_deduplicated():
+    status = parse_scanner_status(
+        b"<ScannerStatus><JobUri> /eSCL/ScanJobs/x?a=1&amp;b=2 </JobUri>"
+        b"<JobUri>/eSCL/ScanJobs/x?a=1&amp;b=2</JobUri></ScannerStatus>"
+    )
+    assert status.active_job_uris == ["/eSCL/ScanJobs/x?a=1&b=2"]
+
+
 def test_status_hp_adf_loaded():
     xml = b"""<?xml version="1.0"?>
     <scan:ScannerStatus xmlns:scan="s" xmlns:pwg="p">

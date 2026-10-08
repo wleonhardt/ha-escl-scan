@@ -49,6 +49,15 @@ async def test_start_validates_body(api):
     assert (await http.post("/api/escl_scan/start", json={"dpi": "300"})).status == 400
     assert (await http.post("/api/escl_scan/start", json={"color": "sepia"})).status == 400
     assert (await http.post("/api/escl_scan/start", json={"duplex": "yes"})).status == 400
+    assert (await http.post("/api/escl_scan/start", json={"dpi": True})).status == 400
+    assert (await http.post("/api/escl_scan/start", json={"dpi": 49})).status == 400
+    assert (await http.post("/api/escl_scan/start", data=b"invalid JSON")).status == 400
+    assert (await http.post("/api/escl_scan/start", json=[])).status == 400
+
+
+async def test_start_accepts_empty_body(api):
+    http, _, _ = api
+    assert (await http.post("/api/escl_scan/start")).status == 200
 
 
 async def test_start_then_file_download(api):

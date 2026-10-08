@@ -44,6 +44,8 @@ async def scanner(aiohttp_server, socket_enabled):
         hook = getattr(backend, "on_status", None)
         if hook:
             await hook()
+        if location := getattr(backend, "redirect_url", None):
+            raise web.HTTPFound(location)
         return web.Response(
             body=b"<ScannerStatus><State>" + backend.scanner_state + b"</State>"
             b"<AdfState>ScannerAdfLoaded</AdfState>"
@@ -70,6 +72,7 @@ async def scanner(aiohttp_server, socket_enabled):
         )
 
     async def nextdoc(request):
+        backend.next_query = dict(request.query)
         if backend.next_prelude:
             return web.Response(status=backend.next_prelude.pop(0))
         backend.next_calls += 1
@@ -93,6 +96,7 @@ async def scanner(aiohttp_server, socket_enabled):
     app = web.Application()
     app.add_routes([
         web.get("/eSCL/ScannerStatus", status),
+        web.get("/redirected-status", lambda request: web.Response(body=STATUS_XML)),
         web.post("/eSCL/ScanJobs", create),
         web.get("/eSCL/ScanJobs/{jid}", jobinfo),
         web.get("/eSCL/ScanJobs/{jid}/NextDocument", nextdoc),
@@ -258,3 +262,65 @@ async def _no_sleep(_seconds):
 
 def _url(scanner):
     return f"{scanner.base_url}/ScanJobs/j1"
+
+
+@pytest.mark.parametrize(("host", "port", "tls", "origin"), [
+    ("scanner", 443, False, "http://scanner:443"),
+    ("scanner", 80, True, "https://scanner:80"),
+    ("2001:db8::1", 8080, False, "http://[2001:db8::1]:8080"),
+    ("[2001:db8::1]", 443, True, "https://[2001:db8::1]"),
+])
+def test_origin_keeps_nondefault_port_and_formats_ipv6(host, port, tls, origin):
+    assert ScannerClient(host=host, port=port, use_tls=tls).origin == origin
+
+
+@pytest.mark.parametrize("uri", [
+    "http://other-host/eSCL/ScanJobs/j1", "//other-host/eSCL/ScanJobs/j1",
+    "/admin/reset", "../reset",
+])
+def test_job_uri_cannot_escape_scanner_job_endpoint(uri):
+    client = ScannerClient(host="scanner", use_tls=False, port=80)
+    with pytest.raises(ValueError):
+        client._absolute(uri)
+
+
+def test_job_uri_resolves_relative_and_absolute_paths():
+    client = ScannerClient(host="scanner", use_tls=False, port=80)
+    for uri in ("ScanJobs/j1", "/eSCL/ScanJobs/j1", "http://scanner/eSCL/ScanJobs/j1"):
+        assert client._absolute(uri) == "http://scanner/eSCL/ScanJobs/j1"
+
+
+async def test_document_retry_deadline_is_failure_not_end_of_batch(scanner, monkeypatch):
+    monkeypatch.setattr("custom_components.escl_scan.scanner.NEXT_DOCUMENT_RETRY_SECONDS", 0)
+    scanner._backend.job_state = b"Processing"
+    scanner._backend.next_prelude = [503]
+    with pytest.raises(TimeoutError, match="deadline"):
+        _ = [chunk async for chunk in scanner.iter_next_document(_url(scanner))]
+
+
+async def test_document_url_preserves_job_query_parameters(scanner):
+    chunks = [chunk async for chunk in scanner.iter_next_document(_url(scanner) + "?key=value")]
+    assert b"".join(chunks) == VALID_PDF
+    assert scanner._backend.next_query == {"key": "value"}
+
+
+async def test_redirect_cannot_forward_credentials_to_other_origin(scanner, aiohttp_server):
+    seen = []
+
+    async def collect(request):
+        seen.append(request.headers.get("Authorization"))
+        return web.Response(body=STATUS_XML)
+
+    app = web.Application()
+    app.router.add_get("/collect", collect)
+    other = await aiohttp_server(app)
+    scanner._password = "scanner-secret"
+    scanner._backend.redirect_url = str(other.make_url("/collect"))
+    with pytest.raises(ValueError, match="outside its origin"):
+        await scanner.get_scanner_status()
+    assert seen == []
+
+
+async def test_redirect_within_scanner_origin_is_supported(scanner):
+    scanner._backend.redirect_url = scanner.origin + "/redirected-status"
+    assert (await scanner.get_scanner_status()).is_idle

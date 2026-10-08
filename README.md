@@ -120,7 +120,8 @@ size per source, duplex support, and the supported resolutions:
 
 - the scan region is the full bed of the chosen source (A4, Letter, Legal
   ADF — whatever the device reports), so nothing gets cropped;
-- a requested DPI the device doesn't offer snaps to the nearest supported one;
+- a requested DPI snaps to the nearest supported resolution for the chosen
+  source and simplex/duplex mode, when discrete resolutions are advertised;
 - duplex is only sent for Feeder scans on a duplex-capable ADF.
 
 Options (gear icon on the integration) hold the defaults: DPI, color mode,
@@ -240,7 +241,9 @@ homeassistant:
     - /media/paperless/consume
 ```
 
-Copies are never purged by the retention TTL.
+Copies are never purged by the retention TTL. Only successful batches are
+published. Cancellation is accepted until folder publication begins; after that,
+a folder consumer may already have ingested the file.
 
 ## Troubleshooting
 
@@ -264,6 +267,9 @@ Copies are never purged by the retention TTL.
 
 ## Caveats
 
+- **Incomplete batches fail.** A truncated page, corrupt PDF, interrupted
+  transfer, or exhausted retry budget fails the scan; an incomplete batch is
+  never labeled successful or copied to a watched folder.
 - **No OCR.** Scans land as image-mode PDFs. Pair with Paperless-ngx or an
   OCR-capable bus-event listener for searchable text.
 - **1h TTL on stored PDFs** by default (configurable in options; a periodic

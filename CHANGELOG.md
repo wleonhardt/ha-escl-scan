@@ -6,6 +6,44 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-10-08
+
+### Fixed
+- Cancellation cannot revive a pending job or leave a stalled document driver
+  running. New scans wait for previous job/file cleanup; shutdown also waits
+  for source detection and retention workers and deletes its own device job.
+- Home Assistant stop and failed setup also close the client and clean up jobs.
+- Executor writes finish before canceled tasks clean up their files. Interrupted
+  scans close scratch files and remove unfinished output.
+- Truncated, corrupt, empty, or interrupted document batches fail explicitly
+  instead of reporting a partial PDF as a completed scan. Exhausted document
+  retries are errors rather than end-of-batch signals.
+- Failed/aborted scans are not copied into watched folders. Cancellation is
+  rejected once folder publication begins; failed copies remove scratch files.
+- Scanner URLs preserve ports that differ from the selected protocol default
+  and support IPv6. Job URLs must belong to the scanner's ScanJobs endpoint,
+  and redirects cannot send credentials to another origin.
+- DPI selection respects flatbed, simplex ADF, and duplex ADF resolutions.
+  Polling surfaces pause/resume and interrupts device-canceled or aborted jobs.
+- Whitespace-only XML reason wrappers, escaped/duplicate job URIs, and the
+  vendor spelling `Cancelled` are parsed correctly.
+- Diagnostic exports redact capability identifiers, filesystem paths, and
+  exception text, in addition to connection credentials.
+- Scan-start HTTP requests reject malformed JSON and boolean/out-of-range DPI;
+  download path checks run outside the event loop.
+- Card HTTP responses cannot overwrite newer terminal sensor states. Repeated
+  start/cancel taps are guarded; attribute/entity changes refresh the display.
+  Healed cards receive HA state immediately.
+- Open scan reserves its preview tab during the click gesture, isolates its
+  opener, and limits authenticated downloads to the integration's file endpoint.
+- Duplex rotation preserves document metadata and reads file size off-loop.
+
+### Changed
+- PDF parsing uses file handles to avoid redundant whole-file memory copies;
+  merge inputs close after each document is imported.
+- Unavailable capabilities probes back off for five minutes, then retry.
+- Card tests close their browser fixtures, eliminating timer-related test delays.
+
 ## [0.4.5] - 2026-10-08
 
 ### Added

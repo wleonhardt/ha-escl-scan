@@ -19,16 +19,16 @@ import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 import logging
-import re
 import ssl
 from xml.etree import ElementTree as ET
 
 import aiohttp
+from yarl import URL
 
 _LOGGER = logging.getLogger(__name__)
 
 # Terminal job states (eSCL JobInfo/JobState).
-TERMINAL_JOB_STATES = {"Completed", "Canceled", "Aborted"}
+TERMINAL_JOB_STATES = {"Completed", "Canceled", "Cancelled", "Aborted"}
 
 # Stream document bytes to disk in chunks this size. Large enough to keep
 # executor round-trips down on multi-hundred-MB ADF batches, small enough that
@@ -39,7 +39,7 @@ _STREAM_CHUNK = 1024 * 1024
 # default for job creation). Status/poll/delete are quick control calls;
 # document streaming bounds only the socket-read stall, never total transfer.
 _SHORT_TIMEOUT = aiohttp.ClientTimeout(total=10.0)
-_STREAM_TIMEOUT = aiohttp.ClientTimeout(sock_connect=15, sock_read=900)
+_STREAM_TIMEOUT = aiohttp.ClientTimeout(connect=15, sock_connect=15, sock_read=900)
 
 # NextDocument may answer 503 while the ADF is still feeding the next sheet.
 # We keep retrying while JobInfo says the job is alive, bounded by this
@@ -141,6 +141,7 @@ class ScannerCapabilities:
     adf_duplex: bool = False
     resolutions: list[int] = field(default_factory=list)  # sorted, discrete
     color_modes: list[str] = field(default_factory=list)
+    source_resolutions: dict[str, list[int]] = field(default_factory=dict)
 
     @property
     def device_id(self) -> str | None:
@@ -153,11 +154,13 @@ class ScannerCapabilities:
         caps = self.adf_max if source == "Feeder" else self.platen_max
         return caps or DEFAULT_REGION
 
-    def snap_dpi(self, dpi: int) -> int:
+    def snap_dpi(self, dpi: int, source: str | None = None, duplex: bool = False) -> int:
         """Nearest supported discrete resolution (or dpi itself if unknown)."""
-        if not self.resolutions:
+        key = "FeederDuplex" if source == "Feeder" and duplex else source
+        resolutions = self.source_resolutions.get(key, self.resolutions)
+        if not resolutions:
             return dpi
-        return min(self.resolutions, key=lambda r: (abs(r - dpi), r))
+        return min(resolutions, key=lambda r: (abs(r - dpi), r))
 
 
 # ── XML parsing helpers ──────────────────────────────────────────────────────
@@ -176,16 +179,15 @@ def _find_local(root: ET.Element, name: str) -> ET.Element | None:
 
 
 def _text(el: ET.Element | None) -> str | None:
-    return el.text.strip() if el is not None and el.text else None
+    return (el.text.strip() or None) if el is not None and el.text else None
 
 
 def parse_scanner_status(xml: bytes) -> ScannerStatus:
     """Tolerant parse of ScannerStatus XML.
 
-    Vendors differ on whether AdfState appears at all (no ADF), the casing
-    of state values, and the namespace of the job-uri element. We collect
-    JobUris via regex as a fallback because some scanners nest them
-    inconsistently under JobInfo/ScannerStatus.
+    Vendors differ on whether AdfState appears at all (no ADF) and the
+    namespace/nesting of job-uri elements. Collect them by local tag name
+    throughout the tree so XML escaping and surrounding whitespace work.
     """
     try:
         root = ET.fromstring(xml)
@@ -197,8 +199,10 @@ def parse_scanner_status(xml: bytes) -> ScannerStatus:
     adf_loaded = adf_state == "ScannerAdfLoaded"
 
     # Active job URIs — these are absolute or root-relative URLs.
-    text = xml.decode("utf-8", "replace")
-    uris = [m.group(1) for m in re.finditer(r"<[^>]*JobUri[^>]*>([^<]+)</", text)]
+    uris = list(dict.fromkeys(
+        uri for el in root.iter()
+        if _local(el.tag) == "JobUri" and (uri := _text(el))
+    ))
     jobs: dict[str, JobInfo] = {}
     for el in root.iter():
         if _local(el.tag) != "JobInfo":
@@ -233,7 +237,7 @@ def parse_scanner_capabilities(xml: bytes) -> ScannerCapabilities:
             return None
         w = _int(_text(_find_local(el, "MaxWidth")))
         h = _int(_text(_find_local(el, "MaxHeight")))
-        return (w, h) if w and h else None
+        return (w, h) if w is not None and h is not None and w > 0 and h > 0 else None
 
     adf = _find_local(root, "Adf")
     adf_duplex = adf is not None and (
@@ -243,12 +247,23 @@ def parse_scanner_capabilities(xml: bytes) -> ScannerCapabilities:
             for el in adf.iter()
         )
     )
-    resolutions: set[int] = set()
-    for el in root.iter():
-        if _local(el.tag) == "DiscreteResolution":
-            x = _int(_text(_find_local(el, "XResolution")))
-            if x:
-                resolutions.add(x)
+    def _resolutions(node: ET.Element) -> list[int]:
+        values: set[int] = set()
+        for el in node.iter():
+            if _local(el.tag) == "DiscreteResolution":
+                x = _int(_text(_find_local(el, "XResolution")))
+                y = _int(_text(_find_local(el, "YResolution")))
+                if x is not None and x > 0 and (y is None or y == x):
+                    values.add(x)
+        return sorted(values)
+
+    source_resolutions = {}
+    for source, name in (
+        ("Platen", "PlatenInputCaps"), ("Feeder", "AdfSimplexInputCaps"),
+        ("FeederDuplex", "AdfDuplexInputCaps"),
+    ):
+        if (node := _find_local(root, name)) is not None:
+            source_resolutions[source] = _resolutions(node)
     color_modes: list[str] = []
     for el in root.iter():
         if _local(el.tag) == "ColorMode" and (t := _text(el)) and t not in color_modes:
@@ -261,8 +276,9 @@ def parse_scanner_capabilities(xml: bytes) -> ScannerCapabilities:
         adf_max=_max_region("AdfSimplexInputCaps") or _max_region("AdfDuplexInputCaps"),
         adf_duplex_max=_max_region("AdfDuplexInputCaps"),
         adf_duplex=adf_duplex,
-        resolutions=sorted(resolutions),
+        resolutions=_resolutions(root),
         color_modes=color_modes,
+        source_resolutions=source_resolutions,
     )
 
 
@@ -349,8 +365,7 @@ class ScannerClient:
         self._relaxed_ciphers = relaxed_ciphers
         self._default_timeout = aiohttp.ClientTimeout(total=timeout)
         scheme = "https" if use_tls else "http"
-        port_suffix = "" if port in (80, 443) else f":{port}"
-        self._origin = f"{scheme}://{host}{port_suffix}"
+        self._origin = str(URL.build(scheme=scheme, host=host.strip("[]"), port=port))
         self._base = f"{self._origin}/{base_path.strip('/')}"
         # Built once, lazily, and reused across every request — a fresh
         # session/connector/SSL context per call meant a TLS handshake and a
@@ -374,11 +389,12 @@ class ScannerClient:
 
     def _absolute(self, uri: str) -> str:
         """Resolve a job URI (may be absolute or root-relative)."""
-        if uri.startswith("http://") or uri.startswith("https://"):
-            return uri
-        if uri.startswith("/"):
-            return f"{self._origin}{uri}"
-        return f"{self._base}/{uri}"
+        url = URL(self._base + "/").join(URL(uri))
+        if url.origin() != URL(self._origin).origin() or url.user is not None:
+            raise ValueError("scanner returned a job URL outside its origin")
+        if not url.path.startswith(URL(self._base).path + "/ScanJobs/"):
+            raise ValueError("scanner returned a job URL outside ScanJobs")
+        return str(url)
 
     def _auth(self) -> aiohttp.BasicAuth | None:
         return (
@@ -413,10 +429,21 @@ class ScannerClient:
                 if self._use_tls
                 else aiohttp.TCPConnector()
             )
+            trace = aiohttp.TraceConfig()
+
+            async def _check_redirect(session, context, params) -> None:
+                location = params.response.headers.get("Location")
+                if location:
+                    target = params.url.join(URL(location))
+                    if target.origin() != URL(self._origin).origin() or target.user is not None:
+                        raise ValueError("scanner redirected outside its origin")
+
+            trace.on_request_redirect.append(_check_redirect)
             self._session_obj = aiohttp.ClientSession(
                 connector=connector,
                 timeout=self._default_timeout,
                 auth=self._auth(),
+                trace_configs=[trace],
             )
         return self._session_obj
 
@@ -576,9 +603,11 @@ class ScannerClient:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + NEXT_DOCUMENT_RETRY_SECONDS
         backoff = 0.5
+        job = URL(job_url)
+        next_url = job.with_path(job.path.rstrip("/") + "/NextDocument").with_query(job.query)
         while True:
             async with s.get(
-                f"{job_url}/NextDocument", timeout=_STREAM_TIMEOUT
+                next_url, timeout=_STREAM_TIMEOUT
             ) as resp:
                 if resp.status in (404, 410):
                     return
@@ -587,8 +616,10 @@ class ScannerClient:
                     async for chunk in resp.content.iter_chunked(_STREAM_CHUNK):
                         yield chunk
                     return
-            if not await self._job_still_running(job_url) or loop.time() >= deadline:
+            if not await self._job_still_running(job_url):
                 return
+            if loop.time() >= deadline:
+                raise TimeoutError("scanner document retry deadline exceeded")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 3.0)
 

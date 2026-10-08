@@ -1,5 +1,5 @@
 // jsdom tests for the Lovelace card. Run: npm run test:card
-import { test } from 'node:test';
+import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,10 @@ const CARD_SRC = readFileSync(
 );
 const TAG = 'escl-scan-card';
 const SENSOR = 'sensor.printer_current_scan';
+const windows = [];
+afterEach(() => {
+  for (const win of windows.splice(0)) win.close();
+});
 
 function boot() {
   const dom = new JSDOM('<home-assistant></home-assistant>', {
@@ -20,6 +24,7 @@ function boot() {
     pretendToBeVisual: true,
   });
   dom.window.eval(CARD_SRC);
+  windows.push(dom.window);
   return dom.window;
 }
 
@@ -142,7 +147,7 @@ test('hass setter drives progress: pending → processing → completed with Ope
   // Clicking the link fetches with auth rather than navigating.
   win.URL.createObjectURL = () => 'blob:x';
   win.URL.revokeObjectURL = () => {};
-  win.open = () => ({});
+  win.open = () => ({ location: {} });
   link.dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true }));
   await new Promise((r) => setTimeout(r, 0));
   assert.equal(calls.fetch.at(-1).url, '/api/escl_scan/file/s1.pdf');
@@ -217,6 +222,7 @@ test('heals a hui-error-card placeholder using the parent hui-card config', asyn
   const win = boot();
   const doc = win.document;
   const host = doc.querySelector('home-assistant');
+  host.hass = { states: {} };
   const huiCard = doc.createElement('hui-card');
   huiCard._elementConfig = { type: 'custom:' + TAG, title: 'Healed' };
   const err = doc.createElement('hui-error-card');
@@ -229,6 +235,7 @@ test('heals a hui-error-card placeholder using the parent hui-card config', asyn
   assert.ok(healed, 'error card replaced');
   assert.equal(huiCard.querySelector('hui-error-card'), null);
   assert.equal(healed.shadowRoot.querySelector('.title').textContent, 'Healed');
+  assert.equal(healed.hass, host.hass);
 });
 
 test('editor emits config-changed and drops an empty entity', () => {
@@ -242,4 +249,114 @@ test('editor emits config-changed and drops an empty entity', () => {
   editor.addEventListener('config-changed', (ev) => { got = ev.detail.config; });
   form.dispatchEvent(new win.CustomEvent('value-changed', { detail: { value: { title: 'New', entity: '' } } }));
   assert.equal(JSON.stringify(got), JSON.stringify({ title: 'New' }));
+});
+
+test('active scans block repeat taps until a terminal state arrives', async () => {
+  const win = boot();
+  const el = mount(win);
+  const { push, calls } = makeHass(el);
+  push(SENSOR, 'processing', { scan_id: 's1' });
+  await el._startScan();
+  assert.equal(calls.fetch.length, 0);
+  push(SENSOR, 'completed', { scan_id: 's1' });
+  assert.equal(el._activeScanId, null);
+});
+
+test('start response cannot overwrite an earlier terminal sensor update', async () => {
+  const win = boot();
+  const el = mount(win);
+  let respond;
+  const { push } = makeHass(el, {
+    fetchImpl: () => new Promise((resolve) => { respond = resolve; }),
+  });
+  const request = el._startScan();
+  push(SENSOR, 'completed', { scan_id: 's1', pages_done: 2, file_url: '/api/escl_scan/file/s1' });
+  respond(jsonResponse({ scan_id: 's1', source: 'Feeder' }));
+  await request;
+  assert.match(status(el).textContent, /Scan ready/);
+  assert.ok(status(el).querySelector('a'));
+  assert.equal(el._activeScanId, null);
+  assert.ok(!cancelShown(el));
+});
+
+test('cancel response cannot overwrite an earlier canceled sensor update', async () => {
+  const win = boot();
+  const el = mount(win);
+  let respond;
+  const { push, calls } = makeHass(el, {
+    fetchImpl: () => new Promise((resolve) => { respond = resolve; }),
+  });
+  push(SENSOR, 'processing', { scan_id: 's1' });
+  const request = el._cancelScan();
+  await el._cancelScan();
+  assert.equal(calls.fetch.length, 1);
+  push(SENSOR, 'canceled', { scan_id: 's1' });
+  respond(jsonResponse({ ok: true }));
+  await request;
+  assert.equal(status(el).textContent, 'Scan canceled');
+});
+
+test('attribute changes refresh status even with unchanged state and page count', () => {
+  const win = boot();
+  const el = mount(win);
+  const { push } = makeHass(el);
+  push(SENSOR, 'failed', { scan_id: 's1', error: 'first error' });
+  push(SENSOR, 'failed', { scan_id: 's1', error: 'second error' });
+  assert.equal(status(el).textContent, 'Scan failed: second error');
+  push(SENSOR, 'completed', { scan_id: 's2' });
+  assert.equal(status(el).querySelector('a'), null);
+  push(SENSOR, 'completed', { scan_id: 's2', file_url: '/api/escl_scan/file/s2' });
+  assert.ok(status(el).querySelector('a'));
+});
+
+test('changing configured entity updates immediately and missing sensors clear cancel', () => {
+  const win = boot();
+  const el = mount(win);
+  const { push } = makeHass(el);
+  push(SENSOR, 'processing', { scan_id: 's1' });
+  push('sensor.other', 'failed', { scan_id: 's2', error: 'jam' });
+  el.setConfig({ entity: 'sensor.other' });
+  assert.equal(status(el).textContent, 'Scan failed: jam');
+  el.setConfig({ entity: 'sensor.missing' });
+  assert.equal(status(el).textContent, '');
+  assert.equal(el._activeScanId, null);
+  assert.ok(!cancelShown(el));
+});
+
+test('Open scan reserves an isolated tab before the authenticated fetch finishes', async () => {
+  const win = boot();
+  const el = mount(win);
+  let respond;
+  const { push } = makeHass(el, {
+    fetchImpl: () => new Promise((resolve) => { respond = resolve; }),
+  });
+  const preview = { location: {}, opener: 'parent' };
+  let opened = 0;
+  win.open = () => { opened += 1; return preview; };
+  win.URL.createObjectURL = () => 'blob:scan';
+  win.URL.revokeObjectURL = () => {};
+  push(SENSOR, 'completed', { scan_id: 's1', file_url: '/api/escl_scan/file/s1' });
+  status(el).querySelector('a').dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.equal(opened, 1);
+  assert.equal(preview.opener, null);
+  respond({ ok: true, blob: async () => new win.Blob(['PDF']) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(preview.location.href, 'blob:scan');
+});
+
+test('Open scan refuses external URLs from sensor attributes', () => {
+  const win = boot();
+  const el = mount(win);
+  const { push } = makeHass(el);
+  push(SENSOR, 'completed', { scan_id: 's1', file_url: 'https://other-host/collect' });
+  assert.equal(status(el).querySelector('a'), null);
+});
+
+test('malformed successful start responses show an error with no cancel control', async () => {
+  const win = boot();
+  const el = mount(win);
+  makeHass(el, { fetchImpl: async () => jsonResponse({ ok: true }) });
+  await el._startScan();
+  assert.match(status(el).textContent, /Invalid response/);
+  assert.ok(!cancelShown(el));
 });

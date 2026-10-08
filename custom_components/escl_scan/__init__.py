@@ -12,7 +12,8 @@ from aiohttp import web
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import HomeAssistantView, StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType
@@ -107,52 +108,62 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         file_ttl_seconds=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL),
         copy_dir=copy_dir,
     )
-    # Model/serial/bed size for device info and scan regions. Best-effort —
-    # setup must succeed even when the scanner is asleep or offline.
-    await coordinator.async_refresh_capabilities()
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {
-        "client": client,
-        "coordinator": coordinator,
-    }
+    async def _async_stop(event: Event) -> None:
+        await coordinator.async_shutdown()
 
-    # Views are idempotent — re-registering on reload is a no-op since the
-    # URL is already taken. They resolve their coordinator from hass.data
-    # on each request so option-flow reloads pick up new defaults.
-    if not hass.data[DOMAIN].get("_views_registered"):
-        hass.http.register_view(ScanStartView(hass))
-        hass.http.register_view(ScanCancelView(hass))
-        hass.http.register_view(ScanFileView(hass))
-        hass.data[DOMAIN]["_views_registered"] = True
-    _LOGGER.info(
-        "%s: endpoints ready at /api/%s/{start,cancel,file/<id>} (scanner=%s)",
-        DOMAIN, DOMAIN, data[CONF_HOST],
-    )
+    entry.async_on_unload(hass.bus.async_listen(EVENT_HOMEASSISTANT_STOP, _async_stop))
+    try:
+        # Best-effort: setup must succeed when the scanner is asleep/offline.
+        await coordinator.async_refresh_capabilities()
+        hass.data.setdefault(DOMAIN, {})
+        hass.data[DOMAIN][entry.entry_id] = {
+            "client": client,
+            "coordinator": coordinator,
+        }
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # Content-hash card URL for cache-busting. Track which URLs we've
-    # already registered so reloads (options change → async_reload) don't
-    # re-call register_static_paths on the same URL — aiohttp rejects
-    # duplicate GET routes with "Added route will never be executed".
-    card_url = await hass.async_add_executor_job(_card_url_sync)
-    registered = hass.data[DOMAIN].setdefault("_card_urls_registered", set())
-    if card_url not in registered:
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(card_url, str(_CARD_FILE), False)]
+        # Views are idempotent — re-registering on reload is a no-op since the
+        # URL is already taken. They resolve their coordinator from hass.data
+        # on each request so option-flow reloads pick up new defaults.
+        if not hass.data[DOMAIN].get("_views_registered"):
+            hass.http.register_view(ScanStartView(hass))
+            hass.http.register_view(ScanCancelView(hass))
+            hass.http.register_view(ScanFileView(hass))
+            hass.data[DOMAIN]["_views_registered"] = True
+        _LOGGER.info(
+            "%s: endpoints ready at /api/%s/{start,cancel,file/<id>} (scanner=%s)",
+            DOMAIN, DOMAIN, data[CONF_HOST],
         )
-        add_extra_js_url(hass, card_url)
-        registered.add(card_url)
-    hass.data[DOMAIN][entry.entry_id]["card_url"] = card_url
-    if not hass.data[DOMAIN].get("_resources_reaped"):
-        hass.data[DOMAIN]["_resources_reaped"] = True
-        hass.async_create_task(_reap_lovelace_resources(hass))
 
-    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
-    entry.async_on_unload(
-        async_track_time_interval(hass, coordinator.async_purge_now, PURGE_INTERVAL)
-    )
-    return True
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+        # Content-hash card URL for cache-busting. Track which URLs we've
+        # already registered so reloads (options change → async_reload) don't
+        # re-call register_static_paths on the same URL — aiohttp rejects
+        # duplicate GET routes with "Added route will never be executed".
+        card_url = await hass.async_add_executor_job(_card_url_sync)
+        registered = hass.data[DOMAIN].setdefault("_card_urls_registered", set())
+        if card_url not in registered:
+            await hass.http.async_register_static_paths(
+                [StaticPathConfig(card_url, str(_CARD_FILE), False)]
+            )
+            add_extra_js_url(hass, card_url)
+            registered.add(card_url)
+        hass.data[DOMAIN][entry.entry_id]["card_url"] = card_url
+        if not hass.data[DOMAIN].get("_resources_reaped"):
+            hass.data[DOMAIN]["_resources_reaped"] = True
+            hass.async_create_task(_reap_lovelace_resources(hass))
+
+        entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+        entry.async_on_unload(
+            async_track_time_interval(hass, coordinator.async_purge_now, PURGE_INTERVAL)
+        )
+        return True
+
+    except BaseException:
+        await coordinator.async_shutdown()
+        if hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator") is coordinator:
+            hass.data[DOMAIN].pop(entry.entry_id, None)
+        raise
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -237,17 +248,17 @@ class ScanStartView(HomeAssistantView):
 
     async def post(self, request: web.Request) -> web.Response:
         try:
-            data = await request.json()
-        except Exception:
-            data = {}
+            data = await request.json() if request.can_read_body else {}
+        except ValueError:
+            return self.json_message("invalid JSON", status_code=400)
         if not isinstance(data, dict):
-            data = {}
+            return self.json_message("JSON body must be an object", status_code=400)
 
         source = data.get("source")
         if source not in (None, "Platen", "Feeder"):
             return self.json_message("invalid 'source'", status_code=400)
         dpi = data.get("dpi")
-        if dpi is not None and (not isinstance(dpi, int) or dpi <= 0 or dpi > 1200):
+        if dpi is not None and (type(dpi) is not int or dpi < 50 or dpi > 1200):
             return self.json_message("invalid 'dpi'", status_code=400)
         color = data.get("color")
         if color not in (None, "color", "gray"):
@@ -317,8 +328,8 @@ class ScanCancelView(HomeAssistantView):
         ok = await coord.async_cancel(scan_id)
         if not ok:
             return self.json_message(
-                "scanner refused cancel — job may still be running",
-                status_code=502,
+                "scan is already finishing or terminal",
+                status_code=409,
             )
         return self.json({"ok": True, "scan_id": scan_id})
 
@@ -352,7 +363,9 @@ class ScanFileView(HomeAssistantView):
             return self.json_message(
                 f"scan not ready (state={scan.state})", status_code=409,
             )
-        if scan.file_path is None or not scan.file_path.exists():
+        if scan.file_path is None or not await self._hass.async_add_executor_job(
+            scan.file_path.is_file
+        ):
             return self.json_message(
                 "file expired or missing on disk", status_code=404,
             )

@@ -1,5 +1,9 @@
 # Issue #1 — multi-document ADF concatenation
 
+Update 2026-10-08: v0.4.6 supersedes the truncated-part salvage behavior below.
+Incomplete/corrupt/interrupted batches now fail explicitly. See
+`code-review-2026-10-08.md` for the integrity decision and regression coverage.
+
 Status: DONE (v0.3.0). Implemented per the plan below: per-document scratch
 writers in `_stream_documents`, validate+merge in `_assemble_result`,
 `_merge_pdfs` via pypdf (lazy import, executor), single-doc keeps the rename

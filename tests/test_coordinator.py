@@ -12,12 +12,9 @@ from custom_components.escl_scan.scanner import DEFAULT_REGION, ScannerCapabilit
 
 from .fakes import FakeClient
 
-VALID_PDF = b"%PDF-1.4\n" + b"x" * 4096 + b"\n%%EOF\n"
-
 
 def real_pdf(n_pages: int = 1) -> bytes:
-    """A genuinely parseable PDF (pypdf can merge it), unlike VALID_PDF which
-    only satisfies the header/EOF sniff used on the single-document path."""
+    """Build a PDF with a real page tree for validation/merge tests."""
     from pypdf import PdfWriter
 
     writer = PdfWriter()
@@ -26,6 +23,9 @@ def real_pdf(n_pages: int = 1) -> bytes:
     buf = io.BytesIO()
     writer.write(buf)
     return buf.getvalue()
+
+
+VALID_PDF = real_pdf()
 
 
 @pytest.fixture
@@ -71,7 +71,7 @@ async def test_happy_path_streams_and_commits(make_coord):
 
 
 async def test_streamed_in_multiple_chunks(make_coord):
-    parts = [VALID_PDF[i:i + 500] for i in range(0, len(VALID_PDF), 500)]
+    parts = [VALID_PDF[i:i + 64] for i in range(0, len(VALID_PDF), 64)]
     coord = make_coord(FakeClient(docs=[parts]))
     scan = await coord.start_scan()
     await _drive(coord, scan)
@@ -140,17 +140,15 @@ async def test_multi_document_pages_streamed_in_chunks(make_coord):
     assert len(PdfReader(str(scan.file_path)).pages) == 3
 
 
-async def test_multi_document_drops_truncated_part(make_coord):
-    # One good page + one truncated (no EOF) -> keep the good one only.
+async def test_multi_document_truncated_part_fails_entire_batch(make_coord):
     coord = make_coord(
         FakeClient(docs=[[real_pdf(1)], [b"%PDF-1.4 truncated, no trailer"]])
     )
     scan = await coord.start_scan()
     await _drive(coord, scan)
-    assert scan.state == "completed"
-    from pypdf import PdfReader
-
-    assert len(PdfReader(str(scan.file_path)).pages) == 1
+    assert scan.state == "failed"
+    assert "truncated" in scan.error
+    assert not scan.file_path.exists()
     assert not list(coord._storage.glob("*.part*"))
 
 
@@ -176,13 +174,12 @@ async def test_pdf_page_count_beats_device_counter(make_coord):
     assert scan.pages_done == 3
 
 
-async def test_final_jobinfo_reconciles_page_count(make_coord):
-    # Single document pulled (pages_done=1) but scanner reports 5 server-side.
+async def test_final_jobinfo_does_not_overwrite_pdf_page_count(make_coord):
     coord = make_coord(FakeClient(docs=[[VALID_PDF]], pages=5))
     scan = await coord.start_scan()
     await _drive(coord, scan)
     assert scan.state == "completed"
-    assert scan.pages_done == 5
+    assert scan.pages_done == 1
 
 
 async def test_final_jobinfo_aborted_is_honored(make_coord):
@@ -378,3 +375,372 @@ async def test_no_rotation_by_default(make_coord):
     scan = await coord.start_scan()
     await _drive(coord, scan)
     assert [p.rotation for p in PdfReader(str(scan.file_path)).pages] == [0, 0]
+
+
+async def test_cancel_during_job_creation_never_revives_scan(make_coord):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class SlowCreate(FakeClient):
+        async def create_job(self, **kwargs):
+            entered.set()
+            await release.wait()
+            return await super().create_job(**kwargs)
+
+    client = SlowCreate(docs=[[VALID_PDF]])
+    coord = make_coord(client)
+    scan = await coord.start_scan()
+    await entered.wait()
+    assert await coord.async_cancel(scan.scan_id)
+    with pytest.raises(ScanBusyError):
+        await coord.start_scan()
+    release.set()
+    await _drive(coord, scan)
+    assert scan.state == "canceled"
+    assert scan.file_path is None
+    assert client.deleted == [scan.job_url]
+
+
+async def test_cancel_interrupts_stalled_stream_and_cleans_files(make_coord):
+    client = FakeClient(hang=True)
+    coord = make_coord(client)
+    scan = await coord.start_scan()
+    await _wait_for(lambda: bool(list(coord._storage.glob("*.part*"))))
+    task = coord._driver_tasks[scan.scan_id]
+    assert await coord.async_cancel(scan.scan_id)
+    async with asyncio.timeout(2):
+        await task
+    assert scan.state == "canceled"
+    assert client.deleted == [scan.job_url]
+    assert not list(coord._storage.iterdir())
+
+
+async def test_shutdown_cleans_scratch_and_own_server_job(make_coord):
+    client = FakeClient(hang=True)
+    coord = make_coord(client)
+    scan = await coord.start_scan()
+    await _wait_for(lambda: bool(list(coord._storage.glob("*.part*"))))
+    await coord.async_shutdown()
+    assert not list(coord._storage.iterdir())
+    assert client.deleted == [scan.job_url]
+    with pytest.raises(ScanBusyError):
+        await coord.start_scan()
+
+
+async def test_shutdown_interrupts_source_detection(make_coord):
+    entered = asyncio.Event()
+
+    class SlowDetect(FakeClient):
+        async def detect_source(self):
+            entered.set()
+            await asyncio.Event().wait()
+
+    client = SlowDetect()
+    coord = make_coord(client)
+    start = asyncio.create_task(coord.start_scan())
+    await entered.wait()
+    await coord.async_shutdown()
+    assert start.cancelled()
+    assert coord.current is None
+    assert client.closed
+
+
+@pytest.mark.parametrize("failure", ["network", "disk"])
+async def test_later_document_error_fails_batch(make_coord, monkeypatch, failure):
+    from custom_components.escl_scan.coordinator import _PdfFileWriter
+
+    class BrokenStream(FakeClient):
+        async def iter_next_document(self, url):
+            if not self._docs:
+                raise OSError("connection lost")
+            async for chunk in super().iter_next_document(url):
+                yield chunk
+
+    client = BrokenStream(docs=[[real_pdf()]])
+    coord = make_coord(client)
+    if failure == "disk":
+        original = _PdfFileWriter.open
+
+        def fail_second(writer):
+            if str(writer.path).endswith("part1"):
+                raise OSError("disk full")
+            original(writer)
+
+        monkeypatch.setattr(_PdfFileWriter, "open", fail_second)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "failed"
+    assert not list(coord._storage.iterdir())
+
+
+async def test_aborted_scan_is_not_copied(make_coord, tmp_path):
+    consume = tmp_path / "consume"
+    coord = make_coord(
+        FakeClient(docs=[[real_pdf()]], job_state="Aborted"), copy_dir=consume
+    )
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "aborted"
+    assert scan.copied_to is None
+    assert not consume.exists()
+    assert not scan.file_path.exists()
+
+
+async def test_file_job_finishes_worker_before_cancellation_cleanup(make_coord):
+    import threading
+
+    entered, release = threading.Event(), threading.Event()
+    coord = make_coord(FakeClient())
+
+    def operation():
+        entered.set()
+        assert release.wait(2)
+
+    task = asyncio.create_task(coord._file_job(operation))
+    await _wait_for(entered.is_set)
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_purge_cannot_delete_new_scan_scratch_files(make_coord):
+    import threading
+
+    entered, release = threading.Event(), threading.Event()
+    client = FakeClient(hang=True)
+    coord = make_coord(client)
+    purge = coord._ensure_storage_and_purge
+
+    def slow_purge():
+        entered.set()
+        assert release.wait(2)
+        return purge()
+
+    coord._ensure_storage_and_purge = slow_purge
+    sweep = asyncio.create_task(coord.async_purge_now())
+    await _wait_for(entered.is_set)
+    await coord.start_scan()
+    assert client.create_kwargs is None
+    release.set()
+    await sweep
+    await _wait_for(lambda: bool(list(coord._storage.glob("*.part*"))))
+    await coord.async_shutdown()
+    assert not list(coord._storage.iterdir())
+
+
+async def test_rotate_preserves_metadata(make_coord):
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    writer.add_blank_page(width=200, height=200)
+    writer.add_metadata({"/Title": "Original title"})
+    buf = io.BytesIO()
+    writer.write(buf)
+    coord = make_coord(
+        FakeClient(docs=[[buf.getvalue()]], source="Feeder", caps=CAPS),
+        default_duplex=True, rotate_duplex_backs=True,
+    )
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert PdfReader(scan.file_path).metadata.title == "Original title"
+    assert scan.bytes_written == scan.file_path.stat().st_size
+
+
+async def test_capabilities_failure_backs_off_and_recovers(make_coord, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    client = FakeClient()
+    get_caps = AsyncMock(side_effect=OSError("unsupported endpoint"))
+    monkeypatch.setattr(client, "get_capabilities", get_caps)
+    coord = make_coord(client)
+    assert await coord.async_refresh_capabilities() is None
+    assert await coord.async_refresh_capabilities() is None
+    get_caps.assert_awaited_once()
+    coord._caps_retry_at = 0
+    get_caps.side_effect = None
+    get_caps.return_value = CAPS
+    assert await coord.async_refresh_capabilities() is CAPS
+
+
+async def test_dpi_snap_for_duplex_feeder(make_coord):
+    caps = ScannerCapabilities(
+        adf_duplex=True, resolutions=[300, 600, 1200],
+        source_resolutions={"FeederDuplex": [300]},
+    )
+    client = FakeClient(docs=[[real_pdf()]], source="Feeder", caps=caps)
+    coord = make_coord(client)
+    scan = await coord.start_scan(dpi=1200, duplex=True)
+    await _drive(coord, scan)
+    assert scan.dpi == 300
+    assert client.create_kwargs["dpi"] == 300
+
+
+async def test_poll_reports_pause_and_resume(make_coord, monkeypatch):
+    monkeypatch.setattr("custom_components.escl_scan.coordinator.POLL_INTERVAL", 0.01)
+    client = FakeClient(hang=True, job_state="ProcessingStopped")
+    coord = make_coord(client)
+    scan = await coord.start_scan()
+    await _wait_for(lambda: scan.state == "processing-stopped")
+    client.job_state = "Processing"
+    await _wait_for(lambda: scan.state == "processing")
+
+
+async def test_poll_abort_interrupts_stalled_document(make_coord, monkeypatch):
+    monkeypatch.setattr("custom_components.escl_scan.coordinator.POLL_INTERVAL", 0.01)
+    client = FakeClient(hang=True, job_state="Aborted")
+    coord = make_coord(client)
+    scan = await coord.start_scan()
+    task = coord._driver_tasks[scan.scan_id]
+    async with asyncio.timeout(2):
+        await task
+    assert scan.state == "aborted"
+    assert not list(coord._storage.iterdir())
+    assert client.deleted == [scan.job_url]
+
+
+async def test_corrupt_pdf_with_header_and_eof_is_rejected(make_coord):
+    coord = make_coord(FakeClient(docs=[[b"%PDF-1.4\nnot a page tree\n%%EOF\n"]]))
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "failed"
+    assert "assemble PDF" in scan.error
+    assert not scan.file_path.exists()
+
+
+async def test_cancel_during_pdf_assembly_waits_and_removes_output(make_coord, monkeypatch):
+    import threading
+
+    from custom_components.escl_scan import coordinator as module
+
+    entered, release = threading.Event(), threading.Event()
+    original = module._count_pdf_pages
+
+    def delayed_count(path):
+        entered.set()
+        assert release.wait(2)
+        return original(path)
+
+    monkeypatch.setattr(module, "_count_pdf_pages", delayed_count)
+    coord = make_coord(FakeClient(docs=[[VALID_PDF]]))
+    scan = await coord.start_scan()
+    task = coord._driver_tasks[scan.scan_id]
+    await _wait_for(entered.is_set)
+    assert await coord.async_cancel(scan.scan_id)
+    release.set()
+    await task
+    assert scan.state == "canceled"
+    assert not list(coord._storage.iterdir())
+
+
+async def test_cancel_is_too_late_once_folder_publication_begins(make_coord, tmp_path, monkeypatch):
+    import threading
+
+    from custom_components.escl_scan import coordinator as module
+
+    entered, release = threading.Event(), threading.Event()
+    original = module._copy_into
+
+    def delayed_copy(src, directory):
+        entered.set()
+        assert release.wait(2)
+        return original(src, directory)
+
+    monkeypatch.setattr(module, "_copy_into", delayed_copy)
+    coord = make_coord(FakeClient(docs=[[VALID_PDF]]), copy_dir=tmp_path / "consume")
+    scan = await coord.start_scan()
+    await _wait_for(entered.is_set)
+    assert not await coord.async_cancel(scan.scan_id)
+    release.set()
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    assert scan.copied_to.exists()
+
+
+async def test_failed_copy_removes_its_temporary_file(make_coord, tmp_path, monkeypatch):
+    from custom_components.escl_scan import coordinator as module
+
+    def failed_copy(src, dest):
+        dest.write_bytes(b"partial copy")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(module.shutil, "copyfile", failed_copy)
+    consume = tmp_path / "consume"
+    coord = make_coord(FakeClient(docs=[[VALID_PDF]]), copy_dir=consume)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    assert scan.copied_to is None
+    assert not list(consume.iterdir())
+
+
+async def test_shutdown_waits_for_running_purge_worker(make_coord):
+    import threading
+
+    entered, release = threading.Event(), threading.Event()
+    coord = make_coord(FakeClient())
+    original = coord._ensure_storage_and_purge
+
+    def delayed_purge():
+        entered.set()
+        assert release.wait(2)
+        return original()
+
+    coord._ensure_storage_and_purge = delayed_purge
+    purge = asyncio.create_task(coord.async_purge_now())
+    await _wait_for(entered.is_set)
+    shutdown = asyncio.create_task(coord.async_shutdown())
+    await asyncio.sleep(0)
+    assert not shutdown.done()
+    release.set()
+    await shutdown
+    assert purge.cancelled()
+    assert not coord._purge_tasks
+
+
+async def test_shutdown_recovers_job_location_from_inflight_post(make_coord):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class SlowCreate(FakeClient):
+        async def create_job(self, **kwargs):
+            entered.set()
+            await release.wait()
+            return await super().create_job(**kwargs)
+
+    client = SlowCreate()
+    coord = make_coord(client)
+    scan = await coord.start_scan()
+    await entered.wait()
+    shutdown = asyncio.create_task(coord.async_shutdown())
+    await asyncio.sleep(0)
+    assert not shutdown.done()
+    release.set()
+    await shutdown
+    assert client.deleted == [scan.job_url]
+    assert client.closed
+    assert not coord._driver_tasks
+
+
+async def test_merge_preserves_content_streams_after_inputs_close(make_coord):
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import DecodedStreamObject, NameObject
+
+    docs = []
+    expected = [b"q 1 0 0 1 10 20 cm Q\n", b"q 1 0 0 1 30 40 cm Q\n"]
+    for content in expected:
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=200, height=200)
+        stream = DecodedStreamObject()
+        stream.set_data(content)
+        page[NameObject("/Contents")] = writer._add_object(stream)
+        buf = io.BytesIO()
+        writer.write(buf)
+        docs.append([buf.getvalue()])
+    coord = make_coord(FakeClient(docs=docs))
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    pages = PdfReader(scan.file_path).pages
+    assert [page.get_contents().get_data() for page in pages] == expected

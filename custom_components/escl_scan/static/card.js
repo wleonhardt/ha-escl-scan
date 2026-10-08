@@ -22,6 +22,8 @@ C.prototype.setConfig = function (config) {
   // _render() no-ops after the first call, so apply title changes (e.g. the
   // dashboard editor's live preview) directly to the already-rendered node.
   if (this._titleEl) this._titleEl.textContent = this._config.title;
+  this._lastSig = null;
+  this._onHass();
 };
 
 Object.defineProperty(C.prototype, 'hass', {
@@ -230,7 +232,7 @@ C.prototype._setCancelVisible = function (visible) {
 };
 
 C.prototype._startScan = async function () {
-  if (this._busy) return;
+  if (this._busy || this._activeScanId) return;
   this._busy = true;
   this._card.classList.add('busy');
   this._setStatus('Starting…');
@@ -249,13 +251,27 @@ C.prototype._startScan = async function () {
       const msg = (body && (body.message || body.error)) || `HTTP ${resp.status}`;
       throw new Error(msg);
     }
+    if (typeof body?.scan_id !== 'string' || !body.scan_id) {
+      throw new Error('Invalid response from scan service');
+    }
     this._activeScanId = body?.scan_id ?? null;
-    const src = body?.source ? ` (${body.source.toLowerCase()})` : '';
+    const src = typeof body.source === 'string' ? ` (${body.source.toLowerCase()})` : '';
     this._setStatus(`Scanning${src}…`);
     this._setCancelVisible(true);
+    // A fast scan can already be terminal before its POST response arrives.
+    const current = this._scanState();
+    if (current?.attributes?.scan_id === this._activeScanId) {
+      this._lastSig = null;
+      this._onHass();
+    }
     // From here on, the hass setter drives progress via _onHass().
   } catch (err) {
-    this._setStatus('Scan failed: ' + (err?.message || err), 'err');
+    if (this._activeScanId) {
+      this._lastSig = null;
+      this._onHass();
+    } else {
+      this._setStatus('Scan failed: ' + (err?.message || err), 'err');
+    }
   } finally {
     this._busy = false;
     this._card.classList.remove('busy');
@@ -263,21 +279,29 @@ C.prototype._startScan = async function () {
 };
 
 C.prototype._cancelScan = async function () {
-  if (!this._activeScanId) return;
+  if (!this._activeScanId || this._canceling) return;
+  const scanId = this._activeScanId;
+  this._canceling = true;
   try {
     const r = await this._apiFetch('/api/escl_scan/cancel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scan_id: this._activeScanId }),
+      body: JSON.stringify({ scan_id: scanId }),
     });
     if (!r.ok) {
       const body = await r.text();
-      this._setStatus('Cancel failed: ' + body.slice(0, 80), 'err');
+      if (this._activeScanId === scanId) {
+        this._setStatus('Cancel failed: ' + body.slice(0, 80), 'err');
+      }
       return;
     }
-    this._setStatus('Cancelling…');
+    if (this._activeScanId === scanId) this._setStatus('Cancelling…');
   } catch (err) {
-    this._setStatus('Cancel failed: ' + (err?.message || err), 'err');
+    if (this._activeScanId === scanId) {
+      this._setStatus('Cancel failed: ' + (err?.message || err), 'err');
+    }
+  } finally {
+    this._canceling = false;
   }
 };
 
@@ -322,11 +346,23 @@ C.prototype._clearResultTimer = function () {
 C.prototype._onHass = function () {
   if (!this._rendered) return;
   const st = this._scanState();
-  if (!st) return;
+  if (!st) {
+    this._activeScanId = null;
+    this._lastSig = null;
+    if (!this._busy) {
+      this._clearResultTimer();
+      this._setStatus('');
+      this._setCancelVisible(false);
+    }
+    return;
+  }
   const attrs = st.attributes || {};
   const state = st.state;
   const sid = attrs.scan_id ?? null;
-  const sig = `${sid}|${state}|${attrs.pages_done || 0}`;
+  const sig = JSON.stringify([
+    st.entity_id, sid, state, attrs.pages_done, attrs.source,
+    attrs.state_reasons, attrs.error, attrs.file_url,
+  ]);
   if (sig === this._lastSig) return;
   this._lastSig = sig;
 
@@ -335,6 +371,7 @@ C.prototype._onHass = function () {
     this._clearResultTimer();
     this._renderScanState(state, attrs);
   } else if (TERMINAL_STATES.has(state)) {
+    this._activeScanId = null;
     this._renderScanState(state, attrs);
     // Latch the result so the "Open scan" link stays clickable even after
     // the server drops `current` back to idle (~8s later).
@@ -346,6 +383,7 @@ C.prototype._onHass = function () {
       this._setCancelVisible(false);
     }, RESULT_LATCH_MS);
   } else if (!this._resultTimer && !this._busy) {
+    this._activeScanId = null;
     // idle / unavailable — clear, unless a fresh result is still latched
     // or a local start is mid-flight.
     this._setStatus('');
@@ -355,7 +393,7 @@ C.prototype._onHass = function () {
 
 C.prototype._buildOpenLink = function (attrs) {
   const url = attrs?.file_url;
-  if (!url) return null;
+  if (typeof url !== 'string' || !/^\/api\/escl_scan\/file\/[a-zA-Z0-9._-]+$/.test(url)) return null;
   const a = document.createElement('a');
   // href kept for accessibility / right-click, but the click handler does
   // the authenticated fetch — HA's view rejects plain navigation (no auth).
@@ -366,15 +404,28 @@ C.prototype._buildOpenLink = function (attrs) {
   a.addEventListener('click', async (ev) => {
     ev.preventDefault();
     ev.stopPropagation();
+    // Reserve the tab during the user gesture; popup blockers reject an
+    // open performed only after fetching a large PDF. Setting opener to
+    // null keeps the new tab isolated without window.open's noopener mode,
+    // which returns null even when the tab opened successfully.
+    const preview = window.open('', '_blank');
+    if (preview) preview.opener = null;
     try {
       const resp = await this._apiFetch(url);
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const blob = await resp.blob();
       const objUrl = URL.createObjectURL(blob);
-      const w = window.open(objUrl, '_blank', 'noopener');
-      if (!w) window.location.href = objUrl;
+      if (preview && !preview.closed) {
+        preview.location.href = objUrl;
+      } else {
+        const download = document.createElement('a');
+        download.href = objUrl;
+        download.download = attrs.filename || 'scan.pdf';
+        download.click();
+      }
       setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
     } catch (err) {
+      if (preview) preview.close();
       this._setStatus('Open failed: ' + (err?.message || err), 'err');
     }
   });
@@ -383,7 +434,7 @@ C.prototype._buildOpenLink = function (attrs) {
 
 C.prototype._renderScanState = function (state, attrs) {
   const pagesDone = attrs?.pages_done || 0;
-  const source = attrs?.source ? attrs.source.toLowerCase() : '';
+  const source = typeof attrs?.source === 'string' ? attrs.source.toLowerCase() : '';
   if (state === 'pending') {
     this._setStatus('Waiting for scanner…');
     this._setCancelVisible(true);
@@ -472,10 +523,14 @@ function _esclHealOne(err) {
   }
   const fresh = document.createElement(TAG);
   try {
-    fresh.setConfig(cfg);
+  fresh.setConfig(cfg);
   } catch (e) {
     return;
   }
+  // Lovelace keeps references to the failed card. Seed the replacement with
+  // the current hass object so it can scan even before the next state push.
+  fresh.hass = err.hass || parent?.hass
+    || document.querySelector('home-assistant')?.hass;
   err.replaceWith(fresh);
 }
 
