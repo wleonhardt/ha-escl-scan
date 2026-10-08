@@ -6,6 +6,23 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-08
+
+### Added
+- Two-sided feeder scans detect automatic duplex support. Simplex scanners
+  and scanners with unavailable capabilities use a manual two-pass workflow:
+  scan fronts, reload backs in the same sheet order, then scan backs. The final
+  PDF interleaves front/back pages and requires equal counts.
+- Card controls for **Scan both sides** and **Scan back sides**, plus reload
+  instructions and progress across both passes.
+- `escl_scan.scan_backs` service and authenticated `/api/escl_scan/scan_backs`
+  endpoint; `awaiting-back-sides` state, `duplex_mode`, `scan_phase`, and
+  `front_pages` attributes.
+- Fronts remain private until both passes succeed. Waiting can be canceled
+  and expires after 15 minutes; cancellation/shutdown clean up both jobs and
+  intermediate files. Folder copies and completed downloads are published
+  only after the final combined PDF succeeds.
+
 ## [0.4.7] - 2026-10-08
 
 ### Fixed

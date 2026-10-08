@@ -23,6 +23,7 @@ from .coordinator import ScanBusyError, ScanCoordinator
 
 SERVICE_START = "start"
 SERVICE_CANCEL = "cancel"
+SERVICE_SCAN_BACKS = "scan_backs"
 
 ATTR_SOURCE = "source"
 ATTR_DPI = "dpi"
@@ -86,8 +87,26 @@ def async_register_services(hass: HomeAssistant) -> None:
         if not await coord.async_cancel(scan.scan_id):
             raise ServiceValidationError("scan is already finishing or terminal")
 
+    async def _scan_backs(call: ServiceCall) -> ServiceResponse:
+        coord = _coordinator(hass)
+        scan_id = call.data.get(ATTR_SCAN_ID)
+        scan = coord.get(scan_id) if scan_id else coord.current
+        if scan is None:
+            raise ServiceValidationError("no scan is waiting for back sides")
+        try:
+            resumed = await coord.async_scan_backs(scan.scan_id)
+        except ValueError as exc:
+            raise ServiceValidationError(str(exc)) from exc
+        except Exception as exc:
+            raise HomeAssistantError("could not check the scanner; try again") from exc
+        return resumed.to_dict() if call.return_response else None
+
     hass.services.async_register(
         DOMAIN, SERVICE_START, _start, schema=START_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(DOMAIN, SERVICE_CANCEL, _cancel, schema=CANCEL_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, SERVICE_SCAN_BACKS, _scan_backs, schema=CANCEL_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )

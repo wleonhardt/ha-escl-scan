@@ -151,6 +151,13 @@ C.prototype._render = function () {
       }
       .cancel.show { display: inline; }
       .cancel:hover { filter: brightness(1.15); }
+      button {
+        font: inherit; color: var(--primary-text-color, #fff);
+        background: transparent; border: 1px solid var(--divider-color, #889);
+        border-radius: 8px; padding: 5px 9px; cursor: pointer;
+      }
+      button:disabled { opacity: .5; cursor: default; }
+      .two-sided { font-size: 12px; }
     </style>
     <ha-card role="button" tabindex="0">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -162,6 +169,7 @@ C.prototype._render = function () {
       </svg>
       <div class="title"></div>
       <div class="status" aria-live="polite"></div>
+      <button class="two-sided" type="button">Scan both sides</button>
       <div class="cancel" role="button" tabindex="0">Cancel</div>
     </ha-card>
   `;
@@ -169,18 +177,19 @@ C.prototype._render = function () {
   this._titleEl = root.querySelector('.title');
   this._statusEl = root.querySelector('.status');
   this._cancelEl = root.querySelector('.cancel');
+  this._twoSidedEl = root.querySelector('.two-sided');
   this._titleEl.textContent = this._config.title;
 
   this._card.addEventListener('click', (ev) => {
     if (ev.target === this._cancelEl) return;
     // Bail if the click landed on (or inside) any anchor — the "Open scan"
     // link lives in the .status div and bubbles up here.
-    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a')) return;
+    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a,button')) return;
     this._startScan();
   });
   this._card.addEventListener('keydown', (ev) => {
     if (ev.target === this._cancelEl) return;
-    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a')) return;
+    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a,button')) return;
     if (ev.key === 'Enter' || ev.key === ' ') {
       ev.preventDefault();
       this._startScan();
@@ -189,6 +198,10 @@ C.prototype._render = function () {
   this._cancelEl.addEventListener('click', (ev) => {
     ev.stopPropagation();
     this._cancelScan();
+  });
+  this._twoSidedEl.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    this._startScan({ source: 'Feeder', duplex: true });
   });
   this._cancelEl.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' || ev.key === ' ') {
@@ -229,11 +242,13 @@ C.prototype._setStatus = function (text, cls = '') {
 
 C.prototype._setCancelVisible = function (visible) {
   this._cancelEl.classList.toggle('show', !!visible);
+  this._twoSidedEl.disabled = !!visible || !!this._busy;
 };
 
-C.prototype._startScan = async function () {
+C.prototype._startScan = async function (overrides = {}) {
   if (this._busy || this._activeScanId) return;
   this._busy = true;
+  this._backError = null;
   this._card.classList.add('busy');
   this._setStatus('Starting…');
   this._setCancelVisible(false);
@@ -242,7 +257,7 @@ C.prototype._startScan = async function () {
     const resp = await this._apiFetch('/api/escl_scan/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify(overrides),
     });
     let body = null;
     try { body = await resp.json(); } catch {}
@@ -275,6 +290,38 @@ C.prototype._startScan = async function () {
   } finally {
     this._busy = false;
     this._card.classList.remove('busy');
+    this._twoSidedEl.disabled = !!this._activeScanId;
+  }
+};
+
+C.prototype._scanBacks = async function () {
+  const current = this._scanState();
+  const scanId = current?.attributes?.scan_id;
+  if (current?.state !== 'awaiting-back-sides' || !scanId || this._resuming) return;
+  this._resuming = true;
+  this._backError = null;
+  if (this._backButton) this._backButton.disabled = true;
+  try {
+    const r = await this._apiFetch('/api/escl_scan/scan_backs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scan_id: scanId }),
+    });
+    if (!r.ok) {
+      let body = null;
+      try { body = await r.json(); } catch {}
+      throw new Error(body?.message || `HTTP ${r.status}`);
+    }
+    if (this._scanState()?.state === 'awaiting-back-sides'
+        && this._activeScanId === scanId) this._setStatus('Starting back sides…');
+  } catch (err) {
+    const st = this._scanState();
+    if (st?.state === 'awaiting-back-sides' && st.attributes?.scan_id === scanId) {
+      this._backError = String(err?.message || err);
+      this._renderScanState(st.state, st.attributes);
+    }
+  } finally {
+    this._resuming = false;
+    if (this._backButton) this._backButton.disabled = false;
   }
 };
 
@@ -329,7 +376,7 @@ C.prototype._scanState = function () {
 };
 
 const TERMINAL_STATES = new Set(['completed', 'canceled', 'aborted', 'failed']);
-const ACTIVE_STATES = new Set(['pending', 'processing', 'processing-stopped']);
+const ACTIVE_STATES = new Set(['pending', 'processing', 'processing-stopped', 'awaiting-back-sides']);
 // How long a finished result (esp. the "Open scan" link) stays on the card
 // after the server drops the scan back to idle.
 const RESULT_LATCH_MS = 30_000;
@@ -362,11 +409,13 @@ C.prototype._onHass = function () {
   const sig = JSON.stringify([
     st.entity_id, sid, state, attrs.pages_done, attrs.source,
     attrs.state_reasons, attrs.error, attrs.file_url,
+    attrs.duplex_mode, attrs.scan_phase, attrs.front_pages,
   ]);
   if (sig === this._lastSig) return;
   this._lastSig = sig;
 
   if (ACTIVE_STATES.has(state)) {
+    if (this._activeScanId !== sid) this._backError = null;
     this._activeScanId = sid;
     this._clearResultTimer();
     this._renderScanState(state, attrs);
@@ -441,10 +490,24 @@ C.prototype._renderScanState = function (state, attrs) {
   } else if (state === 'processing') {
     const src = source ? ` (${source})` : '';
     const pages = pagesDone > 0 ? ` page ${pagesDone}` : '';
-    this._setStatus(`Scanning${src}${pages}…`);
+    const phase = attrs.duplex_mode === 'manual' ? ` ${attrs.scan_phase || 'fronts'}` : '';
+    this._setStatus(`Scanning${phase}${src}${pages}…`);
     this._setCancelVisible(true);
   } else if (state === 'processing-stopped') {
     this._setStatus('Scanner paused — check tray/jam', 'err');
+    this._setCancelVisible(true);
+  } else if (state === 'awaiting-back-sides') {
+    const wrap = document.createElement('span');
+    wrap.append(`Fronts ready (${attrs.front_pages || pagesDone} sheets). Flip each sheet and reload the backs in the same sheet order, first sheet first. `);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Scan back sides';
+    button.disabled = !!this._resuming;
+    button.addEventListener('click', (ev) => { ev.stopPropagation(); this._scanBacks(); });
+    wrap.appendChild(button);
+    if (this._backError) wrap.append(` ${this._backError}`);
+    this._backButton = button;
+    this._setStatus(wrap);
     this._setCancelVisible(true);
   } else if (state === 'completed') {
     const pages = pagesDone || 1;

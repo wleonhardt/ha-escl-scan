@@ -122,7 +122,9 @@ size per source, duplex support, and the supported resolutions:
   ADF — whatever the device reports), so nothing gets cropped;
 - a requested DPI snaps to the nearest supported resolution for the chosen
   source and simplex/duplex mode, when discrete resolutions are advertised;
-- duplex is only sent for Feeder scans on a duplex-capable ADF.
+- automatic duplex is only sent for Feeder scans on a duplex-capable ADF.
+  A two-sided request on a simplex ADF, or when capabilities are unavailable,
+  uses the manual workflow below.
 
 Options (gear icon on the integration) hold the defaults: DPI, color mode,
 duplex, rotating duplex back sides 180° (for ADFs that feed them reversed),
@@ -138,6 +140,22 @@ title: Scan now        # optional, defaults to "Scan now"
 entity: sensor.printer_current_scan   # optional; auto-detected if renamed
 ```
 
+Choose **Scan both sides** for a two-sided feeder document. Automatic duplex
+is used when advertised by the scanner. Otherwise, the card scans the fronts
+and pauses with reload instructions. Flip each sheet and reload the backs in
+the **same sheet order**, first sheet first, then choose **Scan back sides**.
+The final PDF is ordered front 1, back 1, front 2, back 2, and so on.
+
+Both passes must contain the same number of pages. A mismatch fails the scan
+without publishing a partial document. You can cancel while waiting; the
+reload window expires after 15 minutes. Fronts are held privately until the
+backs succeed. A scanner failure during automatic duplex is reported as a
+failure; it is not silently retried after sheets have already been consumed.
+
+Automations can watch for `awaiting-back-sides`, then call
+`escl_scan.scan_backs` after the user reloads the backs. Optional `scan_id`
+selects the waiting scan; omitted `scan_id` uses the current scan.
+
 ## Services and button
 
 For automations, use the services instead of the REST API (no token needed):
@@ -149,7 +167,7 @@ data:
   source: Feeder      # optional: Platen | Feeder (auto-detected if omitted)
   dpi: 300            # optional, snaps to a supported resolution
   color: gray         # optional: color | gray
-  duplex: true        # optional, Feeder + duplex ADF only
+  duplex: true        # optional, Feeder: automatic duplex or manual fallback
 response_variable: scan
 
 # Cancel the current scan (or pass scan_id: ...)
@@ -184,12 +202,15 @@ actions:
 
 | Field | Value |
 |---|---|
-| state | `idle` / `pending` / `processing` / `processing-stopped` / `canceled` / `aborted` / `completed` / `failed` |
+| state | `idle` / `pending` / `processing` / `processing-stopped` / `awaiting-back-sides` / `canceled` / `aborted` / `completed` / `failed` |
 | attributes.scan_id | Internal scan id (matches the file endpoint) |
 | attributes.filename | Auto-generated filename (e.g. `scan-20260524-153012-adf.pdf`) |
 | attributes.pages_done | Pages pulled from the scanner so far (final PDF page count on completion) |
 | attributes.source | `Platen` or `Feeder` |
 | attributes.duplex | `true` when both sides were requested (Feeder + duplex ADF only) |
+| attributes.duplex_mode | `simplex`, `automatic`, or `manual` |
+| attributes.scan_phase | Manual workflow: `fronts`, `waiting-for-backs`, or `backs` |
+| attributes.front_pages | Validated front-side page count in a manual scan |
 | attributes.state_reasons | The scanner's eSCL `JobStateReasons` |
 | attributes.submitted_at / finished_at | ISO timestamps |
 | attributes.file_url | Download URL once complete (`/api/escl_scan/file/{id}`) |
@@ -205,7 +226,7 @@ Both carry the full scan dict as `event.data`.
 
 ## REST API
 
-The integration registers three HA HTTP views (all `requires_auth = true`):
+The integration registers four HA HTTP views (all `requires_auth = true`):
 
 ### `POST /api/escl_scan/start`
 
@@ -222,10 +243,17 @@ hardware, so starts are serialized.
 
 JSON body `{"scan_id": "abc123"}`. Returns `{"ok": true}` on success.
 
+### `POST /api/escl_scan/scan_backs`
+
+JSON body `{"scan_id": "abc123"}`. Resumes a scan in `awaiting-back-sides`
+after confirming the scanner is idle and its feeder has paper. Returns `409`
+for a stale/duplicate request or an empty/busy feeder, leaving a waiting scan
+available for retry. The start response includes `duplex_mode` and `scan_phase`.
+
 ### `GET /api/escl_scan/file/{scan_id}`
 
-Streams the PDF. Returns 404 if the scan isn't complete yet or has been
-TTL-purged.
+Streams the PDF. Returns `409` while the scan is incomplete, and `404` for a
+missing or TTL-purged scan.
 
 ## Scan to folder (Paperless-ngx etc.)
 

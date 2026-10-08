@@ -34,3 +34,10 @@ cancel:
       example: 3f9a1c2b4d5e
       selector:
         text:
+
+scan_backs:
+  fields:
+    scan_id:
+      example: 3f9a1c2b4d5e
+      selector:
+        text:

@@ -10,7 +10,7 @@ import voluptuous as vol
 from custom_components.escl_scan.const import CONF_HOST, CONF_USE_TLS, DOMAIN
 
 from .fakes import FakeClient
-from .test_coordinator import VALID_PDF
+from .test_coordinator import VALID_PDF, _wait_for
 
 
 async def _noop_reap(*args, **kwargs):
@@ -37,6 +37,22 @@ async def setup(hass):
 async def test_services_registered(hass, setup):
     assert hass.services.has_service(DOMAIN, "start")
     assert hass.services.has_service(DOMAIN, "cancel")
+    assert hass.services.has_service(DOMAIN, "scan_backs")
+
+
+async def test_scan_backs_service_resumes_current_scan(hass, setup):
+    coord = hass.data[DOMAIN][setup[0].entry_id]["coordinator"]
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(DOMAIN, "scan_backs", {}, blocking=True)
+    scan = await coord.start_scan(source="Feeder", duplex=True)
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
+    setup[1]._docs = [[VALID_PDF]]
+    response = await hass.services.async_call(
+        DOMAIN, "scan_backs", {}, blocking=True, return_response=True,
+    )
+    assert response["scan_id"] == scan.scan_id
+    await coord._driver_tasks[scan.scan_id]
+    assert scan.state == "completed" and scan.pages_done == 2
 
 
 async def test_start_service_returns_scan_and_updates_sensor(hass, setup):

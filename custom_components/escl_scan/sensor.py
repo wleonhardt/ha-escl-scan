@@ -16,6 +16,7 @@ SCAN_STATES = [
     "pending",
     "processing",
     "processing-stopped",
+    "awaiting-back-sides",
     "canceled",
     "aborted",
     "completed",

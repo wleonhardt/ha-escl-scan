@@ -127,10 +127,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not hass.data[DOMAIN].get("_views_registered"):
             hass.http.register_view(ScanStartView(hass))
             hass.http.register_view(ScanCancelView(hass))
+            hass.http.register_view(ScanBacksView(hass))
             hass.http.register_view(ScanFileView(hass))
             hass.data[DOMAIN]["_views_registered"] = True
         _LOGGER.info(
-            "%s: endpoints ready at /api/%s/{start,cancel,file/<id>} (scanner=%s)",
+            "%s: endpoints ready at /api/%s/{start,cancel,scan_backs,file/<id>} (scanner=%s)",
             DOMAIN, DOMAIN, data[CONF_HOST],
         )
 
@@ -288,6 +289,8 @@ class ScanStartView(HomeAssistantView):
                 "dpi": scan.dpi,
                 "color": scan.color,
                 "duplex": scan.duplex,
+                "duplex_mode": scan.duplex_mode,
+                "scan_phase": scan.scan_phase,
                 "state": scan.state,
             }
         )
@@ -332,6 +335,35 @@ class ScanCancelView(HomeAssistantView):
                 status_code=409,
             )
         return self.json({"ok": True, "scan_id": scan_id})
+
+
+class ScanBacksView(ScanCancelView):
+    """Resume a manual duplex scan after its backs have been loaded."""
+
+    url = "/api/escl_scan/scan_backs"
+    name = "api:escl_scan:scan_backs"
+
+    async def post(self, request: web.Request) -> web.Response:
+        try:
+            data = await request.json()
+        except ValueError:
+            return self.json_message("invalid JSON", status_code=400)
+        scan_id = data.get("scan_id") if isinstance(data, dict) else None
+        if not isinstance(scan_id, str) or not scan_id:
+            return self.json_message("missing or invalid 'scan_id'", status_code=400)
+        coord = self._coord
+        if coord is None:
+            return self.json_message("integration not configured", status_code=503)
+        if coord.get(scan_id) is None:
+            return self.json_message("scan not found", status_code=404)
+        try:
+            scan = await coord.async_scan_backs(scan_id)
+        except ValueError as exc:
+            return self.json_message(str(exc), status_code=409)
+        except Exception:
+            _LOGGER.exception("back-side scan kickoff failed")
+            return self.json_message("could not check the scanner; try again", status_code=502)
+        return self.json({"ok": True, "scan_id": scan_id, "state": scan.state})
 
 
 class ScanFileView(HomeAssistantView):

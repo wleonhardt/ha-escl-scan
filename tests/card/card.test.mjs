@@ -67,6 +67,75 @@ function mount(win, config = {}) {
 const status = (el) => el.shadowRoot.querySelector('.status');
 const cancelShown = (el) => el.shadowRoot.querySelector('.cancel').classList.contains('show');
 
+test('Scan both sides requests a duplex feeder scan without a second start', async () => {
+  const win = boot();
+  const el = mount(win);
+  const { calls } = makeHass(el, {
+    fetchImpl: async () => jsonResponse({ scan_id: 'duplex1', source: 'Feeder' }),
+  });
+  el.shadowRoot.querySelector('.two-sided').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(calls.fetch.length, 1);
+  assert.deepEqual(JSON.parse(calls.fetch[0].init.body), { source: 'Feeder', duplex: true });
+  assert.equal(el.shadowRoot.querySelector('.two-sided').disabled, true);
+});
+
+test('manual duplex waiting shows instructions and resumes once without overwriting progress', async () => {
+  const win = boot();
+  const el = mount(win);
+  let finish;
+  const { calls, push } = makeHass(el, {
+    fetchImpl: () => new Promise(resolve => { finish = resolve; }),
+  });
+  const attrs = { scan_id: 'manual1', duplex_mode: 'manual', front_pages: 3, pages_done: 3 };
+  push(SENSOR, 'awaiting-back-sides', attrs);
+  assert.match(status(el).textContent, /same sheet order/);
+  assert.ok(cancelShown(el));
+  await el._startScan();
+  assert.equal(calls.fetch.length, 0);
+  const button = status(el).querySelector('button');
+  button.click();
+  button.click();
+  assert.equal(calls.fetch.length, 1);
+  assert.equal(calls.fetch[0].url, '/api/escl_scan/scan_backs');
+  assert.deepEqual(JSON.parse(calls.fetch[0].init.body), { scan_id: 'manual1' });
+  push(SENSOR, 'processing', { ...attrs, scan_phase: 'backs', pages_done: 4 });
+  finish(jsonResponse({ ok: true, scan_id: 'manual1', state: 'pending' }));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(status(el).textContent, /Scanning backs.*page 4/);
+});
+
+test('manual resume errors retain the retry and cancel controls', async () => {
+  const win = boot();
+  const el = mount(win);
+  const { calls, push } = makeHass(el, {
+    fetchImpl: async () => jsonResponse({ message: 'Load the back sides first' }, 409),
+  });
+  push(SENSOR, 'awaiting-back-sides', { scan_id: 'manual1', front_pages: 2 });
+  status(el).querySelector('button').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(status(el).textContent, /Load the back sides first/);
+  assert.ok(cancelShown(el));
+  assert.equal(status(el).querySelector('button').disabled, false);
+  status(el).querySelector('button').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(calls.fetch.length, 2);
+});
+
+test('cancel wins over a late manual resume response', async () => {
+  const win = boot();
+  const el = mount(win);
+  let finish;
+  const { push } = makeHass(el, { fetchImpl: () => new Promise(resolve => { finish = resolve; }) });
+  push(SENSOR, 'awaiting-back-sides', { scan_id: 'manual1', front_pages: 2 });
+  status(el).querySelector('button').click();
+  push(SENSOR, 'canceled', { scan_id: 'manual1' });
+  finish(jsonResponse({ ok: true, scan_id: 'manual1' }));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(status(el).textContent, 'Scan canceled');
+  assert.equal(cancelShown(el), false);
+});
+
 test('registers card + editor, picker entry, stub config', () => {
   const win = boot();
   const C = win.customElements.get(TAG);

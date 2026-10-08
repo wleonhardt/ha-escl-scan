@@ -44,12 +44,14 @@ _LOGGER = logging.getLogger(__name__)
 POLL_INTERVAL = 1.5
 TERMINAL_HOLD_SECONDS = 8.0
 CAPABILITIES_RETRY_SECONDS = 300.0
+MANUAL_RELOAD_TIMEOUT_SECONDS = 900.0
 
 # Sensor states (lowercase kebab; mirror IPP integration's vocabulary).
 STATE_IDLE = "idle"
 STATE_PENDING = "pending"
 STATE_PROCESSING = "processing"
 STATE_PROCESSING_STOPPED = "processing-stopped"
+STATE_AWAITING_BACKS = "awaiting-back-sides"
 STATE_COMPLETED = "completed"
 STATE_CANCELED = "canceled"
 STATE_ABORTED = "aborted"
@@ -205,6 +207,37 @@ def _rotate_back_sides(path: Path) -> int:
         tmp.unlink(missing_ok=True)
 
 
+def _interleave_duplex(fronts: Path, backs: Path, rotate_backs: bool) -> tuple[int, int]:
+    """Atomically replace the backs PDF with paired front/back pages."""
+    from pypdf import PdfReader, PdfWriter
+
+    tmp = backs.with_name(backs.name + ".duplex")
+    try:
+        with fronts.open("rb") as front_stream, backs.open("rb") as back_stream:
+            front_reader = PdfReader(front_stream)
+            back_reader = PdfReader(back_stream)
+            if len(front_reader.pages) != len(back_reader.pages):
+                raise ValueError(
+                    f"page count mismatch: {len(front_reader.pages)} fronts, "
+                    f"{len(back_reader.pages)} backs; reload every sheet in the same order"
+                )
+            writer = PdfWriter()
+            if front_reader.metadata:
+                writer.add_metadata(front_reader.metadata)
+            for front, back in zip(front_reader.pages, back_reader.pages, strict=True):
+                writer.add_page(front)
+                copied_back = writer.add_page(back)
+                if rotate_backs:
+                    copied_back.rotate(180)
+            with tmp.open("wb") as output:
+                writer.write(output)
+            pages = len(writer.pages)
+        tmp.replace(backs)
+        return pages, backs.stat().st_size
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 @dataclass
 class TrackedScan:
     scan_id: str
@@ -213,6 +246,9 @@ class TrackedScan:
     color: str
     submitted_at: datetime
     duplex: bool = False
+    duplex_mode: str = "simplex"
+    scan_phase: str | None = None
+    front_pages: int = 0
     job_url: str | None = None
     state: str = STATE_PENDING
     state_reasons: str | None = None
@@ -238,6 +274,9 @@ class TrackedScan:
             "dpi": self.dpi,
             "color": self.color,
             "duplex": self.duplex,
+            "duplex_mode": self.duplex_mode,
+            "scan_phase": self.scan_phase,
+            "front_pages": self.front_pages,
             "state": self.state,
             "state_reasons": self.state_reasons,
             "pages_done": self.pages_done,
@@ -288,6 +327,8 @@ class ScanCoordinator:
         self._scans: dict[str, TrackedScan] = {}
         self._current: TrackedScan | None = None
         self._driver_tasks: dict[str, asyncio.Task] = {}
+        self._back_events: dict[str, asyncio.Event] = {}
+        self._back_resuming: set[str] = set()
         self._hold_tasks: set[asyncio.Task] = set()
         self._purge_tasks: set[asyncio.Task] = set()
         self._update_listeners: list[Callable[[], None]] = []
@@ -398,8 +439,9 @@ class ScanCoordinator:
             actual_duplex = (
                 want_duplex
                 and actual_source == "Feeder"
-                and (caps is None or caps.adf_duplex)
+                and caps is not None and caps.adf_duplex
             )
+            manual_duplex = want_duplex and actual_source == "Feeder" and not actual_duplex
             if caps is not None and (
                 snapped := caps.snap_dpi(actual_dpi, actual_source, actual_duplex)
             ) != actual_dpi:
@@ -416,6 +458,10 @@ class ScanCoordinator:
                 dpi=actual_dpi,
                 color=actual_color,
                 duplex=actual_duplex,
+                duplex_mode="manual" if manual_duplex else (
+                    "automatic" if actual_duplex else "simplex"
+                ),
+                scan_phase="fronts" if manual_duplex else None,
                 submitted_at=datetime.now(UTC),
             )
             self._scans[scan_id] = scan
@@ -441,13 +487,42 @@ class ScanCoordinator:
             return False
         # Mark before awaiting anything: completion must not beat a cancel
         # while DELETE is in flight. The driver owns device/file cleanup.
+        waiting_for_backs = scan.state == STATE_AWAITING_BACKS
         self._mark_terminal(scan, STATE_CANCELED, "user-cancel", error=None)
         task = self._driver_tasks.get(scan_id)
-        if task is not None and scan.job_url:
+        if task is not None and (scan.job_url or waiting_for_backs):
             task.cancel()
         # During create_job, let the POST finish so its Location is known
         # and the driver can delete exactly the job we created.
         return True
+
+    async def async_scan_backs(self, scan_id: str) -> TrackedScan:
+        """Resume only after the user has reloaded the back sides."""
+        scan = self._scans.get(scan_id)
+        event = self._back_events.get(scan_id)
+        if self._shutting_down or scan is None or scan.state != STATE_AWAITING_BACKS:
+            raise ValueError("scan is not waiting for back sides")
+        if event is None or scan_id in self._back_resuming:
+            raise ValueError("back-side scan is already starting")
+        self._back_resuming.add(scan_id)
+        try:
+            status = await self._client.get_scanner_status()
+            if not status.is_idle or not status.adf_loaded:
+                raise ValueError("load the back sides into the idle feeder first")
+            if (
+                scan.is_terminal() or self._shutting_down
+                or self._back_events.get(scan_id) is not event
+            ):
+                raise ValueError("scan is no longer waiting for back sides")
+            scan.scan_phase = "backs"
+            scan.state = STATE_PENDING
+            scan.state_reasons = None
+            self._fire(EVENT_STATE_CHANGED, scan)
+            self._notify()
+            event.set()
+            return scan
+        finally:
+            self._back_resuming.discard(scan_id)
 
     async def async_shutdown(self) -> None:
         """Cancel every in-flight task and await it. Call on entry unload/reload
@@ -493,6 +568,22 @@ class ScanCoordinator:
                 _LOGGER.debug("file operation failed during cancellation", exc_info=True)
             raise
 
+    async def _create_device_job(self, scan: TrackedScan) -> None:
+        """Recover the created job's address even if shutdown interrupts POST."""
+        region = self._caps.region_for(scan.source, scan.duplex) if self._caps else DEFAULT_REGION
+        create = self._hass.loop.create_task(self._client.create_job(
+            source=scan.source, dpi=scan.dpi, color=scan.color, duplex=scan.duplex,
+            width=region[0], height=region[1],
+        ))
+        try:
+            scan.job_url = await asyncio.shield(create)
+        except asyncio.CancelledError:
+            try:
+                scan.job_url = await create
+            except Exception:
+                _LOGGER.debug("job creation failed during shutdown", exc_info=True)
+            raise
+
     async def _drive_scan(self, scan: TrackedScan) -> None:
         """Foreground orchestration of a single scan job."""
         parts: list[_PdfFileWriter] = []
@@ -502,31 +593,8 @@ class ScanCoordinator:
                 self._reap_tracked(deleted)
             if scan.is_terminal():
                 return
-            region = (
-                self._caps.region_for(scan.source, scan.duplex)
-                if self._caps
-                else DEFAULT_REGION
-            )
             try:
-                create = self._hass.loop.create_task(self._client.create_job(
-                    source=scan.source,
-                    dpi=scan.dpi,
-                    color=scan.color,
-                    duplex=scan.duplex,
-                    width=region[0],
-                    height=region[1],
-                ))
-                try:
-                    scan.job_url = await asyncio.shield(create)
-                except asyncio.CancelledError:
-                    # A canceled POST may still create a device-side job.
-                    # Recover its Location before closing the client so the
-                    # finally block can delete exactly our own job.
-                    try:
-                        scan.job_url = await create
-                    except Exception:
-                        _LOGGER.debug("job creation failed during shutdown", exc_info=True)
-                    raise
+                await self._create_device_job(scan)
             except Exception as exc:
                 self._mark_terminal(scan, STATE_FAILED, None, error=str(exc))
                 return
@@ -550,6 +618,10 @@ class ScanCoordinator:
             pdf_pages = await self._assemble_result(scan, parts)
             if pdf_pages is None:
                 return
+
+            if scan.duplex_mode == "manual":
+                if not await self._scan_manual_backs(scan, pdf_pages):
+                    return
 
             # Final JobInfo sanity check — if scanner reports Aborted, honour it.
             final_state = STATE_COMPLETED
@@ -607,6 +679,63 @@ class ScanCoordinator:
                 self._hold_tasks.add(hold)
                 hold.add_done_callback(self._hold_tasks.discard)
 
+    async def _scan_manual_backs(self, scan: TrackedScan, front_pages: int) -> bool:
+        """Keep the validated fronts private while awaiting the second pass."""
+        info = await self._client.get_job_info(scan.job_url)
+        if info and info.state in {"Canceled", "Cancelled", "Aborted"}:
+            self._mark_terminal(scan, _ESCL_STATE_MAP[info.state], info.state_reasons, error=None)
+            return False
+        fronts = scan.file_path.with_name(scan.file_path.name + ".fronts")
+        back_parts: list[_PdfFileWriter] = []
+        try:
+            await self._file_job(scan.file_path.replace, fronts)
+            if scan.is_terminal():
+                return False
+            if not await self._client.delete_job(scan.job_url):
+                raise RuntimeError("could not release the front-side scanner job")
+            scan.job_url = None
+            if scan.is_terminal():
+                return False
+            scan.front_pages = front_pages
+            scan.bytes_written = 0
+            event = asyncio.Event()
+            self._back_events[scan.scan_id] = event
+            scan.scan_phase = "waiting-for-backs"
+            scan.state = STATE_AWAITING_BACKS
+            scan.state_reasons = None
+            self._fire(EVENT_STATE_CHANGED, scan)
+            self._notify()
+            try:
+                await asyncio.wait_for(event.wait(), timeout=MANUAL_RELOAD_TIMEOUT_SECONDS)
+            except TimeoutError as exc:
+                raise RuntimeError("timed out waiting for back sides (15 minutes)") from exc
+            if scan.is_terminal():
+                return False
+            await self._create_device_job(scan)
+            if scan.is_terminal():
+                return False
+            scan.state = STATE_PROCESSING
+            self._fire(EVENT_STATE_CHANGED, scan)
+            self._notify()
+            back_parts = await self._stream_documents(scan)
+            if scan.is_terminal():
+                return False
+            if await self._assemble_result(scan, back_parts) is None:
+                return False
+            if scan.is_terminal():
+                return False
+            pages, size = await self._file_job(
+                _interleave_duplex, fronts, scan.file_path, self._rotate_duplex_backs
+            )
+            scan.pages_done = pages
+            scan.bytes_written = size
+            return True
+        finally:
+            self._back_events.pop(scan.scan_id, None)
+            for writer in back_parts:
+                await self._file_job(writer.cleanup)
+            await self._file_job(_safe_unlink, fronts)
+
     async def _stream_documents(self, scan: TrackedScan) -> list[_PdfFileWriter]:
         """Pull every document the scanner produces, each streamed straight to
         its own scratch file (never buffer a whole PDF in RAM — a 600-DPI
@@ -623,7 +752,9 @@ class ScanCoordinator:
             doc_index = 0
             while not scan.is_terminal():
                 writer = _PdfFileWriter(
-                    scan.file_path.with_name(f"{scan.file_path.name}.part{doc_index}")
+                    scan.file_path.with_name(
+                        f"{scan.file_path.name}.part{scan.scan_phase or ''}{doc_index}"
+                    )
                 )
                 parts.append(writer)
                 got_data = False
@@ -639,7 +770,7 @@ class ScanCoordinator:
                     parts.pop()
                     break
                 doc_index += 1
-                scan.pages_done = max(scan.pages_done, doc_index)
+                scan.pages_done = max(scan.pages_done, scan.front_pages + doc_index)
                 scan.last_seen = datetime.now(UTC)
                 self._fire(EVENT_STATE_CHANGED, scan)
                 self._notify()
@@ -703,13 +834,13 @@ class ScanCoordinator:
                 pages = await self._file_job(
                     _count_pdf_pages, scan.file_path
                 )
-                scan.pages_done = pages
+                scan.pages_done = scan.front_pages + pages
             else:
                 pages, size = await self._file_job(
                     _merge_pdfs, [w.path for w in valid], scan.file_path
                 )
                 scan.bytes_written = size
-                scan.pages_done = pages
+                scan.pages_done = scan.front_pages + pages
                 _LOGGER.info(
                     "scan %s: merged %d documents into a %d-page PDF",
                     scan.scan_id, len(valid), pages,
@@ -774,8 +905,8 @@ class ScanCoordinator:
                     # Scanner's counter races with our local pages_done
                     # (incremented after each NextDocument pull). Take the
                     # higher of the two so the UI never goes backwards.
-                    if info.pages_completed > scan.pages_done:
-                        scan.pages_done = info.pages_completed
+                    if scan.front_pages + info.pages_completed > scan.pages_done:
+                        scan.pages_done = scan.front_pages + info.pages_completed
                         changed = True
                 if changed:
                     self._fire(EVENT_STATE_CHANGED, scan)
@@ -846,11 +977,16 @@ class ScanCoordinator:
                         deleted.add(f)
                     except OSError:
                         pass
-            for part in self._storage.glob("scan-*.pdf.part*"):
-                try:
-                    part.unlink()
-                except OSError:
-                    pass
+            # No driver is active when this runs. Remove intermediate files
+            # left by an abrupt process exit, including private manual fronts.
+            for pattern in (
+                "scan-*.pdf.part*", "scan-*.pdf.fronts", "scan-*.pdf.duplex", "scan-*.pdf.rot",
+            ):
+                for part in self._storage.glob(pattern):
+                    try:
+                        part.unlink()
+                    except OSError:
+                        pass
         except OSError:
             pass
         return deleted

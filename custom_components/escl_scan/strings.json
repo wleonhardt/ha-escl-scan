@@ -42,8 +42,8 @@
           "relaxed_ciphers": "Allow legacy cipher suites",
           "default_dpi": "Default scan resolution (DPI)",
           "default_color": "Default color mode (color or gray)",
-          "default_duplex": "Scan both sides by default (ADF duplex, if supported)",
-          "rotate_duplex_backs": "Rotate duplex back sides 180° (for ADFs that feed them reversed)",
+          "default_duplex": "Scan both sides by default (automatic or manual)",
+          "rotate_duplex_backs": "Rotate scanned back sides 180 degrees",
           "file_ttl_seconds": "Scanned file retention (seconds before purge)",
           "copy_to_dir": "Also copy finished scans to this folder (optional)"
         },
@@ -74,7 +74,8 @@
           "canceled": "Canceled",
           "aborted": "Aborted",
           "completed": "Completed",
-          "failed": "Failed"
+          "failed": "Failed",
+          "awaiting-back-sides": "Waiting for back sides"
         }
       }
     }
@@ -98,7 +99,7 @@
         },
         "duplex": {
           "name": "Duplex",
-          "description": "Scan both sides (Feeder only, duplex-capable ADFs)."
+          "description": "Scan both sides using automatic duplex if advertised; otherwise pause for a manual back-side pass (Feeder only)."
         }
       }
     },
@@ -109,6 +110,16 @@
         "scan_id": {
           "name": "Scan ID",
           "description": "The scan_id from the sensor attributes or the start response."
+        }
+      }
+    },
+    "scan_backs": {
+      "name": "Scan back sides",
+      "description": "Resume a manual two-sided scan after reloading the backs in the same sheet order. Without a scan id, resumes the current scan.",
+      "fields": {
+        "scan_id": {
+          "name": "Scan ID",
+          "description": "The scan_id of the scan waiting for back sides."
         }
       }
     }

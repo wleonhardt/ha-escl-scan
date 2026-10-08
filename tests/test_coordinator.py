@@ -56,6 +56,212 @@ async def _wait_for(predicate, timeout=2.0):
             await asyncio.sleep(0.01)
 
 
+class TwoPassClient(FakeClient):
+    """Each created job supplies its own complete document batch."""
+
+    def __init__(self, fronts, backs):
+        super().__init__(source="Feeder", caps=ScannerCapabilities(adf_duplex=False))
+        self.passes = [fronts, backs]
+        self.create_calls = 0
+
+    async def create_job(self, **kwargs):
+        self.create_calls += 1
+        self.create_kwargs = kwargs
+        self._docs = [[self.passes.pop(0)]]
+        return f"https://scanner/eSCL/ScanJobs/j{self.create_calls}"
+
+
+def marked_pdf(widths):
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    for width in widths:
+        writer.add_blank_page(width=width, height=200)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+@pytest.mark.parametrize("unknown_caps", [False, True])
+@pytest.mark.parametrize("rotate", [False, True])
+async def test_manual_duplex_pairs_pages_and_publishes_only_after_backs(
+    make_coord, tmp_path, unknown_caps, rotate,
+):
+    from pypdf import PdfReader
+
+    client = TwoPassClient(marked_pdf([101, 102, 103]), marked_pdf([201, 202, 203]))
+    if unknown_caps:
+        client.caps = None
+    copy = tmp_path / "copies"
+    coord = make_coord(client, copy_dir=copy, rotate_duplex_backs=rotate)
+    scan = await coord.start_scan(duplex=True)
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
+    assert scan.duplex_mode == "manual" and not scan.duplex
+    assert scan.front_pages == scan.pages_done == 3
+    assert scan.to_dict()["file_url"] is None
+    assert not scan.file_path.exists() and not copy.exists()
+    assert scan.job_url is None and len(client.deleted) == 1
+    with pytest.raises(ScanBusyError):
+        await coord.start_scan()
+    await coord.async_scan_backs(scan.scan_id)
+    with pytest.raises(ValueError, match="not waiting"):
+        await coord.async_scan_backs(scan.scan_id)
+    await _drive(coord, scan)
+    assert scan.state == "completed" and scan.pages_done == 6
+    pages = PdfReader(str(scan.file_path)).pages
+    assert [p.mediabox.width for p in pages] == [101, 201, 102, 202, 103, 203]
+    assert [p.rotation for p in pages] == [0, 180 if rotate else 0] * 3
+    assert scan.copied_to.read_bytes() == scan.file_path.read_bytes()
+    assert len(client.deleted) == 2
+    assert list(coord._storage.iterdir()) == [scan.file_path]
+
+
+@pytest.mark.parametrize("exit_kind", ["cancel", "shutdown", "timeout"])
+async def test_manual_duplex_wait_exit_removes_private_fronts(make_coord, monkeypatch, exit_kind):
+    if exit_kind == "timeout":
+        monkeypatch.setattr(
+            "custom_components.escl_scan.coordinator.MANUAL_RELOAD_TIMEOUT_SECONDS", .03
+        )
+    client = TwoPassClient(VALID_PDF, VALID_PDF)
+    coord = make_coord(client)
+    scan = await coord.start_scan(duplex=True)
+    task = coord._driver_tasks[scan.scan_id]
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
+    if exit_kind == "cancel":
+        assert await coord.async_cancel(scan.scan_id)
+        await task
+        assert scan.state == "canceled"
+    elif exit_kind == "shutdown":
+        await coord.async_shutdown()
+    else:
+        await task
+        assert scan.state == "failed" and "timed out" in scan.error
+    assert client.create_calls == 1
+    assert not coord._back_events
+    assert not list(coord._storage.iterdir())
+
+
+async def test_manual_duplex_mismatched_backs_fail_without_folder_copy(make_coord, tmp_path):
+    client = TwoPassClient(real_pdf(3), real_pdf(2))
+    copy = tmp_path / "copies"
+    coord = make_coord(client, copy_dir=copy)
+    scan = await coord.start_scan(duplex=True)
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
+    await coord.async_scan_backs(scan.scan_id)
+    await _drive(coord, scan)
+    assert scan.state == "failed" and "3 fronts, 2 backs" in scan.error
+    assert scan.to_dict()["file_url"] is None
+    assert not copy.exists() and not list(coord._storage.iterdir())
+
+
+async def test_manual_duplex_resume_checks_loaded_idle_feeder(make_coord, monkeypatch):
+    from custom_components.escl_scan.scanner import ScannerStatus
+
+    client = TwoPassClient(VALID_PDF, VALID_PDF)
+    coord = make_coord(client)
+    scan = await coord.start_scan(duplex=True)
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
+    for state, loaded in [("Idle", False), ("Processing", True)]:
+        async def status(state=state, loaded=loaded):
+            return ScannerStatus(state=state, adf_loaded=loaded)
+        monkeypatch.setattr(client, "get_scanner_status", status)
+        with pytest.raises(ValueError, match="load the back sides"):
+            await coord.async_scan_backs(scan.scan_id)
+        assert scan.state == "awaiting-back-sides" and client.create_calls == 1
+    assert await coord.async_cancel(scan.scan_id)
+    await _drive(coord, scan)
+
+
+async def test_manual_duplex_aborted_fronts_do_not_wait(make_coord):
+    client = TwoPassClient(VALID_PDF, VALID_PDF)
+    client.job_state = "Aborted"
+    coord = make_coord(client)
+    scan = await coord.start_scan(duplex=True)
+    await _drive(coord, scan)
+    assert scan.state == "aborted" and client.create_calls == 1
+    assert not coord._back_events and not list(coord._storage.iterdir())
+
+
+async def test_start_cleans_manual_intermediates_from_abrupt_exit(make_coord):
+    coord = make_coord(FakeClient(docs=[[VALID_PDF]]))
+    coord._storage.mkdir()
+    for suffix in ["fronts", "duplex", "rot", "partfronts0"]:
+        (coord._storage / f"scan-old.pdf.{suffix}").write_bytes(b"abandoned")
+    unrelated = coord._storage / "other-document.pdf.fronts"
+    unrelated.write_bytes(b"leave intact")
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    assert set(coord._storage.iterdir()) == {scan.file_path, unrelated}
+
+
+async def test_manual_resume_cancel_race_cannot_start_another_job(make_coord, monkeypatch):
+    from custom_components.escl_scan.scanner import ScannerStatus
+
+    client = TwoPassClient(VALID_PDF, VALID_PDF)
+    coord = make_coord(client)
+    scan = await coord.start_scan(duplex=True)
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
+    checking = asyncio.Event()
+    gate = asyncio.Event()
+
+    async def status():
+        checking.set()
+        await gate.wait()
+        return ScannerStatus(state="Idle", adf_loaded=True)
+
+    monkeypatch.setattr(client, "get_scanner_status", status)
+    resume = asyncio.create_task(coord.async_scan_backs(scan.scan_id))
+    await checking.wait()
+    with pytest.raises(ValueError, match="already starting"):
+        await coord.async_scan_backs(scan.scan_id)
+    task = coord._driver_tasks[scan.scan_id]
+    assert await coord.async_cancel(scan.scan_id)
+    await task
+    gate.set()
+    with pytest.raises(ValueError, match="no longer waiting"):
+        await resume
+    assert client.create_calls == 1 and not list(coord._storage.iterdir())
+
+
+@pytest.mark.parametrize("shutdown", [False, True])
+async def test_manual_back_job_creation_cleanup_on_cancel_or_shutdown(
+    make_coord, monkeypatch, shutdown,
+):
+    client = TwoPassClient(VALID_PDF, VALID_PDF)
+    coord = make_coord(client)
+    scan = await coord.start_scan(duplex=True)
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
+    original_create = client.create_job
+    creating = asyncio.Event()
+    gate = asyncio.Event()
+
+    async def create(**kw):
+        creating.set()
+        await gate.wait()
+        return await original_create(**kw)
+
+    monkeypatch.setattr(client, "create_job", create)
+    await coord.async_scan_backs(scan.scan_id)
+    task = coord._driver_tasks[scan.scan_id]
+    await creating.wait()
+    if shutdown:
+        stop = asyncio.create_task(coord.async_shutdown())
+        await asyncio.sleep(0)
+    else:
+        assert await coord.async_cancel(scan.scan_id)
+    gate.set()
+    if shutdown:
+        await stop
+    else:
+        await task
+    assert client.create_calls == 2
+    assert client.deleted == [
+        "https://scanner/eSCL/ScanJobs/j1", "https://scanner/eSCL/ScanJobs/j2",
+    ]
+    assert not list(coord._storage.iterdir())
+
+
 async def test_happy_path_streams_and_commits(make_coord):
     client = FakeClient(docs=[[VALID_PDF]])
     coord = make_coord(client)
@@ -312,8 +518,11 @@ async def test_duplex_only_for_feeder_on_capable_adf(make_coord):
     coord._caps = client.caps
     client._docs = [[VALID_PDF]]
     scan = await coord.start_scan(source="Feeder", duplex=True)
-    await _drive(coord, scan)
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
     assert scan.duplex is False  # requested but unsupported
+    assert scan.duplex_mode == "manual"
+    assert await coord.async_cancel(scan.scan_id)
+    await _drive(coord, scan)
 
 
 async def test_copy_dir_receives_finished_scan(make_coord, tmp_path):

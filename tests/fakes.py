@@ -1,7 +1,7 @@
 """Shared fake eSCL client for coordinator/service/button tests."""
 import asyncio
 
-from custom_components.escl_scan.scanner import JobInfo
+from custom_components.escl_scan.scanner import JobInfo, ScannerStatus
 
 
 class FakeClient:
@@ -29,6 +29,9 @@ class FakeClient:
         if self.caps is None:
             raise OSError("no capabilities endpoint")
         return self.caps
+
+    async def get_scanner_status(self):
+        return ScannerStatus(state="Idle", adf_loaded=True)
 
     async def create_job(self, **kwargs):
         self.create_kwargs = kwargs

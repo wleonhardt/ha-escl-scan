@@ -8,7 +8,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.escl_scan.const import CONF_HOST, CONF_USE_TLS, DOMAIN
 
 from .fakes import FakeClient
-from .test_coordinator import VALID_PDF
+from .test_coordinator import VALID_PDF, _wait_for
 
 
 async def _noop_reap(*args, **kwargs):
@@ -29,8 +29,7 @@ async def api(hass, hass_client):
         http = await hass_client()
         coord = hass.data[DOMAIN][entry.entry_id]["coordinator"]
         yield http, client, coord
-        for task in list(coord._driver_tasks.values()):
-            await task
+        await coord.async_shutdown()
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
 
@@ -40,6 +39,29 @@ async def test_views_require_auth(hass, hass_client_no_auth, api):
     assert (await anon.post("/api/escl_scan/start", json={})).status == 401
     assert (await anon.post("/api/escl_scan/cancel", json={"scan_id": "x"})).status == 401
     assert (await anon.get("/api/escl_scan/file/x")).status == 401
+    assert (await anon.post("/api/escl_scan/scan_backs", json={"scan_id": "x"})).status == 401
+
+
+async def test_manual_duplex_views_reject_early_download_and_stale_resume(api):
+    http, client, coord = api
+    assert (await http.post("/api/escl_scan/scan_backs", json=[])).status == 400
+    assert (await http.post("/api/escl_scan/scan_backs", data="bad")).status == 400
+    assert (await http.post("/api/escl_scan/scan_backs", json={"scan_id": "missing"})).status == 404
+    response = await http.post("/api/escl_scan/start", json={"source": "Feeder", "duplex": True})
+    data = await response.json()
+    assert data["duplex_mode"] == "manual" and not data["duplex"]
+    scan = coord.get(data["scan_id"])
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
+    assert (await http.get(f"/api/escl_scan/file/{scan.scan_id}")).status == 409
+    assert (await http.post("/api/escl_scan/start", json={})).status == 409
+    client._docs = [[VALID_PDF]]
+    back_response = await http.post("/api/escl_scan/scan_backs", json={"scan_id": scan.scan_id})
+    assert back_response.status == 200
+    await coord._driver_tasks[scan.scan_id]
+    assert scan.state == "completed" and scan.pages_done == 2
+    stale_response = await http.post("/api/escl_scan/scan_backs", json={"scan_id": scan.scan_id})
+    assert stale_response.status == 409
+    assert (await http.get(f"/api/escl_scan/file/{scan.scan_id}")).status == 200
 
 
 async def test_start_validates_body(api):
