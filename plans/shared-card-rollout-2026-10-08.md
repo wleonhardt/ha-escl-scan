@@ -1,8 +1,9 @@
 # Shared scan and print card rollout plan
 
 Status: in-progress. Phase 0 contract and current-host experiment complete;
-Phase 1 implemented for scan v0.6.0 and print v0.5.0. Release/live gates are
-tracked in [validation](shared-card-phase-1-validation.md).
+Phase 1 released and installed as scan v0.6.0 and print v0.5.0; physical phone
+loading confirmed. Phase 2 is next. Remaining host/version checks are tracked
+in [validation](shared-card-phase-1-validation.md).
 
 Bring scanning and printing onto one Home Assistant visual and interaction
 contract, starting with the visible Two-sided switch selected in the design
@@ -80,8 +81,11 @@ Agree on the small reusable surface before extracting production code.
 - [x] Prototype a plain-JS custom feature in native Tile and current Mushroom
   Template. Check entity context, action/switch separation, feature row sizing,
   options panel, keyboard behavior and registration on refresh/update.
-- [ ] Test the currently declared minimum HA version, current installed HA,
-  and the actual Android app. If feature hosting needs a newer frontend, keep
+- [x] Test the current installed HA frontend and confirm standalone card loading
+  on the physical phone after the paired release.
+- [ ] Complete a runtime test of native feature hosting on the declared minimum
+  HA version and actual Android app before Phase 5. Source compatibility was
+  checked; the older runtime is unavailable locally. If hosting needs a newer frontend, keep
   it optional with a documented requirement; preserve standalone support.
 
 Exit: a decision with tested host/version limits and fixtures both repositories

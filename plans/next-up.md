@@ -2,9 +2,9 @@
 
 ## Queue
 - Shared scan/print card rollout, in progress: Phase 0 contract/current-host
-  experiment and Phase 1 implementation complete. Scan v0.6.0 / print v0.5.0
-  ready for hosted validation and installation; physical Android confirmation
-  pending. [Validation](shared-card-phase-1-validation.md).
+  experiment and Phase 1 released and installed as scan v0.6.0 / print v0.5.0.
+  Physical phone loading confirmed; minimum-version native-host runtime probe
+  remains before Phase 5. [Validation](shared-card-phase-1-validation.md).
   Next implementation: Phase 2 capability/upload APIs, then Phase 3 options.
   [Full plan](shared-card-rollout-2026-10-08.md).
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
@@ -26,10 +26,17 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-10-08 — First paired UI release: scan v0.6.0 / print v0.5.0. Compact
+  Two-sided switch, explicit staged printing, common theme styling and Sections
+  sizing. Live reload found and fixed recovery leaving HA's owned element as an
+  error card, which could reappear beside the working card. Both cards now use
+  the wrapper's load path. Live desktop and physical phone load correctly.
+  Scan 166 Python / 36 card tests; print 135 Python / 29 card tests; hosted
+  validation and release workflows pass. [Details](shared-card-phase-1-validation.md).
 - 2026-10-08 — v0.5.2: restore dashboard resource registration alongside extra
   module loading after a phone continued to show Configuration error despite
   clearing cache. A fresh desktop/mobile-width browser loads correctly;
-  physical phone confirmation is pending. The print card had a dashboard
+  physical phone confirmation was pending until v0.6.0. The print card had a dashboard
   resource while the scan card did not. Sync loads storage first, updates one
   resource in place, removes stale duplicates, serializes reloads, and selects
   the latest loaded entry after waiting. YAML/error paths keep extra modules.

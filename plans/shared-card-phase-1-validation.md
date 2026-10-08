@@ -1,7 +1,7 @@
 # Shared card foundation and mobile release validation
 
-Status: implementation ready for release; live installation and physical phone
-confirmation pending. Scan v0.6.0 and print v0.5.0, 2026-10-08.
+Status: released, installed and verified on the live desktop dashboard and the user's
+phone. Scan v0.6.0 and print v0.5.0, 2026-10-08.
 
 ## Implemented
 
@@ -31,6 +31,12 @@ remain the later API/options phases.
   inviting an immediate duplicate print.
 - A manual duplex job begun elsewhere now displays its actual mode on the
   disabled switch, then restores this card's next-job preference afterward.
+- Live reload exposed a second configuration-error failure: direct DOM recovery
+  left `hui-card._element` pointing at its old error card. HA's visibility update
+  could reinsert the error beside the working scan card, creating three columns
+  from a correctly configured two-card stack. Both cards now use the owning
+  wrapper's `load()` when available. Regression tests verify that HA owns the
+  recovered element; the existing fallback remains for older wrappers.
 
 ## Native host experiment
 
@@ -54,8 +60,8 @@ Sources: [HA minimum-version frontend manifest](https://github.com/home-assistan
 
 ## Automated and browser checks
 
-- Scan: 166 Python tests, 35 card tests and Ruff passed.
-- Print: 135 Python tests, 28 card tests, compileall and Ruff passed.
+- Scan: 166 Python tests, 36 card tests and Ruff passed.
+- Print: 135 Python tests, 29 card tests, compileall and Ruff passed.
 - Both card suites ran after npm ci. No new runtime dependencies or separate
   imported card assets were introduced; existing resource hashing still covers
   the complete shipped module.
@@ -85,13 +91,37 @@ fixture JSON and a case ID. The preview uses stubbed state and rejects device
 requests. Remove the overlay or reload the page afterward. Native host probing
 uses `mountDocumentHostProbe`; it also has no device action.
 
-## Remaining release gates
+## Live installation
 
-- Hosted validation on both final commits and HACS release workflows.
-- Back up installed integrations, confirm both jobs are idle, install the two
-  card releases, and verify current content-hashed resources after reload.
-- Reopen the physical Android dashboard and confirm both cards load and the
-  Two-sided switch is visible. Desktop mobile emulation does not close this gate.
+The prior scan v0.5.2 and print v0.4.1 integrations, dashboard storage/resources
+and dashboard files are backed up on the HA host at
+`/config/.document-card-backups/complete-before-v060-v050-20261008.tar.gz`.
+Only the card modules and manifests changed on the host. Both job sensors were
+idle before installation and entry reload; a full HA restart was unnecessary.
+The deployed module SHA-256 values match the repository files.
+
+After reload, the resource collection contains exactly one module per domain:
+
+- Scan: `/escl_scan/card-4a5eb3b7e69d.js`.
+- Print: `/ipp_print/card-030b787a4afe.js`.
+
+The saved dashboard YAML was preserved, including its explicit Scan now and
+Print PDF titles. At a 390px browser viewport the actual pair is 183px wide per
+card and 202px high, with one HA-owned card per wrapper and no error cards.
+At 320px, a further reload retained one owned card each, at 148px by 202px,
+without configuration errors. The user reopened the physical phone dashboard
+and confirmed both cards load correctly with the small Two-sided switch.
+Toggling Two-sided changed its hint to Feeder / may need two passes while the
+scan sensor stayed idle with no scan ID; it was then returned to its default.
+The existing dashboard's separate printer availability banners still report
+offline; correcting their unrelated source entities belongs to Phase 4.
+
+## Release verification and remaining limits
+
+- All six hosted validation jobs passed for scan `cbce4e3` and print `3ffd5f0`.
+  Both release workflows succeeded and published the matching HACS releases:
+  [scan v0.6.0](https://github.com/wleonhardt/ha-escl-scan/releases/tag/v0.6.0),
+  [print v0.5.0](https://github.com/wleonhardt/ha-ipp-print/releases/tag/v0.5.0).
 - A complete runtime test on HA 2024.12 and automatic-duplex scanner hardware
   remain outside this local environment; do not promote native features on
   the basis of the current-host experiment alone.
