@@ -174,6 +174,28 @@ def _merge_pdfs(parts: list[Path], dest: Path) -> tuple[int, int]:
     return pages, dest.stat().st_size
 
 
+def _rotate_back_sides(path: Path) -> None:
+    """Rotate odd (0-based) pages of the PDF at `path` by 180° in place.
+
+    Blocking — call via an executor. Writes a sibling temp file and renames
+    it over `path`, so a failure leaves the original intact.
+    """
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter()
+    for i, page in enumerate(PdfReader(str(path)).pages):
+        if i % 2:
+            page.rotate(180)
+        writer.add_page(page)
+    tmp = path.with_name(path.name + ".rot")
+    try:
+        with open(tmp, "wb") as fh:
+            writer.write(fh)
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 @dataclass
 class TrackedScan:
     scan_id: str
@@ -238,6 +260,7 @@ class ScanCoordinator:
         default_dpi: int,
         default_color: str,
         default_duplex: bool = False,
+        rotate_duplex_backs: bool = False,
         file_ttl_seconds: int,
         copy_dir: Path | None = None,
     ) -> None:
@@ -247,6 +270,7 @@ class ScanCoordinator:
         self._default_dpi = default_dpi
         self._default_color = default_color
         self._default_duplex = default_duplex
+        self._rotate_duplex_backs = rotate_duplex_backs
         self._file_ttl = file_ttl_seconds
         self._copy_dir = copy_dir
         self._caps: ScannerCapabilities | None = None
@@ -679,6 +703,17 @@ class ScanCoordinator:
         for w in parts:
             if w.path not in consumed:
                 await self._hass.async_add_executor_job(w.cleanup)
+        if self._rotate_duplex_backs and scan.duplex and (pages or 0) > 1:
+            try:
+                await self._hass.async_add_executor_job(
+                    _rotate_back_sides, scan.file_path
+                )
+                scan.bytes_written = scan.file_path.stat().st_size
+            except Exception as exc:
+                _LOGGER.warning(
+                    "scan %s: could not rotate duplex back sides: %s",
+                    scan.scan_id, exc,
+                )
         return pages or 0
 
     async def _poll_loop(self, scan: TrackedScan) -> None:

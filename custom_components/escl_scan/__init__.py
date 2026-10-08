@@ -30,6 +30,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_PORT,
     CONF_RELAXED_CIPHERS,
+    CONF_ROTATE_DUPLEX_BACKS,
     CONF_USE_TLS,
     CONF_USER,
     CONF_VERIFY_TLS,
@@ -39,6 +40,7 @@ from .const import (
     DEFAULT_DUPLEX,
     DEFAULT_FILE_TTL,
     DEFAULT_PORT,
+    DEFAULT_ROTATE_DUPLEX_BACKS,
     DEFAULT_USER,
     DOMAIN,
     STORAGE_SUBDIR,
@@ -99,6 +101,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         default_dpi=data.get(CONF_DEFAULT_DPI, DEFAULT_DPI),
         default_color=data.get(CONF_DEFAULT_COLOR, DEFAULT_COLOR),
         default_duplex=data.get(CONF_DEFAULT_DUPLEX, DEFAULT_DUPLEX),
+        rotate_duplex_backs=data.get(
+            CONF_ROTATE_DUPLEX_BACKS, DEFAULT_ROTATE_DUPLEX_BACKS
+        ),
         file_ttl_seconds=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL),
         copy_dir=copy_dir,
     )

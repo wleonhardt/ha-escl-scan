@@ -355,3 +355,26 @@ async def test_start_after_terminal_is_allowed(make_coord):
     await _drive(coord, scan2)
     assert scan2.state == "completed"
     assert scan2.scan_id != scan1.scan_id
+
+
+async def test_rotate_duplex_backs(make_coord):
+    from pypdf import PdfReader
+
+    client = FakeClient(docs=[[real_pdf(4)]], source="Feeder", caps=CAPS)
+    coord = make_coord(client, default_duplex=True, rotate_duplex_backs=True)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    pages = PdfReader(str(scan.file_path)).pages
+    assert [p.rotation for p in pages] == [0, 180, 0, 180]
+    assert not list(coord._storage.glob("*.rot"))
+
+
+async def test_no_rotation_by_default(make_coord):
+    from pypdf import PdfReader
+
+    client = FakeClient(docs=[[real_pdf(2)]], source="Feeder", caps=CAPS)
+    coord = make_coord(client, default_duplex=True)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert [p.rotation for p in PdfReader(str(scan.file_path)).pages] == [0, 0]

@@ -6,6 +6,17 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-10-08
+
+### Added
+- Option *Rotate duplex back sides 180°* for ADFs that feed back sides
+  reversed (#5).
+
+### Changed
+- Document download stall timeout and 503 retry budget raised to 900 s so
+  large ADF batches on slow devices no longer fail with `no document
+  returned from scanner` (#5).
+
 ## [0.4.4] - 2026-10-08
 
 ### Fixed

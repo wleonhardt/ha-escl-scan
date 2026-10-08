@@ -43,6 +43,7 @@
           "default_dpi": "Default scan resolution (DPI)",
           "default_color": "Default color mode (color or gray)",
           "default_duplex": "Scan both sides by default (ADF duplex, if supported)",
+          "rotate_duplex_backs": "Rotate duplex back sides 180° (for ADFs that feed them reversed)",
           "file_ttl_seconds": "Scanned file retention (seconds before purge)",
           "copy_to_dir": "Also copy finished scans to this folder (optional)"
         },

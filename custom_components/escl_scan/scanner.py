@@ -39,12 +39,12 @@ _STREAM_CHUNK = 1024 * 1024
 # default for job creation). Status/poll/delete are quick control calls;
 # document streaming bounds only the socket-read stall, never total transfer.
 _SHORT_TIMEOUT = aiohttp.ClientTimeout(total=10.0)
-_STREAM_TIMEOUT = aiohttp.ClientTimeout(sock_connect=15, sock_read=90)
+_STREAM_TIMEOUT = aiohttp.ClientTimeout(sock_connect=15, sock_read=900)
 
 # NextDocument may answer 503 while the ADF is still feeding the next sheet.
 # We keep retrying while JobInfo says the job is alive, bounded by this
 # wall-clock budget so a wedged device can't hang the driver forever.
-NEXT_DOCUMENT_RETRY_SECONDS = 120.0
+NEXT_DOCUMENT_RETRY_SECONDS = 900.0
 
 # After a cancel (or a previous job finishing) HP MFPs answer 503 on ScanJobs
 # and report Processing for a few seconds. Wait this long for Idle before

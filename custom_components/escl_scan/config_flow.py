@@ -29,6 +29,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_PORT,
     CONF_RELAXED_CIPHERS,
+    CONF_ROTATE_DUPLEX_BACKS,
     CONF_USE_TLS,
     CONF_USER,
     CONF_VERIFY_TLS,
@@ -38,6 +39,7 @@ from .const import (
     DEFAULT_DUPLEX,
     DEFAULT_FILE_TTL,
     DEFAULT_PORT,
+    DEFAULT_ROTATE_DUPLEX_BACKS,
     DEFAULT_USER,
     DOMAIN,
 )
@@ -219,6 +221,12 @@ class EsclScanOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_DEFAULT_DUPLEX,
                     default=data.get(CONF_DEFAULT_DUPLEX, DEFAULT_DUPLEX),
+                ): bool,
+                vol.Optional(
+                    CONF_ROTATE_DUPLEX_BACKS,
+                    default=data.get(
+                        CONF_ROTATE_DUPLEX_BACKS, DEFAULT_ROTATE_DUPLEX_BACKS
+                    ),
                 ): bool,
                 vol.Optional(
                     CONF_FILE_TTL, default=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL)

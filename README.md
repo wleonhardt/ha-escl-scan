@@ -124,7 +124,8 @@ size per source, duplex support, and the supported resolutions:
 - duplex is only sent for Feeder scans on a duplex-capable ADF.
 
 Options (gear icon on the integration) hold the defaults: DPI, color mode,
-duplex, and file retention.
+duplex, rotating duplex back sides 180° (for ADFs that feed them reversed),
+and file retention.
 
 ## Adding the card to a dashboard
 
