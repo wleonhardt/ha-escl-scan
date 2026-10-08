@@ -142,7 +142,10 @@ entity: sensor.printer_current_scan   # optional; auto-detected if renamed
 
 Choose **Scan both sides** for a two-sided feeder document. Automatic duplex
 is used when advertised by the scanner. Otherwise, the card scans the fronts
-and pauses with reload instructions. Reload with backs facing the scanner and
+and pauses with reload instructions. **Wait for the reload prompt before
+flipping**; some scanners keep the first job open after sheets leave the
+feeder and will consume any pages reloaded early into that same pass.
+Reload with backs facing the scanner and
 choose their feed order: **First sheet first** when keeping the same sheet
 order, or **Last sheet first (flipped stack)** when flipping the whole stack
 reverses its order. Then choose **Scan back sides**. The default is first sheet

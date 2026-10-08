@@ -15,7 +15,8 @@ match `custom_components/escl_scan/manifest.json`.
   sheet first or last sheet first (flipped stack). The final
   PDF interleaves front/back pages and requires equal counts.
 - Card controls for **Scan both sides** and **Scan back sides**, plus reload
-  instructions, back-order selection, and progress across both passes.
+  instructions, back-order selection, and progress across both passes. Front
+  pass messages remind users to wait for the reload prompt before flipping.
 - `escl_scan.scan_backs` service and authenticated `/api/escl_scan/scan_backs`
   endpoint; `awaiting-back-sides` state, `duplex_mode`, `scan_phase`, and
   `front_pages`, and `reverse_back_order` attributes. The resume service/API

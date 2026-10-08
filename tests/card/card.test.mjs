@@ -88,6 +88,10 @@ test('manual duplex waiting shows instructions and resumes once without overwrit
     fetchImpl: () => new Promise(resolve => { finish = resolve; }),
   });
   const attrs = { scan_id: 'manual1', duplex_mode: 'manual', front_pages: 3, pages_done: 3 };
+  push(SENSOR, 'pending', { ...attrs, scan_phase: 'fronts' });
+  assert.match(status(el).textContent, /Wait for the reload prompt before flipping/);
+  push(SENSOR, 'processing', { ...attrs, scan_phase: 'fronts' });
+  assert.match(status(el).textContent, /Wait for the reload prompt before flipping/);
   push(SENSOR, 'awaiting-back-sides', attrs);
   assert.match(status(el).textContent, /same sheet order/);
   assert.ok(cancelShown(el));
@@ -103,6 +107,7 @@ test('manual duplex waiting shows instructions and resumes once without overwrit
   finish(jsonResponse({ ok: true, scan_id: 'manual1', state: 'pending' }));
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.match(status(el).textContent, /Scanning backs.*page 4/);
+  assert.doesNotMatch(status(el).textContent, /reload prompt/);
 });
 
 test('manual resume errors retain the retry and cancel controls', async () => {

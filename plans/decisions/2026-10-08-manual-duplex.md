@@ -59,3 +59,11 @@ supersedes the silent simplex downgrade in the 2026-09-06 capabilities decision.
   is 1F,3B,2F,2B,3F,1B: interleaving preserves input order, but physical pairs
   do not match. A back-order choice would support flipping the whole stack;
   paired hardware verification and release tag remain pending.
+- Back-order update committed as 4cb0ff8; hosted validation 37811279681 passed.
+  Repeated front attempt `7b593a90a58b` consumed an extra sheet 1; user confirmed
+  the stack was mishandled. Canceled while awaiting backs; private scratch files
+  disappeared and no final download or folder copy was published.
+- Retry `67ceef6755a1` consumed fronts 1F,2F,3F followed by backs 3B,2B,1B in
+  the same first device job (scanner itself reports six). Likely reloaded
+  before the first job closed; canceled this attempt too. Card/README now
+  explicitly tell users to wait for the reload prompt before flipping.

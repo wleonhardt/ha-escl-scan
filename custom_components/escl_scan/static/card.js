@@ -496,14 +496,16 @@ C.prototype._buildOpenLink = function (attrs) {
 C.prototype._renderScanState = function (state, attrs) {
   const pagesDone = attrs?.pages_done || 0;
   const source = typeof attrs?.source === 'string' ? attrs.source.toLowerCase() : '';
+  const reloadHint = attrs.duplex_mode === 'manual' && attrs.scan_phase === 'fronts'
+    ? ' Wait for the reload prompt before flipping.' : '';
   if (state === 'pending') {
-    this._setStatus('Waiting for scanner…');
+    this._setStatus(`Waiting for scanner…${reloadHint}`);
     this._setCancelVisible(true);
   } else if (state === 'processing') {
     const src = source ? ` (${source})` : '';
     const pages = pagesDone > 0 ? ` page ${pagesDone}` : '';
     const phase = attrs.duplex_mode === 'manual' ? ` ${attrs.scan_phase || 'fronts'}` : '';
-    this._setStatus(`Scanning${phase}${src}${pages}…`);
+    this._setStatus(`Scanning${phase}${src}${pages}…${reloadHint}`);
     this._setCancelVisible(true);
   } else if (state === 'processing-stopped') {
     this._setStatus('Scanner paused — check tray/jam', 'err');
