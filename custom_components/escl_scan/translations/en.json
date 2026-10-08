@@ -115,11 +115,15 @@
     },
     "scan_backs": {
       "name": "Scan back sides",
-      "description": "Resume a manual two-sided scan after reloading the backs in the same sheet order. Without a scan id, resumes the current scan.",
+      "description": "Resume a manual two-sided scan after reloading the backs. Without a scan id, resumes the current scan.",
       "fields": {
         "scan_id": {
           "name": "Scan ID",
           "description": "The scan_id of the scan waiting for back sides."
+        },
+        "reverse_back_order": {
+          "name": "Backs feed last sheet first",
+          "description": "Enable when the back-side pass feeds the last sheet first, such as after flipping the whole stack. Leave off when the first sheet feeds first."
         }
       }
     }

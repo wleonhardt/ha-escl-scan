@@ -157,6 +157,12 @@ C.prototype._render = function () {
         border-radius: 8px; padding: 5px 9px; cursor: pointer;
       }
       button:disabled { opacity: .5; cursor: default; }
+      .status select {
+        font: inherit; max-width: 100%; margin: 5px 0;
+        color: var(--primary-text-color, #fff);
+        background: var(--card-background-color, #1c1c1c);
+        border: 1px solid var(--divider-color, #889); border-radius: 8px; padding: 5px;
+      }
       .two-sided { font-size: 12px; }
     </style>
     <ha-card role="button" tabindex="0">
@@ -184,12 +190,12 @@ C.prototype._render = function () {
     if (ev.target === this._cancelEl) return;
     // Bail if the click landed on (or inside) any anchor — the "Open scan"
     // link lives in the .status div and bubbles up here.
-    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a,button')) return;
+    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a,button,select')) return;
     this._startScan();
   });
   this._card.addEventListener('keydown', (ev) => {
     if (ev.target === this._cancelEl) return;
-    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a,button')) return;
+    if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('a,button,select')) return;
     if (ev.key === 'Enter' || ev.key === ' ') {
       ev.preventDefault();
       this._startScan();
@@ -249,6 +255,7 @@ C.prototype._startScan = async function (overrides = {}) {
   if (this._busy || this._activeScanId) return;
   this._busy = true;
   this._backError = null;
+  this._reverseBackOrder = false;
   this._card.classList.add('busy');
   this._setStatus('Starting…');
   this._setCancelVisible(false);
@@ -301,10 +308,11 @@ C.prototype._scanBacks = async function () {
   this._resuming = true;
   this._backError = null;
   if (this._backButton) this._backButton.disabled = true;
+  if (this._backOrderEl) this._backOrderEl.disabled = true;
   try {
     const r = await this._apiFetch('/api/escl_scan/scan_backs', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scan_id: scanId }),
+      body: JSON.stringify({ scan_id: scanId, reverse_back_order: !!this._reverseBackOrder }),
     });
     if (!r.ok) {
       let body = null;
@@ -322,6 +330,7 @@ C.prototype._scanBacks = async function () {
   } finally {
     this._resuming = false;
     if (this._backButton) this._backButton.disabled = false;
+    if (this._backOrderEl) this._backOrderEl.disabled = false;
   }
 };
 
@@ -415,7 +424,10 @@ C.prototype._onHass = function () {
   this._lastSig = sig;
 
   if (ACTIVE_STATES.has(state)) {
-    if (this._activeScanId !== sid) this._backError = null;
+    if (this._activeScanId !== sid) {
+      this._backError = null;
+      this._reverseBackOrder = false;
+    }
     this._activeScanId = sid;
     this._clearResultTimer();
     this._renderScanState(state, attrs);
@@ -498,7 +510,21 @@ C.prototype._renderScanState = function (state, attrs) {
     this._setCancelVisible(true);
   } else if (state === 'awaiting-back-sides') {
     const wrap = document.createElement('span');
-    wrap.append(`Fronts ready (${attrs.front_pages || pagesDone} sheets). Flip each sheet and reload the backs in the same sheet order, first sheet first. `);
+    wrap.append(`Fronts ready (${attrs.front_pages || pagesDone} sheets). Reload with backs facing the scanner. Choose which sheet feeds first: `);
+    const order = document.createElement('select');
+    order.setAttribute('aria-label', 'Back-side sheet order');
+    for (const [value, text] of [['same', 'First sheet first (same sheet order)'], ['reverse', 'Last sheet first (flipped stack)']]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = text;
+      order.appendChild(option);
+    }
+    order.value = this._reverseBackOrder ? 'reverse' : 'same';
+    order.disabled = !!this._resuming;
+    order.addEventListener('change', () => { this._reverseBackOrder = order.value === 'reverse'; });
+    this._backOrderEl = order;
+    wrap.appendChild(order);
+    wrap.append(' ');
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = 'Scan back sides';

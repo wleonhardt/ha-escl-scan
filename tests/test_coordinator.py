@@ -84,12 +84,14 @@ def marked_pdf(widths):
 
 @pytest.mark.parametrize("unknown_caps", [False, True])
 @pytest.mark.parametrize("rotate", [False, True])
+@pytest.mark.parametrize("reverse", [False, True])
 async def test_manual_duplex_pairs_pages_and_publishes_only_after_backs(
-    make_coord, tmp_path, unknown_caps, rotate,
+    make_coord, tmp_path, unknown_caps, rotate, reverse,
 ):
     from pypdf import PdfReader
 
-    client = TwoPassClient(marked_pdf([101, 102, 103]), marked_pdf([201, 202, 203]))
+    backs = [203, 202, 201] if reverse else [201, 202, 203]
+    client = TwoPassClient(marked_pdf([101, 102, 103]), marked_pdf(backs))
     if unknown_caps:
         client.caps = None
     copy = tmp_path / "copies"
@@ -103,7 +105,11 @@ async def test_manual_duplex_pairs_pages_and_publishes_only_after_backs(
     assert scan.job_url is None and len(client.deleted) == 1
     with pytest.raises(ScanBusyError):
         await coord.start_scan()
-    await coord.async_scan_backs(scan.scan_id)
+    with pytest.raises(ValueError, match="boolean"):
+        await coord.async_scan_backs(scan.scan_id, reverse_back_order="false")
+    assert scan.state == "awaiting-back-sides" and not scan.reverse_back_order
+    await coord.async_scan_backs(scan.scan_id, reverse_back_order=reverse)
+    assert scan.to_dict()["reverse_back_order"] is reverse
     with pytest.raises(ValueError, match="not waiting"):
         await coord.async_scan_backs(scan.scan_id)
     await _drive(coord, scan)

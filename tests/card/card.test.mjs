@@ -98,7 +98,7 @@ test('manual duplex waiting shows instructions and resumes once without overwrit
   button.click();
   assert.equal(calls.fetch.length, 1);
   assert.equal(calls.fetch[0].url, '/api/escl_scan/scan_backs');
-  assert.deepEqual(JSON.parse(calls.fetch[0].init.body), { scan_id: 'manual1' });
+  assert.deepEqual(JSON.parse(calls.fetch[0].init.body), { scan_id: 'manual1', reverse_back_order: false });
   push(SENSOR, 'processing', { ...attrs, scan_phase: 'backs', pages_done: 4 });
   finish(jsonResponse({ ok: true, scan_id: 'manual1', state: 'pending' }));
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -112,14 +112,26 @@ test('manual resume errors retain the retry and cancel controls', async () => {
     fetchImpl: async () => jsonResponse({ message: 'Load the back sides first' }, 409),
   });
   push(SENSOR, 'awaiting-back-sides', { scan_id: 'manual1', front_pages: 2 });
+  const order = status(el).querySelector('select');
+  order.click();
+  order.dispatchEvent(new win.KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+  assert.equal(calls.fetch.length, 0);
+  order.value = 'reverse';
+  order.dispatchEvent(new win.Event('change'));
   status(el).querySelector('button').click();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.match(status(el).textContent, /Load the back sides first/);
   assert.ok(cancelShown(el));
   assert.equal(status(el).querySelector('button').disabled, false);
+  assert.equal(status(el).querySelector('select').value, 'reverse');
+  assert.equal(status(el).querySelector('select').disabled, false);
+  assert.equal(JSON.parse(calls.fetch[0].init.body).reverse_back_order, true);
   status(el).querySelector('button').click();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(calls.fetch.length, 2);
+  push(SENSOR, 'canceled', { scan_id: 'manual1' });
+  push(SENSOR, 'awaiting-back-sides', { scan_id: 'manual2', front_pages: 2 });
+  assert.equal(status(el).querySelector('select').value, 'same');
 });
 
 test('cancel wins over a late manual resume response', async () => {

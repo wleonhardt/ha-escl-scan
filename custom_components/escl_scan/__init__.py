@@ -351,13 +351,16 @@ class ScanBacksView(ScanCancelView):
         scan_id = data.get("scan_id") if isinstance(data, dict) else None
         if not isinstance(scan_id, str) or not scan_id:
             return self.json_message("missing or invalid 'scan_id'", status_code=400)
+        reverse_back_order = data.get("reverse_back_order", False)
+        if not isinstance(reverse_back_order, bool):
+            return self.json_message("'reverse_back_order' must be a boolean", status_code=400)
         coord = self._coord
         if coord is None:
             return self.json_message("integration not configured", status_code=503)
         if coord.get(scan_id) is None:
             return self.json_message("scan not found", status_code=404)
         try:
-            scan = await coord.async_scan_backs(scan_id)
+            scan = await coord.async_scan_backs(scan_id, reverse_back_order=reverse_back_order)
         except ValueError as exc:
             return self.json_message(str(exc), status_code=409)
         except Exception:

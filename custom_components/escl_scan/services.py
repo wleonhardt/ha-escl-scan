@@ -30,6 +30,7 @@ ATTR_DPI = "dpi"
 ATTR_COLOR = "color"
 ATTR_DUPLEX = "duplex"
 ATTR_SCAN_ID = "scan_id"
+ATTR_REVERSE_BACK_ORDER = "reverse_back_order"
 
 START_SCHEMA = vol.Schema(
     {
@@ -40,6 +41,10 @@ START_SCHEMA = vol.Schema(
     }
 )
 CANCEL_SCHEMA = vol.Schema({vol.Optional(ATTR_SCAN_ID): str})
+SCAN_BACKS_SCHEMA = vol.Schema({
+    vol.Optional(ATTR_SCAN_ID): str,
+    vol.Optional(ATTR_REVERSE_BACK_ORDER): bool,
+})
 
 
 def _coordinator(hass: HomeAssistant) -> ScanCoordinator:
@@ -94,7 +99,9 @@ def async_register_services(hass: HomeAssistant) -> None:
         if scan is None:
             raise ServiceValidationError("no scan is waiting for back sides")
         try:
-            resumed = await coord.async_scan_backs(scan.scan_id)
+            resumed = await coord.async_scan_backs(
+                scan.scan_id, reverse_back_order=call.data.get(ATTR_REVERSE_BACK_ORDER, False),
+            )
         except ValueError as exc:
             raise ServiceValidationError(str(exc)) from exc
         except Exception as exc:
@@ -107,6 +114,6 @@ def async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(DOMAIN, SERVICE_CANCEL, _cancel, schema=CANCEL_SCHEMA)
     hass.services.async_register(
-        DOMAIN, SERVICE_SCAN_BACKS, _scan_backs, schema=CANCEL_SCHEMA,
+        DOMAIN, SERVICE_SCAN_BACKS, _scan_backs, schema=SCAN_BACKS_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )

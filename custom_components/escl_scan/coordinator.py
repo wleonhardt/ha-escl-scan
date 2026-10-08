@@ -207,7 +207,9 @@ def _rotate_back_sides(path: Path) -> int:
         tmp.unlink(missing_ok=True)
 
 
-def _interleave_duplex(fronts: Path, backs: Path, rotate_backs: bool) -> tuple[int, int]:
+def _interleave_duplex(
+    fronts: Path, backs: Path, rotate_backs: bool, reverse_backs: bool,
+) -> tuple[int, int]:
     """Atomically replace the backs PDF with paired front/back pages."""
     from pypdf import PdfReader, PdfWriter
 
@@ -219,12 +221,15 @@ def _interleave_duplex(fronts: Path, backs: Path, rotate_backs: bool) -> tuple[i
             if len(front_reader.pages) != len(back_reader.pages):
                 raise ValueError(
                     f"page count mismatch: {len(front_reader.pages)} fronts, "
-                    f"{len(back_reader.pages)} backs; reload every sheet in the same order"
+                    f"{len(back_reader.pages)} backs; reload every sheet"
                 )
             writer = PdfWriter()
             if front_reader.metadata:
                 writer.add_metadata(front_reader.metadata)
-            for front, back in zip(front_reader.pages, back_reader.pages, strict=True):
+            back_pages = list(back_reader.pages)
+            if reverse_backs:
+                back_pages.reverse()
+            for front, back in zip(front_reader.pages, back_pages, strict=True):
                 writer.add_page(front)
                 copied_back = writer.add_page(back)
                 if rotate_backs:
@@ -249,6 +254,7 @@ class TrackedScan:
     duplex_mode: str = "simplex"
     scan_phase: str | None = None
     front_pages: int = 0
+    reverse_back_order: bool = False
     job_url: str | None = None
     state: str = STATE_PENDING
     state_reasons: str | None = None
@@ -277,6 +283,7 @@ class TrackedScan:
             "duplex_mode": self.duplex_mode,
             "scan_phase": self.scan_phase,
             "front_pages": self.front_pages,
+            "reverse_back_order": self.reverse_back_order,
             "state": self.state,
             "state_reasons": self.state_reasons,
             "pages_done": self.pages_done,
@@ -496,8 +503,12 @@ class ScanCoordinator:
         # and the driver can delete exactly the job we created.
         return True
 
-    async def async_scan_backs(self, scan_id: str) -> TrackedScan:
+    async def async_scan_backs(
+        self, scan_id: str, *, reverse_back_order: bool = False,
+    ) -> TrackedScan:
         """Resume only after the user has reloaded the back sides."""
+        if not isinstance(reverse_back_order, bool):
+            raise ValueError("reverse_back_order must be a boolean")
         scan = self._scans.get(scan_id)
         event = self._back_events.get(scan_id)
         if self._shutting_down or scan is None or scan.state != STATE_AWAITING_BACKS:
@@ -514,6 +525,7 @@ class ScanCoordinator:
                 or self._back_events.get(scan_id) is not event
             ):
                 raise ValueError("scan is no longer waiting for back sides")
+            scan.reverse_back_order = reverse_back_order
             scan.scan_phase = "backs"
             scan.state = STATE_PENDING
             scan.state_reasons = None
@@ -725,7 +737,8 @@ class ScanCoordinator:
             if scan.is_terminal():
                 return False
             pages, size = await self._file_job(
-                _interleave_duplex, fronts, scan.file_path, self._rotate_duplex_backs
+                _interleave_duplex, fronts, scan.file_path, self._rotate_duplex_backs,
+                scan.reverse_back_order,
             )
             scan.pages_done = pages
             scan.bytes_written = size

@@ -37,6 +37,10 @@ cancel:
 
 scan_backs:
   fields:
+    reverse_back_order:
+      default: false
+      selector:
+        boolean:
     scan_id:
       example: 3f9a1c2b4d5e
       selector:

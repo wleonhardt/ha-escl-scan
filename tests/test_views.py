@@ -45,6 +45,10 @@ async def test_views_require_auth(hass, hass_client_no_auth, api):
 async def test_manual_duplex_views_reject_early_download_and_stale_resume(api):
     http, client, coord = api
     assert (await http.post("/api/escl_scan/scan_backs", json=[])).status == 400
+    for invalid in ["false", 1, None]:
+        assert (await http.post("/api/escl_scan/scan_backs", json={
+            "scan_id": "missing", "reverse_back_order": invalid,
+        })).status == 400
     assert (await http.post("/api/escl_scan/scan_backs", data="bad")).status == 400
     assert (await http.post("/api/escl_scan/scan_backs", json={"scan_id": "missing"})).status == 404
     response = await http.post("/api/escl_scan/start", json={"source": "Feeder", "duplex": True})
@@ -55,8 +59,11 @@ async def test_manual_duplex_views_reject_early_download_and_stale_resume(api):
     assert (await http.get(f"/api/escl_scan/file/{scan.scan_id}")).status == 409
     assert (await http.post("/api/escl_scan/start", json={})).status == 409
     client._docs = [[VALID_PDF]]
-    back_response = await http.post("/api/escl_scan/scan_backs", json={"scan_id": scan.scan_id})
+    back_response = await http.post("/api/escl_scan/scan_backs", json={
+        "scan_id": scan.scan_id, "reverse_back_order": True,
+    })
     assert back_response.status == 200
+    assert scan.reverse_back_order
     await coord._driver_tasks[scan.scan_id]
     assert scan.state == "completed" and scan.pages_done == 2
     stale_response = await http.post("/api/escl_scan/scan_backs", json={"scan_id": scan.scan_id})

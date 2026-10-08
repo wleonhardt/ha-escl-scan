@@ -23,8 +23,10 @@
 - 2026-10-08 — Automatic duplex detection plus a manual two-pass fallback
   implemented for v0.5.0. Card controls, resume API/service, private front-side
   storage, matched-count interleaving, cancellation/shutdown, and reload
-  timeout covered by 153 Python tests and 24 card tests. Three double-sided
-  test sheets printed (six labeled sides); live manual workflow pending.
+  timeout covered by 157 Python tests and 24 card tests. Three double-sided
+  test sheets printed (six labeled sides). First live scan completed with six
+  upright pages; whole-stack flipping reversed the backs, so an explicit
+  back-order choice was added. Paired repeat test pending.
   See `decisions/2026-10-08-manual-duplex.md`.
 - 2026-10-08 — Full code review: lifecycle/cancellation, PDF integrity,
   retention races, URL/auth bounds, diagnostics, and card fixes released as

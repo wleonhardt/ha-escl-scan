@@ -142,8 +142,11 @@ entity: sensor.printer_current_scan   # optional; auto-detected if renamed
 
 Choose **Scan both sides** for a two-sided feeder document. Automatic duplex
 is used when advertised by the scanner. Otherwise, the card scans the fronts
-and pauses with reload instructions. Flip each sheet and reload the backs in
-the **same sheet order**, first sheet first, then choose **Scan back sides**.
+and pauses with reload instructions. Reload with backs facing the scanner and
+choose their feed order: **First sheet first** when keeping the same sheet
+order, or **Last sheet first (flipped stack)** when flipping the whole stack
+reverses its order. Then choose **Scan back sides**. The default is first sheet
+first; the integration uses your selection rather than inferring page order.
 The final PDF is ordered front 1, back 1, front 2, back 2, and so on.
 
 Both passes must contain the same number of pages. A mismatch fails the scan
@@ -154,7 +157,8 @@ failure; it is not silently retried after sheets have already been consumed.
 
 Automations can watch for `awaiting-back-sides`, then call
 `escl_scan.scan_backs` after the user reloads the backs. Optional `scan_id`
-selects the waiting scan; omitted `scan_id` uses the current scan.
+selects the waiting scan; omitted `scan_id` uses the current scan. Set
+`reverse_back_order: true` when the last sheet feeds first (default `false`).
 
 ## Services and button
 
@@ -211,6 +215,7 @@ actions:
 | attributes.duplex_mode | `simplex`, `automatic`, or `manual` |
 | attributes.scan_phase | Manual workflow: `fronts`, `waiting-for-backs`, or `backs` |
 | attributes.front_pages | Validated front-side page count in a manual scan |
+| attributes.reverse_back_order | Whether the manual back-side pass was loaded last sheet first |
 | attributes.state_reasons | The scanner's eSCL `JobStateReasons` |
 | attributes.submitted_at / finished_at | ISO timestamps |
 | attributes.file_url | Download URL once complete (`/api/escl_scan/file/{id}`) |
@@ -245,7 +250,9 @@ JSON body `{"scan_id": "abc123"}`. Returns `{"ok": true}` on success.
 
 ### `POST /api/escl_scan/scan_backs`
 
-JSON body `{"scan_id": "abc123"}`. Resumes a scan in `awaiting-back-sides`
+JSON body `{"scan_id": "abc123", "reverse_back_order": false}`. The optional
+boolean `reverse_back_order` defaults to `false`; use `true` if backs feed last
+sheet first. Resumes a scan in `awaiting-back-sides`
 after confirming the scanner is idle and its feeder has paper. Returns `409`
 for a stale/duplicate request or an empty/busy feeder, leaving a waiting scan
 available for retry. The start response includes `duplex_mode` and `scan_phase`.

@@ -48,9 +48,10 @@ async def test_scan_backs_service_resumes_current_scan(hass, setup):
     await _wait_for(lambda: scan.state == "awaiting-back-sides")
     setup[1]._docs = [[VALID_PDF]]
     response = await hass.services.async_call(
-        DOMAIN, "scan_backs", {}, blocking=True, return_response=True,
+        DOMAIN, "scan_backs", {"reverse_back_order": True}, blocking=True, return_response=True,
     )
     assert response["scan_id"] == scan.scan_id
+    assert response["reverse_back_order"] is True
     await coord._driver_tasks[scan.scan_id]
     assert scan.state == "completed" and scan.pages_done == 2
 
