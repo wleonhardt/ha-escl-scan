@@ -1,10 +1,9 @@
 # Shared scan and print card rollout plan
 
-Status: in-progress. Phases 1–3 are released and installed as scan 0.9.0 /
-print 0.8.0; both HACS release workflows passed. HP physical acceptance and Phase 3
-editor/localization/browser checks pass. [Phase 3 validation](shared-card-phase-3-validation.md).
-Phase 4 state/reconnect/availability is next; minimum-version native-host runtime
-checks still gate Phase 5.
+Status: in-progress. Phases 1–4 are released and installed as scan 0.10.0 /
+print 0.9.0; both HACS release workflows and all six hosted checks passed.
+[Phase 4 validation](shared-card-phase-4-validation.md). Phase 5 native-host
+compatibility checks are next; minimum-version/Android checks still gate migration.
 
 Bring scanning and printing onto one Home Assistant visual and interaction
 contract, starting with the visible Two-sided switch selected in the design
@@ -200,34 +199,37 @@ presented. This phase covers jobs tracked by these integrations, including
 service calls and another card/browser. Discovering unrelated jobs submitted
 directly to a device is a separate protocol feature.
 
-- [ ] Make print follow pushed sensor state before a local submission, matching
+- [x] Make print follow pushed sensor state before a local submission, matching
   scan. Recover the tracked job after reconnect or dashboard reload; clean up
   listeners when detached and prevent duplicate subscriptions.
-- [ ] Identify jobs by integration/entity plus job ID and request generation.
+- [x] Identify jobs by integration/entity plus job ID and request generation.
   Guard start, resume, cancel, target changes and delayed replies against stale
   updates. A cancellation must never apply to another printer's equal job ID.
-- [ ] Use actual page counts; show indeterminate progress when total is unknown.
+- [x] Use actual page counts; show indeterminate progress when total is unknown.
   Preserve manual-front/back counts and the explicit waiting state.
-- [ ] Add checked availability with bounded polling/backoff, a last-check time,
+- [x] Add checked availability with bounded polling/backoff, a last-check time,
   and distinct unknown/unreachable states. Idle alone does not mean online.
   Reuse identity from the selected integration instead of combining unrelated
   legacy printer availability entities into a single claim.
-- [ ] Align completion acknowledgement and error/detail behavior. Keep actionable
+- [x] Align completion acknowledgement and error/detail behavior. Keep actionable
   configuration/load failures distinguishable from device/job failures.
   Show recovery guidance for busy/empty feeder, unavailable device, mismatched
   backs and ambiguous print submission; never encourage blind resubmission.
-- [ ] Extract only proven common presentation helpers into a small canonical
+- [x] Extract only proven common presentation helpers into a small canonical
   plain-JS core, vendored at a pinned contract version in each integration.
   Add fixture/parity checks and a documented update procedure. Avoid globally
   shared custom element names that collide when versions differ.
-- [ ] If helpers become separate assets, hash and register the whole asset set.
-  Test upgrade, integration reload, restore to an earlier release, duplicate
+- [x] If helpers become separate assets, hash and register the whole asset set.
+  Core remains inline; no extra asset set is required. Test upgrade, integration
+  reload, restore to an earlier release, duplicate
   resource cleanup and early element registration in both integrations.
 
 Exit: two cards and two browsers agree on the same tracked job; reconnects,
 target changes and delayed responses cannot corrupt the active state. Offline
 and unknown are honest. Existing cancellation, scanner ownership, two-pass
 privacy, timeout and file cleanup guarantees remain intact.
+
+Validation and explicit live-test limits: [Phase 4 record](shared-card-phase-4-validation.md).
 
 ## Phase 5 Native Tile and optional Mushroom features
 

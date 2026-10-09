@@ -1,6 +1,6 @@
 # Phase 4: tracked state, recovery and checked connection
 
-Status: implementing. Preserve the visible Two-sided layout selected by the user.
+Status: implemented, released and installed as scan 0.10.0 / print 0.9.0. Preserve the visible Two-sided layout selected by the user.
 
 Print follows HA's pushed job sensor from first mount, including external service
 jobs and other cards; remove the redundant per-card entity subscription. Scope
@@ -37,3 +37,5 @@ late response bodies, target changes, completion/zero/unknown counters, offline
 backoff/unload, old API payloads, duplicate-resource cleanup and both cards in HA.
 Do not print or scan merely to test UI state; use isolated browser fixtures and
 read-only live device status unless a physical job is needed and explicitly queued.
+
+Validation: [Phase 4 record](../shared-card-phase-4-validation.md).

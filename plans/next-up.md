@@ -1,9 +1,10 @@
 # Next up
 
 ## Queue
-- Next implementation: Phase 4 tracked job recovery, reconnect and honest checked
-  availability, including replacing the dashboard's stale/inverted legacy printer
-  summary. [Canonical phased plan](shared-card-rollout-2026-10-08.md).
+- Next implementation: Phase 5 native Tile and optional Mushroom features.
+  Verify minimum/current HA host support and Android registration before
+  promoting the native examples; keep standalone cards supported.
+  [Canonical phased plan](shared-card-rollout-2026-10-08.md).
 - External coverage remains separate: automatic duplex scanning, additional
   vendor/bridge hardware, minimum-HA native feature hosting before Phase 5 and
   assistive-technology device acceptance. [Compatibility validation](compatibility-validation-2026-10-08.md).
@@ -23,6 +24,12 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-10-09 — Phase 4 released and installed as scan 0.10.0 / print 0.9.0.
+  Pushed job recovery, scoped delayed replies, honest counters/outcomes, native
+  protocol connection sensors and vendored presentation core v2. Dashboard uses
+  the new native connection tiles. 559 tests, all hosted checks and both release
+  workflows pass. Read-only HP status plus isolated 320/390px two-tab recovery
+  checks pass; no physical job submitted. [Validation](shared-card-phase-4-validation.md).
 - 2026-10-08 — Phase 3 completed, released and installed as scan 0.9.0 /
   print 0.8.0: shared English localization, readable editors, correct defaults,
   cleared optional overrides and keyboard/accessibility polish. 527 tests pass;
