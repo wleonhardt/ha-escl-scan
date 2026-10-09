@@ -1,9 +1,9 @@
 # Next up
 
 ## Queue
-- Active: user-requested HP Phase 4 physical tests. Print job 371 is physically
-  confirmed. Scan `a49d87b88844` has two fronts and passed reload/disconnect
-  recovery; awaiting backs 2B,1B. Do not reload HA or the scan integration. [Live-test record](phase-4-hp-live-tests-2026-10-09.md).
+- Active: user-requested HP Phase 4 physical tests. Print job 371 and scan
+  `a49d87b88844` passed, including real reconnect and the four-page PDF. Both
+  jobs are idle; awaiting user confirmation the HP is off for reachability testing. [Live-test record](phase-4-hp-live-tests-2026-10-09.md).
   Print 0.9.1 fixes provisional progress totals found in that job.
 - Next implementation: Phase 5 native Tile and optional Mushroom features.
   Verify minimum/current HA host support and Android registration before

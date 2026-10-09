@@ -1,7 +1,7 @@
 # Phase 4 HP live tests — 2026-10-09
 
-Status: in progress; physical print confirmed, fronts scanned and reload/reconnect
-passed. Awaiting the user to load reversed backs. Starting installed pair: scan 0.10.0 / print 0.9.0.
+Status: in progress; physical print and two-pass scan passed, including
+reload/reconnect and downloaded PDF inspection. Awaiting the final HP off/on test. Starting installed pair: scan 0.10.0 / print 0.9.0.
 HP Color LaserJet MFP M283fdw, HA 2026.9.4. The user requested physical tests and
 confirmed Letter paper and a clear output tray.
 
@@ -55,7 +55,7 @@ The installed card resource is `/ipp_print/card-90abe4fae503.js`.
 - [x] Confirm the printed sheets, load fronts, scan them and reach manual-back pause.
 - [x] Refresh the submitting dashboard during that pause; compare same scan ID/count.
 - [x] Briefly disconnect only that browser tab from HA and restore it; same scan recovers.
-- [ ] Scan reversed backs, download PDF and inspect page count/order/orientation.
+- [x] Scan reversed backs, download PDF and inspect page count/order/orientation.
 - [ ] With no job active, user switches HP off/on to validate real unreachable/recovery.
 - [ ] Record completion and leave both integrations idle with no pending test jobs.
 
@@ -78,3 +78,22 @@ remained online throughout. HA and the scanner integration were not restarted.
 
 The unfinished `/api/escl_scan/file/a49d87b88844` correctly returns 409 while
 waiting for backs. No intermediate/front-only PDF was exposed.
+
+## Completed two-pass scan and download
+
+The user confirmed backs were ready; Last sheet first was selected. Resumed the
+same scan exactly once at 13:12:35 UTC with `reverse_back_order=true`. Real progress
+was 2 → 3 → 4, then completed at 13:13:17.566 UTC, and idle at 13:13:26.211 UTC.
+No job ID changed and no duplicate scan was created by reload or reconnect.
+
+The real Download PDF button saved 2,084,147 bytes and returned to Scan. Inspected
+all four rendered pages: **1F,1B,2F,2B**, all upright, correct front/back pairing,
+Letter (612 × 792 pt), RGB images at 2550 × 3300 pixels (300 DPI). Paper show-through
+is visible but there is no page-order, orientation or clipping issue.
+
+Downloaded file:
+`/Users/william/Downloads/scan-20261009-090610-feeder-a49d87b88844.pdf`.
+Its SHA-256 matches both the private retained PDF and `/media/escl_scan` copy:
+`fc93e19f6bc82a0b20c8319d966efd4503c9fccc5789497c40961d1c2a03bb3d`.
+Both integration jobs are idle. The user has been asked to turn the HP off for
+the final reachability test; no scan integration reload/restart was needed.
