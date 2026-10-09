@@ -6,6 +6,37 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-08
+
+### Added
+- Translation-ready English catalog for the card and visual editor, with Home
+  Assistant language selection, regional/base/English fallback, placeholders
+  and plural forms. No extra download, build step or dependency. Additional
+  languages will be added after review.
+
+### Changed
+- Readable editor choices and help explain automatic source, Glass, Grayscale,
+  integration-default resolution and full scan area without changing API values.
+- Name the Options button by task, focus the dialog heading without opening the
+  phone keyboard, and associate settings guidance with controls. Avoid repeated
+  announcements of unchanged status; preserve focused inputs on updates.
+
+### Fixed
+- Editor defaults now match actual card behavior without changing saved config
+  on open. Clearing optional resolution removes its override instead of saving
+  an invalid value.
+
+### Included since the previous HACS release (0.6.0)
+- Capability-aware source/color/resolution/paper Options; automatic/manual duplex
+  wording; retained Download PDF action; clearer busy/empty-feeder errors and
+  mobile Back navigation. Existing card types and YAML remain supported.
+- Complete eSCL profile matching, bounded JPEG/PNG-to-PDF acquisition, custom
+  scan regions, bridge resource paths, discovery reconciliation, safe diagnostics
+  and scoped vendor recovery. See 0.7.x/0.8.x entries below for details.
+- HP M283fdw live checks cover Letter color/grayscale scans, downloaded PDF
+  integrity and two-sheet manual duplex ordering/orientation. Automatic duplex
+  scanning and other scanner/bridge hardware remain outside this physical test.
+
 ## [0.8.2] - 2026-10-08
 
 ### Fixed

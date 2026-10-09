@@ -1,29 +1,17 @@
 # Next up
 
 ## Queue
-- Shared scan/print card rollout, in progress: Phase 0 contract/current-host
-  experiment and Phase 1 released and installed as scan v0.6.0 / print v0.5.0.
-  Physical phone loading confirmed; minimum-version native-host runtime probe
-  remains before Phase 5. [Validation](shared-card-phase-1-validation.md).
-  Phase 2 capability/upload APIs implemented and installed as scan v0.7.0 /
-  print v0.6.0, followed by card fixes scan v0.7.1 / print v0.6.1. Live API,
-  print jobs and physical phone downloads pass. Later jobs 368/370 close the
-  long-edge, two-copy and short-edge physical gates; release tags remain pending. [Phase 2 validation](shared-card-phase-2-validation.md).
-  Phase 3 options implemented in the compatibility rollout; release gate pending.
-  [Full plan](shared-card-rollout-2026-10-08.md).
-- Compatibility implementation: scan 0.8.0 / print 0.7.0 implemented and pushed with 496 passing tests and green hosted checks, including
-  complete scan profiles, JPEG/PNG acquisition, print preflight/typed IPP,
-  shared Options dialogs, paper/tray settings and safe diagnostics.
-  [Plan and completed items](compatibility-rollout-2026-10-08.md).
-  [Validation and remaining physical gates](compatibility-validation-2026-10-08.md).
-  Live test installed scan 0.8.2 / print 0.7.2 (including paper-label and Back-navigation fixes). Selected-options duplex print
-  and Letter/grayscale/300 DPI scan/download pass; two-sheet color manual duplex
-  verifies 1F,1B,2F,2B upright with matching downloads. Release tags remain.
-  User confirmed both new Options dialogs fit and work on the phone, including
-  Back navigation. Job 370 completed two-copy short-edge printing, and the user
-  confirmed two sheets with both sides upright when flipped like a notepad.
-  Fixed raw scanner-side 409 guidance after the
-  device reported an empty feeder. Pair now has 512 passing tests.
+- Publish the validated paired release: scan **0.9.0** / print **0.8.0**. Phases
+  2–3 and compatibility work are installed, HP physical acceptance is complete,
+  and native editor/keyboard/narrow-layout checks pass. **527 tests pass**.
+  English-only localization foundation follows the user's chosen scope.
+  [Phase 3 validation](shared-card-phase-3-validation.md).
+- Next implementation: Phase 4 tracked job recovery, reconnect and honest checked
+  availability, including replacing the dashboard's stale/inverted legacy printer
+  summary. [Canonical phased plan](shared-card-rollout-2026-10-08.md).
+- External coverage remains separate: automatic duplex scanning, additional
+  vendor/bridge hardware, minimum-HA native feature hosting before Phase 5 and
+  assistive-technology device acceptance. [Compatibility validation](compatibility-validation-2026-10-08.md).
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
 - Live-test still open: zeroconf discovery flow only (needs the entry removed;
@@ -34,12 +22,17 @@
 ## Backlog / nice-to-have
 - Reconfigure flow for host/creds (options flow currently edits them).
 - Per-scan override for rotate_duplex_backs (service field / card toggle).
-- Card: localisation of status strings.
+- Add reviewed card languages using the English catalog and documented workflow.
 - Card: persistent scan history/download access across dashboard reloads.
   The mounted card now retains its latest result until download or a newer scan.
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-10-08 — Phase 3 final audit implemented and installed as scan 0.9.0 /
+  print 0.8.0: shared English localization, readable editors, correct defaults,
+  cleared optional overrides and keyboard/accessibility polish. 527 tests pass;
+  native editors and narrow/long-label dialogs verified in HA 2026.9.4.
+  [Validation](shared-card-phase-3-validation.md).
 - 2026-10-08 — Remaining HP print acceptance passed on print 0.7.2 / scan 0.8.2.
   User confirmed two copies and short-edge duplex orientation from job 370;
   the printer reported 4/4 impressions and the filename cleared. Physical

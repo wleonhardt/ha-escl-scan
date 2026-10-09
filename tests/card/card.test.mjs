@@ -51,7 +51,7 @@ afterEach(() => {
   for (const win of windows.splice(0)) win.close();
 });
 
-function boot() {
+function boot(translations = {}) {
   const dom = new JSDOM('<home-assistant></home-assistant>', {
     runScripts: 'outside-only',
     pretendToBeVisual: true,
@@ -69,7 +69,7 @@ function boot() {
     this.open = false;
     dom.window.setTimeout(() => this.dispatchEvent(new dom.window.Event('close')), 0);
   };
-  dom.window.eval(CARD_SRC);
+  dom.window.eval(CARD_SRC + '\nObject.assign(CARD_TRANSLATIONS, ' + JSON.stringify(translations) + ');');
   windows.push(dom.window);
   return dom.window;
 }
@@ -924,4 +924,137 @@ test('a restored HA history entry without live parameters closes safely', async 
   assert.equal(closed, 1);
   assert.equal(host._card, null);
   assert.equal(card._optionsPanel.hidden, true);
+});
+
+// Test-only catalogs exercise localization without shipping unreviewed languages.
+test('language resolution uses region, base, then English per key and plural rules', () => {
+  const win = boot({
+    fr: { 'card.title': 'BASE TITLE', 'status.complete': { one: 'ONE {count}', other: 'MANY {count}' } },
+    'fr-ca': { 'dialog.title': 'REGIONAL OPTIONS' },
+  });
+  const localize = win.localize;
+  const hass = { locale: { language: 'fr-CA' }, language: 'en' };
+  assert.equal(localize('card.title', {}, hass), 'BASE TITLE');
+  assert.equal(localize('dialog.title', {}, hass), 'REGIONAL OPTIONS');
+  assert.equal(localize('action.done', {}, hass), 'Done');
+  assert.equal(localize('status.complete', { count: 0 }, hass), 'ONE 0');
+  assert.equal(localize('status.complete', { count: 2 }, hass), 'MANY 2');
+  assert.equal(localize('card.title', {}, { language: 'fr_CA' }), 'BASE TITLE');
+  assert.equal(localize('action.done', {}, { locale: { language: 'not a locale' } }), 'Done');
+  assert.equal(localize('constructor', {}, hass), 'constructor');
+  assert.equal(localize('missing.key', {}, hass), 'missing.key');
+  const english = localize('status.complete', { count: 0 }, { language: 'xx' });
+  assert.match(english, /0 pages/);
+});
+
+test('catalog references and plural placeholders are valid', () => {
+  const win = boot();
+  const catalogs = JSON.parse(CARD_SRC.match(/const CARD_TRANSLATIONS = (\{[\s\S]*?\});\n\/\/ END ENGLISH CATALOG/)[1]);
+  assert.deepEqual(Object.keys(catalogs), ['en'], 'only reviewed English is shipped');
+  for (const [key, message] of Object.entries(catalogs.en)) {
+    assert.match(key, /^[a-z][a-z0-9_.]+$/);
+    const forms = typeof message === 'string' ? [message] : Object.values(message);
+    if (typeof message !== 'string') assert.equal(typeof message.other, 'string');
+    const placeholders = forms.map(value => [...value.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort());
+    for (const names of placeholders) assert.deepEqual(names, placeholders[0], key);
+  }
+  const refs = [...CARD_SRC.matchAll(/(?:_t|_msg|_setMessage|localize|translatedText)\('([^']+)'/g)].map(m => m[1]);
+  for (const key of refs) assert.ok(Object.hasOwn(catalogs.en, key), key);
+  assert.equal(win.localize('action.done'), 'Done');
+});
+
+test('Options is named, focuses its heading and describes fields without opening a keyboard', async () => {
+  const win = boot(), card = mount(win);
+  const host = await optionsHost(win, card);
+  const heading = card._optionsPanel.querySelector('h2');
+  assert.equal(card.shadowRoot.activeElement, heading);
+  assert.equal(heading.autofocus, true);
+  assert.equal(card._optionsButton.getAttribute('aria-label'), heading.textContent);
+  for (const field of Object.values(card._optionFields)) {
+    assert.equal(field.getAttribute('aria-describedby'), 'options-help');
+    assert.ok(card.shadowRoot.getElementById('options-help'));
+    assert.ok(field.closest('label').querySelector('[data-i18n]').textContent);
+  }
+  host.closeDialog();
+  assert.equal(card.shadowRoot.activeElement, card._optionsButton);
+});
+
+test('translation text and placeholder data cannot create HTML', () => {
+  const markup = '<img src=x onerror=alert(1)>';
+  const win = boot({ fr: { 'dialog.title': markup, 'status.cancel_failed': 'ERROR {error}' } });
+  const card = mount(win, { title: markup });
+  card.hass = { states: {}, entities: {}, locale: { language: 'fr' } };
+  card._setMessage('status.cancel_failed', { error: markup + ' $&' }, 'err');
+  assert.equal(card._statusEl.textContent, 'ERROR ' + markup + ' $&');
+  assert.equal(card.shadowRoot.querySelector('img'), null);
+  assert.equal(card._titleEl.textContent, markup, 'custom title remains literal user data');
+  assert.equal(card._optionsPanel.querySelector('h2').textContent, markup);
+});
+
+test('unchanged status and Options guidance do not repeat live-region mutations', async () => {
+  const win = boot(), card = mount(win);
+  card._setMessage('status.canceled', {}, 'err');
+  let changed = 0;
+  const observer = new win.MutationObserver(records => { changed += records.length; });
+  observer.observe(card._statusEl, { childList: true, characterData: true, subtree: true });
+  observer.observe(card._optionHelp, { childList: true, characterData: true, subtree: true });
+  card._setMessage('status.canceled', {}, 'err');
+  card._syncControls();
+  card._syncControls();
+  await new Promise(resolve => win.setTimeout(resolve, 0));
+  observer.disconnect();
+  assert.equal(changed, 0);
+});
+
+test('scan editor labels preserve wire values, defaults and optional resolution', () => {
+  const win = boot(), editor = win.customElements.get(TAG).getConfigElement();
+  editor.hass = { locale: { language: 'en' } };
+  let changes = 0, saved;
+  editor.addEventListener('config-changed', event => { changes++; saved = event.detail.config; });
+  editor.setConfig({ type: 'custom:' + TAG, custom_option: 'preserved' });
+  const form = editor._form;
+  assert.equal(changes, 0);
+  assert.equal(form.data.source, 'auto');
+  assert.equal(form.data.duplex, false);
+  assert.equal(form.data.dpi, undefined);
+  const sources = form.schema.find(f => f.name === 'source').selector.select.options;
+  assert.equal(sources.find(o => o.value === 'Platen').label, 'Glass');
+  assert.equal(sources.find(o => o.value === 'auto').label, 'Automatic');
+  assert.equal(form.schema.find(f => f.name === 'color').selector.select.options.find(o => o.value === 'gray').label, 'Grayscale');
+  assert.match(form.computeHelper({ name: 'dpi' }), /Leave blank/);
+  assert.match(form.computeHelper({ name: 'duplex_in_options' }), /compact/);
+  form.dispatchEvent(new win.CustomEvent('value-changed', { detail: { value: { ...form.data, source: 'Platen', dpi: null } } }));
+  assert.equal(changes, 1);
+  assert.equal(saved.source, 'Platen');
+  assert.equal(saved.custom_option, 'preserved');
+  assert.equal(Object.hasOwn(saved, 'dpi'), false);
+  assert.doesNotThrow(() => mount(win, saved));
+});
+
+test('scan language updates preserve settings, focused controls and translated status placeholders', async () => {
+  const win = boot({ fr: { 'dialog.title': 'SCAN OPTIONS TEST', 'status.scanning': 'TEST{source}{progress}', 'source.feeder': 'FEEDER TEST', 'action.scan': 'SCAN TEST' } });
+  const card = mount(win);
+  const { hass, push, calls } = makeHass(card, { capabilitiesImpl: async () => jsonResponse(optionCaps()) });
+  push(SENSOR, 'idle'); card._toggleOptions(true); await optionsTick();
+  const field = changeOption(win, card, 'source', 'Feeder'); field.focus();
+  card._setMessage('status.scanning', { source: card._sourceText('Feeder'), progress: card._msg('status.page', { count: 2 }), phase: '', adjustment: '', hint: '' });
+  card.hass = { ...hass, locale: { language: 'fr-CA' } };
+  assert.equal(card._optionFields.source, field);
+  assert.equal(card.shadowRoot.activeElement, field);
+  assert.equal(card._settings.source, 'Feeder');
+  assert.equal(card._optionsPanel.querySelector('h2').textContent, 'SCAN OPTIONS TEST');
+  assert.equal(card._primaryEl.textContent, 'SCAN TEST');
+  assert.equal(card._statusEl.textContent, 'TEST (FEEDER TEST) page 2');
+  assert.equal(calls.fetch.length, 0);
+});
+
+test('translated scan phases preserve protocol matching and reload guidance', () => {
+  const win = boot({ fr: { 'phase.fronts': 'FRONTS TEST', 'help.wait_backs': ' WAIT TEST' } });
+  const card = mount(win);
+  card.hass = { states: {}, locale: { language: 'fr' } };
+  card._renderScanState('processing', { duplex_mode: 'manual', scan_phase: 'fronts', pages_done: 1 });
+  assert.match(card._statusEl.textContent, /FRONTS TEST/);
+  assert.match(card._statusEl.textContent, /WAIT TEST/);
+  card._renderScanState('processing', { duplex_mode: 'manual', scan_phase: 'backs', pages_done: 2 });
+  assert.doesNotMatch(card._statusEl.textContent, /WAIT TEST/);
 });

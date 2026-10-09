@@ -1,11 +1,10 @@
 # Shared scan and print card rollout plan
 
-Status: in-progress. Phase 0 contract and current-host experiment complete;
-Phase 1 released and installed as scan v0.6.0 and print v0.5.0; physical phone
-loading confirmed. Phase 2 implemented and installed, including follow-up card
-fixes scan v0.7.1 / print v0.6.1; physical print confirmation
-and release tags pending. [Phase 2 validation](shared-card-phase-2-validation.md).
-Remaining host/version checks are tracked in [Phase 1 validation](shared-card-phase-1-validation.md).
+Status: in-progress. Phases 1–3 are implemented and installed as scan 0.9.0 /
+print 0.8.0; HACS publication is pending. HP physical acceptance and Phase 3
+editor/localization/browser checks pass. [Phase 3 validation](shared-card-phase-3-validation.md).
+Phase 4 state/reconnect/availability is next; minimum-version native-host runtime
+checks still gate Phase 5.
 
 Bring scanning and printing onto one Home Assistant visual and interaction
 contract, starting with the visible Two-sided switch selected in the design
@@ -176,18 +175,18 @@ Build one interaction pattern with different supported settings for each task.
   Last sheet first guidance. Do not move it into ordinary print/scan defaults.
 - [x] Add the optional options-only duplex layout without changing the default
   visible switch. Keep panel contents usable at mobile widths without clipping.
-- [ ] Match editor naming, entity selection, defaults, visibility and help text.
+- [x] Match editor naming, entity selection, defaults, visibility and help text.
   Provide new-card stubs and preserve old configurations through normalization.
 - [x] Freeze settings and target during upload/submission/running jobs. Snapshot
   the submitted options so later default changes cannot change the current job.
 - [x] Preserve focused controls on state updates, return focus after closing
   options and announce status politely. Phone Back navigation confirmed.
-- [ ] Centralize strings for later translation.
+- [x] Centralize strings for later translation.
 
-Final audit: the visual editors exist, but their select choices still expose raw
-values such as `Platen`, `gray`, and `two-sided-short-edge`. Finish readable editor
-choice labels/help and review keyboard/screen-reader behavior before marking the
-editor item complete. This is separate from the now-passed HP physical tests.
+Final audit complete: readable choice labels and helper text, correct displayed
+defaults, safe clearing of optional overrides, English catalog/fallback/plurals,
+heading focus, stable fields and live browser Back/Escape/narrow-label checks.
+See the Phase 3 validation record for automated evidence and coverage limits.
 
 Exit: every visible setting has an implemented backend path and supported
 choices; stale metadata produces a useful rejection without a wrong job.

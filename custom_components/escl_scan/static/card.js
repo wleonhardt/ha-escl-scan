@@ -22,6 +22,197 @@ if (!customElements.get(TAG)) {
 
 const C = customElements.get(TAG);
 
+// BEGIN ENGLISH CATALOG
+const CARD_TRANSLATIONS = {
+  "en": {
+    "action.options": "Options",
+    "action.two_sided": "Two-sided",
+    "action.done": "Done",
+    "action.canceling": "Cancelling…",
+    "choice.automatic": "Automatic",
+    "choice.color": "Color",
+    "choice.grayscale": "Grayscale",
+    "choice.device_default": "Device default",
+    "choice.integration_default": "Integration default",
+    "choice.long_edge": "Long edge",
+    "choice.short_edge": "Short edge",
+    "field.color": "Color",
+    "editor.title": "Title",
+    "editor.duplex_options": "Show Two-sided inside Options",
+    "error.retry": "Please try again.",
+    "action.scan": "Scan",
+    "action.cancel": "Cancel scan",
+    "action.download": "Download PDF",
+    "action.starting": "Starting…",
+    "action.downloading": "Downloading…",
+    "action.backs": "Scan back sides",
+    "accessibility.two_sided": "Two-sided scan using feeder",
+    "dialog.title": "Scan options",
+    "config.duplex": "Two-sided default must be true or false.",
+    "config.source": "Invalid scan source.",
+    "config.color": "Invalid scan color.",
+    "config.dpi": "DPI must be an integer from 50 to 1200.",
+    "config.page_size": "Invalid default page size.",
+    "config.layout": "Options layout must be true or false.",
+    "editor.entity": "Scan sensor (optional)",
+    "editor.duplex": "Two-sided by default (uses feeder)",
+    "editor.source": "Default source",
+    "editor.color": "Default color",
+    "editor.dpi": "Default resolution",
+    "editor.page_size": "Default page size",
+    "choice.glass": "Glass",
+    "choice.feeder": "Feeder",
+    "choice.full": "Full scan area",
+    "choice.letter": "Letter",
+    "choice.a4": "A4",
+    "choice.custom": "Custom",
+    "status.auto_source": "Automatic source",
+    "status.auto_duplex": "Feeder · Automatic duplex",
+    "status.manual_duplex": "Feeder · Two passes required",
+    "status.unknown_duplex": "Feeder · may need two passes",
+    "status.start_backs": "Starting back sides…",
+    "status.unavailable": "Scan status unavailable",
+    "status.paused": "Scanner paused — check tray/jam",
+    "status.canceled": "Scan canceled",
+    "help.feeder": "Uses feeder",
+    "help.select_feeder": "Select feeder to scan both sides",
+    "help.unavailable": "Device settings are unavailable. Scanning with existing defaults still works.",
+    "help.auto_source": "Source is chosen when scanning. Available resolution depends on the selected source and color.",
+    "help.next_job": "Settings apply to the next scan.",
+    "error.settings_load": "Scan settings could not be loaded. Open Options and check the scanner connection.",
+    "error.busy": "The scanner is busy. Wait for the current scan to finish, or cancel it before starting a new scan.",
+    "error.response": "Invalid response from scan service",
+    "error.backs": "Cannot scan the backs yet. Check that the scanner is idle and the back sides are loaded, then try again.",
+    "error.expired": "This PDF is no longer available. Scan the document again.",
+    "error.pdf": "The server did not return a PDF. Please try again.",
+    "error.feeder": "Choose Feeder or Automatic for a two-sided scan.",
+    "error.source": "This scanner does not advertise the selected source.",
+    "error.color": "This source does not support the selected color mode. Choose another color mode.",
+    "error.region": "Enter a valid custom width and height within the scanner limits.",
+    "error.update": "Update the scan integration to use the selected options.",
+    "field.source": "Source",
+    "field.dpi": "Resolution",
+    "field.page_size": "Page size",
+    "field.width": "Custom width (mm)",
+    "field.height": "Custom height (mm)",
+    "backs.order": "Back-side sheet order",
+    "backs.same": "First sheet first (same sheet order)",
+    "backs.reverse": "Last sheet first (flipped stack)",
+    "picker.name": "eSCL Scan",
+    "picker.description": "One-tap document scan via eSCL/AirScan with live status.",
+    "card.title": "Scan",
+    "status.cancel_failed": "Cancel failed: {error}",
+    "editor.help.title": "Leave blank to use the translated card title.",
+    "editor.help.entity": "Leave blank to use the configured scanner.",
+    "editor.help.duplex_in_options": "Move the Two-sided switch into Options to keep the card more compact.",
+    "editor.help.dpi": "Leave blank to use the integration default. The scanner may adjust unsupported resolutions.",
+    "editor.help.source": "Automatic chooses the source when scanning. Two-sided scans use the feeder.",
+    "editor.help.color": "Integration default uses the color setting configured for this scanner.",
+    "editor.help.page_size": "Full scan area uses the source bounds; it does not detect the paper size.",
+    "status.waiting": "Waiting for scanner…{hint}",
+    "status.scanning": "Scanning{phase}{source}{progress}…{adjustment}{hint}",
+    "status.source": " ({source})",
+    "status.page": " page {count}",
+    "status.phase": " {phase}",
+    "phase.fronts": "fronts",
+    "phase.backs": "backs",
+    "source.platen": "platen",
+    "source.feeder": "feeder",
+    "help.wait_backs": " Wait for the reload prompt before flipping.",
+    "help.adjusted": " Using {dpi} DPI; {requested} is unavailable.",
+    "status.start_failed": "Cannot start scan: {error}",
+    "status.download_failed": "Download failed. {error}",
+    "status.complete": {
+      "one": "Scan ready ✓ ({count} page)",
+      "other": "Scan ready ✓ ({count} pages)"
+    },
+    "status.failed": "Scan failed{reason}",
+    "status.reason": ": {reason}",
+    "backs.ready": {
+      "one": "Fronts ready ({count} sheet). Reload with backs facing the scanner. Choose which sheet feeds first: ",
+      "other": "Fronts ready ({count} sheets). Reload with backs facing the scanner. Choose which sheet feeds first: "
+    },
+    "choice.dpi": "{dpi} DPI",
+    "help.dpi_adjusted": "{requested} DPI is unavailable for these settings; using {dpi} DPI."
+  }
+};
+// END ENGLISH CATALOG
+
+// Shared localization contract v1. Keep this helper identical in both cards.
+// Catalogs are bundled here: no build step, translation fetch or registration wait.
+class LocalizedMessage {
+  constructor(key, values) { this.key = key; this.values = values; }
+}
+function setText(element, value) {
+  if (element.textContent !== value) element.textContent = value;
+}
+function hasOwn(object, key) { return Object.prototype.hasOwnProperty.call(object, key); }
+let lastLanguageValue, lastLanguage = 'en';
+function cardLanguage(hass) {
+  const value = hass?.locale?.language || hass?.language || 'en';
+  if (value === lastLanguageValue) return lastLanguage;
+  lastLanguageValue = value;
+  try { lastLanguage = Intl.getCanonicalLocales(String(value).replace(/_/g, '-'))[0].toLowerCase(); }
+  catch { lastLanguage = 'en'; }
+  return lastLanguage;
+}
+function localize(key, values = {}, hass = document.querySelector('home-assistant')?.hass) {
+  const language = cardLanguage(hass);
+  for (const locale of new Set([language, language.split('-')[0], 'en'])) {
+    const catalog = hasOwn(CARD_TRANSLATIONS, locale) ? CARD_TRANSLATIONS[locale] : null;
+    if (!catalog || !hasOwn(catalog, key)) continue;
+    let message = catalog[key];
+    if (message && typeof message === 'object') {
+      const category = new Intl.PluralRules(locale).select(Number(values.count));
+      message = hasOwn(message, category) ? message[category] : message.other;
+    }
+    if (typeof message !== 'string') continue;
+    return message.replace(/\{(\w+)\}/g, (token, name) => {
+      if (!hasOwn(values, name)) return token;
+      const value = values[name];
+      return value instanceof LocalizedMessage ? localize(value.key, value.values, hass) : String(value);
+    });
+  }
+  return key;
+}
+function localizeElements(root, hass) {
+  for (const el of root.querySelectorAll('[data-i18n]')) {
+    el.textContent = localize(el.dataset.i18n, el._i18nValues || {}, hass);
+  }
+  for (const el of root.querySelectorAll('[data-i18n-label]')) {
+    const label = localize(el.dataset.i18nLabel, {}, hass);
+    el.setAttribute('aria-label', label);
+    if (el.hasAttribute('title')) el.title = label;
+  }
+}
+function translatedText(key, values = {}, hass) {
+  const span = document.createElement('span');
+  span.dataset.i18n = key; span._i18nValues = values;
+  span.textContent = localize(key, values, hass);
+  return span;
+}
+C.prototype._msg = function (key, values = {}) { return new LocalizedMessage(key, values); };
+C.prototype._t = function (key, values) { return localize(key, values, this._hass); };
+C.prototype._setMessage = function (key, values = {}, cls = '') {
+  this._setStatus(this._t(key, values), cls);
+  this._statusMessage = { key, values, cls };
+};
+C.prototype._applyLanguage = function () {
+  if (!this.shadowRoot) return false;
+  const language = cardLanguage(this._hass);
+  if (language === this._language) return false;
+  this._language = language;
+  localizeElements(this.shadowRoot, this._hass);
+  if (!this._config.title) this._titleEl.textContent = this._t('card.title');
+  if (this._statusMessage) {
+    const { key, values, cls } = this._statusMessage;
+    this._setMessage(key, values, cls);
+  }
+  return true;
+};
+// End shared localization helper.
+
+
 function responseErrorMessage(response, body, conflictFallback) {
   const message = [body?.message, body?.error]
     .find(value => typeof value === 'string' && value.trim());
@@ -37,17 +228,17 @@ function responseErrorMessage(response, body, conflictFallback) {
 
 C.prototype.setConfig = function (config) {
   if (config?.duplex !== undefined && typeof config.duplex !== 'boolean') {
-    throw new Error('Two-sided default must be true or false.');
+    throw new Error(this._t('config.duplex'));
   }
-  if (config?.source !== undefined && !['auto','Platen','Feeder'].includes(config.source)) throw new Error('Invalid scan source.');
-  if (config?.color !== undefined && !['default','color','gray'].includes(config.color)) throw new Error('Invalid scan color.');
-  if (config?.dpi !== undefined && (!Number.isInteger(config.dpi) || config.dpi < 50 || config.dpi > 1200)) throw new Error('DPI must be an integer from 50 to 1200.');
-  if (config?.page_size !== undefined && !['full','letter','a4'].includes(config.page_size)) throw new Error('Invalid default page size.');
-  if (config?.duplex_in_options !== undefined && typeof config.duplex_in_options !== 'boolean') throw new Error('Options layout must be true or false.');
+  if (config?.source !== undefined && !['auto','Platen','Feeder'].includes(config.source)) throw new Error(this._t('config.source'));
+  if (config?.color !== undefined && !['default','color','gray'].includes(config.color)) throw new Error(this._t('config.color'));
+  if (config?.dpi !== undefined && (!Number.isInteger(config.dpi) || config.dpi < 50 || config.dpi > 1200)) throw new Error(this._t('config.dpi'));
+  if (config?.page_size !== undefined && !['full','letter','a4'].includes(config.page_size)) throw new Error(this._t('config.page_size'));
+  if (config?.duplex_in_options !== undefined && typeof config.duplex_in_options !== 'boolean') throw new Error(this._t('config.layout'));
   const previousConfig = this._config;
   const previousDefault = this._config?.duplex;
   const previousEntity = this._config?.entity;
-  this._config = Object.assign({ title: 'Scan', duplex: false, source: 'auto', color: 'default', dpi: 'default', page_size: 'full' }, config || {});
+  this._config = Object.assign({ duplex: false, source: 'auto', color: 'default', dpi: 'default', page_size: 'full' }, config || {});
   if (this._duplex === undefined || previousDefault !== this._config.duplex) {
     if (this._busy || this._activeScanId) this._resetDuplex = true;
     else this._duplex = this._config.duplex;
@@ -61,7 +252,7 @@ C.prototype.setConfig = function (config) {
   this._render();
   // _render() no-ops after the first call, so apply title changes (e.g. the
   // dashboard editor's live preview) directly to the already-rendered node.
-  if (this._titleEl) this._titleEl.textContent = this._config.title;
+  if (this._titleEl) this._titleEl.textContent = this._config.title || this._t('card.title');
   if (previousEntity !== this._config.entity) {
     this._lastSig = null;
     this._onHass();
@@ -77,7 +268,9 @@ Object.defineProperty(C.prototype, 'hass', {
     // subscribeEvents (which streamed every entity's changes to the browser
     // and raced the initial snapshot), and the card now also reflects scans
     // started from another device.
+    const languageChanged = this._applyLanguage();
     this._onHass();
+    if (languageChanged) this._syncControls();
   },
   get() { return this._hass; },
   configurable: true,
@@ -88,43 +281,51 @@ C.prototype.getGridOptions = function () { return { columns: 6, rows: 4, min_col
 
 // Dashboard picker support: a default config and a visual editor built on
 // HA's own <ha-form>, so the card is configurable without YAML.
-C.getStubConfig = function () { return { title: 'Scan' }; };
+C.getStubConfig = function (hass) { return { title: localize('card.title', {}, hass) }; };
 C.getConfigElement = function () { return document.createElement(TAG + '-editor'); };
-
-const EDITOR_SCHEMA = [
-  { name: 'title', selector: { text: {} } },
-  { name: 'duplex', selector: { boolean: {} } },
-  { name: 'duplex_in_options', selector: { boolean: {} } },
-  { name: 'source', selector: { select: { options: ['auto', 'Platen', 'Feeder'] } } },
-  { name: 'color', selector: { select: { options: ['default', 'color', 'gray'] } } },
-  { name: 'dpi', selector: { number: { min: 50, max: 1200, mode: 'box' } } },
-  { name: 'page_size', selector: { select: { options: ['full', 'letter', 'a4'] } } },
-  { name: 'entity', selector: { entity: { domain: 'sensor', integration: 'escl_scan' } } },
-];
-const EDITOR_LABELS = { title: 'Title', entity: 'Scan sensor (optional)', duplex: 'Two-sided by default (uses feeder)', duplex_in_options: 'Show Two-sided inside Options', source: 'Default source', color: 'Default color', dpi: 'Default DPI', page_size: 'Default page size' };
 
 if (!customElements.get(TAG + '-editor')) {
   customElements.define(TAG + '-editor', class extends HTMLElement {
     setConfig(config) { this._config = config || {}; this._render(); }
-    set hass(hass) { this._hass = hass; if (this._form) this._form.hass = hass; }
+    set hass(hass) { this._hass = hass; if (this._form) this._render(); }
     _render() {
       if (!this._form) {
         this._form = document.createElement('ha-form');
-        this._form.schema = EDITOR_SCHEMA;
-        this._form.computeLabel = (s) => EDITOR_LABELS[s.name] || s.name;
-        this._form.addEventListener('value-changed', (ev) => {
-          ev.stopPropagation();
-          const value = Object.assign({}, this._config, ev.detail.value);
-          if (!value.entity) delete value.entity;
-          this._config = value;
-          this.dispatchEvent(new CustomEvent('config-changed', {
-            detail: { config: value }, bubbles: true, composed: true,
-          }));
+        this._form.addEventListener('value-changed', event => {
+          event.stopPropagation();
+          const config = { ...this._config, ...event.detail.value };
+          if (!config.entity) delete config.entity;
+          if (!config.title) delete config.title;
+          if (config.dpi == null || config.dpi === '') delete config.dpi;
+          this._config = config;
+          this.dispatchEvent(new CustomEvent('config-changed', { detail: { config }, bubbles: true, composed: true }));
         });
-        this.appendChild(this._form);
+        this.append(this._form);
+      }
+      const language = cardLanguage(this._hass);
+      if (language !== this._language) {
+        this._language = language;
+        const t = key => localize(key, {}, this._hass);
+        const choices = entries => entries.map(([value, key]) => ({ value, label: t(key) }));
+        this._form.schema = [
+          { name: 'title', selector: { text: {} } },
+          { name: 'entity', selector: { entity: { domain: 'sensor', integration: 'escl_scan' } } },
+          { name: 'duplex', selector: { boolean: {} } },
+          { name: 'duplex_in_options', selector: { boolean: {} } },
+          { name: 'source', selector: { select: { options: choices([['auto','choice.automatic'],['Feeder','choice.feeder'],['Platen','choice.glass']]) } } },
+          { name: 'color', selector: { select: { options: choices([['default','choice.integration_default'],['color','choice.color'],['gray','choice.grayscale']]) } } },
+          { name: 'dpi', selector: { number: { min: 50, max: 1200, mode: 'box' } } },
+          { name: 'page_size', selector: { select: { options: choices([['full','choice.full'],['letter','choice.letter'],['a4','choice.a4']]) } } },
+        ];
+        const labels = {"title": "editor.title", "entity": "editor.entity", "duplex": "editor.duplex", "duplex_in_options": "editor.duplex_options", "source": "editor.source", "color": "editor.color", "dpi": "editor.dpi", "page_size": "editor.page_size"};
+        this._form.computeLabel = field => t(labels[field.name]);
+        this._form.computeHelper = field => {
+          const key = 'editor.help.' + field.name;
+          const help = t(key); return help === key ? '' : help;
+        };
       }
       this._form.hass = this._hass;
-      this._form.data = this._config;
+      this._form.data = { ...{ duplex: false, duplex_in_options: false, source: 'auto', color: 'default', page_size: 'full' }, ...this._config };
     }
   });
 }
@@ -168,7 +369,7 @@ C.prototype._render = function () {
       .cancel { display: none; color: var(--error-color); }
       .cancel.show { display: block; }
       @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
-      .options-button { margin-left: auto; flex: none; width: 44px; padding: 8px; }
+      .options-button { margin-inline-start: auto; flex: none; width: 44px; padding: 8px; }
       .options { box-sizing: border-box; display: grid; gap: 12px; width: min(400px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; padding: 20px; border: 1px solid var(--divider-color); border-radius: var(--ha-card-border-radius, 12px); color: var(--primary-text-color); background: var(--card-background-color); }
       .options:not([open]) { display: none; }
       .options::backdrop { background: rgba(0, 0, 0, .45); }
@@ -189,14 +390,14 @@ C.prototype._render = function () {
       .status button { width: 100%; margin-top: 4px; }
     </style>
     <ha-card>
-      <div class="header"><ha-icon class="icon" icon="mdi:scanner" aria-hidden="true"></ha-icon><div class="title"></div><button class="options-button" type="button" aria-expanded="false" aria-controls="options" aria-label="Options" title="Options"><ha-icon icon="mdi:tune" aria-hidden="true"></ha-icon></button></div>
+      <div class="header"><ha-icon class="icon" icon="mdi:scanner" aria-hidden="true"></ha-icon><div class="title"></div><button class="options-button" type="button" aria-expanded="false" aria-controls="options" data-i18n-label="dialog.title" title=""><ha-icon icon="mdi:tune" aria-hidden="true"></ha-icon></button></div>
       <div class="status" aria-live="polite" aria-atomic="true"></div>
       <div class="controls">
-        <label class="toggle"><span>Two-sided<small>Uses feeder</small></span><input class="two-sided" type="checkbox" role="switch" aria-label="Two-sided scan using feeder"></label>
+        <label class="toggle"><span><span data-i18n="action.two_sided"></span><small data-i18n="help.feeder"></small></span><input class="two-sided" type="checkbox" role="switch" data-i18n-label="accessibility.two_sided"></label>
       </div>
       <div class="actions">
-        <button class="primary" type="button">Scan</button>
-        <button class="cancel" type="button">Cancel scan</button>
+        <button class="primary" type="button"></button>
+        <button class="cancel" type="button" data-i18n="action.cancel"></button>
       </div>
     </ha-card>
   `;
@@ -206,7 +407,7 @@ C.prototype._render = function () {
   this._cancelEl = root.querySelector('.cancel');
   this._primaryEl = root.querySelector('.primary');
   this._twoSidedEl = root.querySelector('.two-sided');
-  this._titleEl.textContent = this._config.title;
+  this._titleEl.textContent = this._config.title || this._t('card.title');
   this._primaryEl.addEventListener('click', () => {
     if (this._completedScan) this._downloadScan();
     else this._startScan();
@@ -230,6 +431,7 @@ C.prototype._render = function () {
 
 C.prototype._syncControls = function () {
   if (!this._primaryEl) return;
+  this._applyLanguage();
   const locked = !!this._busy || !!this._activeScanId;
   if (!locked && this._pendingSettings) { Object.assign(this._settings, this._pendingSettings); this._pendingSettings = null; }
   if (!locked && this._resetDuplex) {
@@ -245,22 +447,22 @@ C.prototype._syncControls = function () {
   this._twoSidedEl.disabled = locked || !!this._completedScan;
   this._primaryEl.disabled = locked || !!downloading;
   this._primaryEl.hidden = !!this._showCancel;
-  this._primaryEl.textContent = this._busy ? 'Starting…' : downloading ? 'Downloading…'
-    : this._completedScan ? 'Download PDF' : 'Scan';
+  this._primaryEl.textContent = this._busy ? this._t('action.starting') : downloading ? this._t('action.downloading')
+    : this._completedScan ? this._t('action.download') : this._t('action.scan');
   this._syncOptions(locked || !!this._completedScan);
   if (!locked && !this._completedScan && this._settingsError) this._primaryEl.disabled = true;
-  if (this._showingIdle) this._statusEl.textContent = this._idleStatus();
+  if (this._showingIdle) setText(this._statusEl, this._idleStatus());
 };
 
 C.prototype._idleStatus = function () {
-  if (!this._duplex) return this._settings?.source === 'Platen' ? 'Glass'
-    : this._settings?.source === 'Feeder' ? 'Feeder' : 'Automatic source';
+  if (!this._duplex) return this._settings?.source === 'Platen' ? this._t('choice.glass')
+    : this._settings?.source === 'Feeder' ? this._t('choice.feeder') : this._t('status.auto_source');
   const caps = this._capabilities;
   if (caps?.expires > Date.now()) {
-    if (caps.automatic === true) return 'Feeder · Automatic duplex';
-    if (caps.automatic === false && caps.manual === true) return 'Feeder · Two passes required';
+    if (caps.automatic === true) return this._t('status.auto_duplex');
+    if (caps.automatic === false && caps.manual === true) return this._t('status.manual_duplex');
   }
-  return 'Feeder · may need two passes';
+  return this._t('status.unknown_duplex');
 };
 
 // Read only when the two-sided option is relevant. Cache per selected sensor,
@@ -322,7 +524,10 @@ C.prototype._apiFetch = function (path, init = {}) {
 };
 
 C.prototype._setStatus = function (text, cls = '') {
+  this._statusMessage = null;
   this._showingIdle = !text;
+  if (typeof text === 'string' && this._statusEl.textContent === (text || this._idleStatus())
+      && this._statusEl.className === 'status' + (cls ? ' ' + cls : '')) return;
   this._statusEl.textContent = '';
   if (text instanceof Node) this._statusEl.appendChild(text);
   else {
@@ -353,13 +558,13 @@ C.prototype._startScan = async function (overrides) {
   this._backError = null;
   this._reverseBackOrder = false;
   this._card.classList.add('busy');
-  this._setStatus('Starting…');
+  this._setMessage('action.starting');
   this._setCancelVisible(false);
   this._clearResultTimer();
   try {
     if (!overrides && this._hasExplicitSettings()) {
       await this._refreshCapabilities();
-      if (!this._capabilities?.body) throw new Error('Scan settings could not be loaded. Open Options and check the scanner connection.');
+      if (!this._capabilities?.body) throw new Error(this._t('error.settings_load'));
     }
     const request = overrides || this._scanRequest();
     const resp = await this._apiFetch('/api/escl_scan/start', {
@@ -371,16 +576,16 @@ C.prototype._startScan = async function (overrides) {
     try { body = await resp.json(); } catch {}
     if (!resp.ok) {
       throw new Error(responseErrorMessage(resp, body,
-        'The scanner is busy. Wait for the current scan to finish, or cancel it before starting a new scan.'));
+        this._t('error.busy')));
     }
     if (typeof body?.scan_id !== 'string' || !body.scan_id) {
-      throw new Error('Invalid response from scan service');
+      throw new Error(this._t('error.response'));
     }
     this._activeScanId = body?.scan_id ?? null;
-    const src = typeof body.source === 'string' ? ` (${body.source.toLowerCase()})` : '';
+    const src = this._sourceText(body.source);
     const adjusted = body.requested_dpi && body.dpi !== body.requested_dpi
-      ? ` Using ${body.dpi} DPI; ${body.requested_dpi} is unavailable.` : '';
-    this._setStatus(`Scanning${src}…${adjusted}`);
+      ? this._msg('help.adjusted', { dpi: body.dpi, requested: body.requested_dpi }) : '';
+    this._setMessage('status.scanning', { phase: '', source: src, progress: '', adjustment: adjusted, hint: '' });
     this._setCancelVisible(true);
     // A fast scan can already be terminal before its POST response arrives.
     const current = this._scanState();
@@ -394,7 +599,7 @@ C.prototype._startScan = async function (overrides) {
       this._lastSig = null;
       this._onHass();
     } else {
-      this._setStatus('Cannot start scan: ' + (err?.message || err), 'err');
+      this._setMessage('status.start_failed', { error: err?.message || err }, 'err');
     }
   } finally {
     this._busy = false;
@@ -420,10 +625,10 @@ C.prototype._scanBacks = async function () {
       let body = null;
       try { body = await r.json(); } catch {}
       throw new Error(responseErrorMessage(r, body,
-        'Cannot scan the backs yet. Check that the scanner is idle and the back sides are loaded, then try again.'));
+        this._t('error.backs')));
     }
     if (this._scanState()?.state === 'awaiting-back-sides'
-        && this._activeScanId === scanId) this._setStatus('Starting back sides…');
+        && this._activeScanId === scanId) this._setMessage('status.start_backs');
   } catch (err) {
     const st = this._scanState();
     if (st?.state === 'awaiting-back-sides' && st.attributes?.scan_id === scanId) {
@@ -450,14 +655,14 @@ C.prototype._cancelScan = async function () {
     if (!r.ok) {
       const body = await r.text();
       if (this._activeScanId === scanId) {
-        this._setStatus('Cancel failed: ' + body.slice(0, 80), 'err');
+        this._setMessage('status.cancel_failed', { error: body.slice(0, 80) }, 'err');
       }
       return;
     }
-    if (this._activeScanId === scanId) this._setStatus('Cancelling…');
+    if (this._activeScanId === scanId) this._setMessage('action.canceling');
   } catch (err) {
     if (this._activeScanId === scanId) {
-      this._setStatus('Cancel failed: ' + (err?.message || err), 'err');
+      this._setMessage('status.cancel_failed', { error: err?.message || err }, 'err');
     }
   } finally {
     this._canceling = false;
@@ -564,8 +769,8 @@ C.prototype._onHass = function () {
     this._activeScanId = null;
     // idle / unavailable — clear, unless a fresh result is still latched
     // or a local start is mid-flight.
-    this._setStatus(state === 'unavailable' || state === 'unknown' ? 'Scan status unavailable' : '',
-      state === 'unavailable' || state === 'unknown' ? 'err' : '');
+    if (state === 'unavailable' || state === 'unknown') this._setMessage('status.unavailable', {}, 'err');
+    else this._setStatus('');
     this._setCancelVisible(false);
   }
 };
@@ -581,14 +786,14 @@ C.prototype._downloadScan = async function () {
     if (response.status === 404 || response.status === 410) {
       this._completedScan = null;
       this._downloadedScanId = result.scanId;
-      this._setStatus('This PDF is no longer available. Scan the document again.', 'err');
+      this._setMessage('error.expired', {}, 'err');
       return;
     }
-    if (!response.ok) throw new Error('Please try again.');
+    if (!response.ok) throw new Error(this._t('error.retry'));
     const blob = await response.blob();
     if (this._completedScan !== result) return;
     if (!blob.size || (blob.type && !['application/pdf', 'application/octet-stream'].includes(blob.type))) {
-      throw new Error('The server did not return a PDF. Please try again.');
+      throw new Error(this._t('error.pdf'));
     }
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -607,7 +812,7 @@ C.prototype._downloadScan = async function () {
     this._setStatus('');
   } catch (err) {
     if (this._completedScan === result) {
-      this._setStatus('Download failed. ' + (err?.message || 'Please try again.'), 'err');
+      this._setMessage('status.download_failed', { error: err?.message || this._t('error.retry') }, 'err');
     }
   } finally {
     if (this._downloadRequest === result) this._downloadRequest = null;
@@ -615,32 +820,39 @@ C.prototype._downloadScan = async function () {
   }
 };
 
+C.prototype._sourceText = function (source) {
+  if (typeof source !== 'string' || !source) return '';
+  const key = 'source.' + source.toLowerCase();
+  const label = this._t(key);
+  return this._msg('status.source', { source: label === key ? source : this._msg(key) });
+};
+
 C.prototype._renderScanState = function (state, attrs) {
   const pagesDone = attrs?.pages_done || 0;
-  const source = typeof attrs?.source === 'string' ? attrs.source.toLowerCase() : '';
+  const source = this._sourceText(attrs?.source);
   const reloadHint = attrs.duplex_mode === 'manual' && attrs.scan_phase === 'fronts'
-    ? ' Wait for the reload prompt before flipping.' : '';
+    ? this._msg('help.wait_backs') : '';
   if (state === 'pending') {
-    this._setStatus(`Waiting for scanner…${reloadHint}`);
+    this._setMessage('status.waiting', { hint: reloadHint });
     this._setCancelVisible(true);
   } else if (state === 'processing') {
-    const src = source ? ` (${source})` : '';
-    const pages = pagesDone > 0 ? ` page ${pagesDone}` : '';
-    const phase = attrs.duplex_mode === 'manual' ? ` ${attrs.scan_phase || 'fronts'}` : '';
-    this._setStatus(`Scanning${phase}${src}${pages}…${reloadHint}`);
+    const src = source;
+    const pages = pagesDone > 0 ? this._msg('status.page', { count: pagesDone }) : '';
+    const phase = attrs.duplex_mode === 'manual' ? this._msg('status.phase', { phase: this._msg(attrs.scan_phase === 'backs' ? 'phase.backs' : 'phase.fronts') }) : '';
+    this._setMessage('status.scanning', { phase, source: src, progress: pages, adjustment: '', hint: reloadHint });
     this._setCancelVisible(true);
   } else if (state === 'processing-stopped') {
-    this._setStatus('Scanner paused — check tray/jam', 'err');
+    this._setMessage('status.paused', {}, 'err');
     this._setCancelVisible(true);
   } else if (state === 'awaiting-back-sides') {
     const wrap = document.createElement('span');
-    wrap.append(`Fronts ready (${attrs.front_pages || pagesDone} sheets). Reload with backs facing the scanner. Choose which sheet feeds first: `);
+    wrap.append(translatedText('backs.ready', { count: attrs.front_pages || pagesDone }, this._hass));
     const order = document.createElement('select');
-    order.setAttribute('aria-label', 'Back-side sheet order');
-    for (const [value, text] of [['same', 'First sheet first (same sheet order)'], ['reverse', 'Last sheet first (flipped stack)']]) {
+    order.dataset.i18nLabel = 'backs.order'; order.setAttribute('aria-label', this._t('backs.order'));
+    for (const [value, text] of [['same', 'backs.same'], ['reverse', 'backs.reverse']]) {
       const option = document.createElement('option');
       option.value = value;
-      option.textContent = text;
+      option.dataset.i18n = text; option.textContent = this._t(text);
       order.appendChild(option);
     }
     order.value = this._reverseBackOrder ? 'reverse' : 'same';
@@ -651,7 +863,7 @@ C.prototype._renderScanState = function (state, attrs) {
     wrap.append(' ');
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = 'Scan back sides';
+    button.dataset.i18n = 'action.backs'; button.textContent = this._t('action.backs');
     button.disabled = !!this._resuming;
     button.addEventListener('click', (ev) => { ev.stopPropagation(); this._scanBacks(); });
     wrap.appendChild(button);
@@ -673,14 +885,14 @@ C.prototype._renderScanState = function (state, attrs) {
         };
       }
     } else this._completedScan = null;
-    this._setStatus(`Scan ready ✓ (${pages} page${pages > 1 ? 's' : ''})`, 'ok');
+    this._setMessage('status.complete', { count: pages }, 'ok');
     this._setCancelVisible(false);
   } else if (state === 'canceled') {
-    this._setStatus('Scan canceled', 'err');
+    this._setMessage('status.canceled', {}, 'err');
     this._setCancelVisible(false);
   } else if (state === 'aborted' || state === 'failed') {
     const reason = attrs?.state_reasons || attrs?.error;
-    this._setStatus('Scan failed' + (reason ? `: ${reason}` : ''), 'err');
+    this._setMessage('status.failed', { reason: reason ? this._msg('status.reason', { reason }) : '' }, 'err');
     this._setCancelVisible(false);
   } else {
     this._setCancelVisible(false);
@@ -691,8 +903,8 @@ window.customCards = window.customCards || [];
 if (!window.customCards.find((c) => c.type === TAG)) {
   window.customCards.push({
     type: TAG,
-    name: 'eSCL Scan',
-    description: 'One-tap document scan via eSCL/AirScan with live status.',
+    name: localize('picker.name'),
+    description: localize('picker.description'),
     preview: true,
     documentationURL: 'https://github.com/wleonhardt/ha-escl-scan#adding-the-card-to-a-dashboard',
   });
@@ -827,9 +1039,11 @@ function optionChoices(select, choices, value) {
 }
 function addOptionField(panel, key, label, type = 'select') {
   const wrapper = document.createElement('label');
-  wrapper.className = 'option-field'; wrapper.textContent = label;
+  wrapper.className = 'option-field';
+  const caption = translatedText(label, {}, panel._hass); wrapper.append(caption);
   const input = document.createElement(type === 'select' ? 'select' : 'input');
   input.dataset.option = key;
+  input.setAttribute('aria-describedby', 'options-help');
   if (type !== 'select') input.type = type;
   wrapper.append(input); panel.append(wrapper);
   return input;
@@ -882,7 +1096,7 @@ C.prototype._toggleOptions = function (open, restoreFocus = true) {
       },
     }));
     if (!this._optionsPanel.open) this._optionsPanel.showModal?.();
-    this._optionsPanel.querySelector('select:not(:disabled), input:not(:disabled)')?.focus();
+    this._optionsPanel.querySelector('h2')?.focus();
   } else {
     this._optionsPanel.close?.();
     this._optionsDialog?.closeDialog();
@@ -893,10 +1107,11 @@ C.prototype._createOptionsPanel = function () {
   this._optionsButton = this.shadowRoot.querySelector('.options-button');
   this._optionsButton[Symbol.for('HA focus target')] = true;
   const panel = document.createElement('dialog');
+  panel._hass = this._hass;
   panel.className = 'options'; panel.id = 'options'; panel.hidden = true;
   panel.setAttribute('aria-labelledby', 'options-heading');
-  const heading = document.createElement('h2'); heading.id = 'options-heading';
-  heading.textContent = this.localName === 'escl-scan-card' ? 'Scan options' : 'Print options';
+  const heading = document.createElement('h2'); heading.id = 'options-heading'; heading.tabIndex = -1; heading.autofocus = true;
+  heading.dataset.i18n = 'dialog.title'; heading.textContent = this._t('dialog.title');
   panel.append(heading); this.shadowRoot.append(panel);
   panel.addEventListener('cancel', event => { event.preventDefault(); this._toggleOptions(false); });
   // Native dismissals can close the panel without going through our buttons.
@@ -909,12 +1124,12 @@ C.prototype._createOptionsPanel = function () {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); this._toggleOptions(false); }
   });
   this._optionHelp = document.createElement('div');
-  this._optionHelp.className = 'options-help'; this._optionHelp.setAttribute('aria-live', 'polite');
+  this._optionHelp.id = 'options-help'; this._optionHelp.className = 'options-help'; this._optionHelp.setAttribute('aria-live', 'polite');
   return panel;
 };
 C.prototype._finishOptionsPanel = function () {
   this._optionsPanel.append(this._optionHelp);
-  const done = document.createElement('button'); done.type = 'button'; done.textContent = 'Done';
+  const done = document.createElement('button'); done.type = 'button'; done.dataset.i18n = 'action.done'; done.textContent = this._t('action.done');
   done.addEventListener('click', () => this._toggleOptions(false));
   this._optionsPanel.append(done);
 };
@@ -922,12 +1137,12 @@ C.prototype._finishOptionsPanel = function () {
 C.prototype._installOptions = function () {
   const panel = this._createOptionsPanel();
   this._optionFields = {
-    source: addOptionField(panel, 'source', 'Source'),
-    color: addOptionField(panel, 'color', 'Color'),
-    dpi: addOptionField(panel, 'dpi', 'Resolution'),
-    page_size: addOptionField(panel, 'page_size', 'Page size'),
-    width: addOptionField(panel, 'width', 'Custom width (mm)', 'number'),
-    height: addOptionField(panel, 'height', 'Custom height (mm)', 'number'),
+    source: addOptionField(panel, 'source', 'field.source'),
+    color: addOptionField(panel, 'color', 'field.color'),
+    dpi: addOptionField(panel, 'dpi', 'field.dpi'),
+    page_size: addOptionField(panel, 'page_size', 'field.page_size'),
+    width: addOptionField(panel, 'width', 'field.width', 'number'),
+    height: addOptionField(panel, 'height', 'field.height', 'number'),
   };
   for (const [key, field] of Object.entries(this._optionFields)) {
     field.addEventListener('change', () => {
@@ -953,22 +1168,22 @@ C.prototype._syncOptions = function (locked) {
   const parent = this._config.duplex_in_options ? this._optionsPanel : this.shadowRoot.querySelector('.controls');
   if (toggle.parentElement !== parent) parent.prepend(toggle);
   this._twoSidedEl.disabled = locked || settings.source === 'Platen';
-  toggle.querySelector('small').textContent = settings.source === 'Platen' ? 'Select feeder to scan both sides' : 'Uses feeder';
+  toggle.querySelector('small').textContent = settings.source === 'Platen' ? this._t('help.select_feeder') : this._t('help.feeder');
   const sourceKnown = Array.isArray(supported?.sources);
-  optionChoices(fields.source, [['auto', 'Automatic'], ['Feeder', 'Feeder', sourceKnown && !supported.sources.includes('Feeder')],
-    ['Platen', 'Glass', this._duplex || (sourceKnown && !supported.sources.includes('Platen'))]], settings.source);
-  if (this._duplex && settings.source === 'Platen') this._settingsError = 'Choose Feeder or Automatic for a two-sided scan.';
-  else if (sourceKnown && settings.source !== 'auto' && !supported.sources.includes(settings.source)) this._settingsError = 'This scanner does not advertise the selected source.';
+  optionChoices(fields.source, [['auto', this._t('choice.automatic')], ['Feeder', this._t('choice.feeder'), sourceKnown && !supported.sources.includes('Feeder')],
+    ['Platen', this._t('choice.glass'), this._duplex || (sourceKnown && !supported.sources.includes('Platen'))]], settings.source);
+  if (this._duplex && settings.source === 'Platen') this._settingsError = this._t('error.feeder');
+  else if (sourceKnown && settings.source !== 'auto' && !supported.sources.includes(settings.source)) this._settingsError = this._t('error.source');
   const key = settings.source === 'Platen' ? 'Platen' : (this._duplex && supported?.automatic_duplex === true) ? 'FeederDuplex' : 'Feeder';
   const profile = supported?.profiles?.[key];
   const combinations = Array.isArray(profile?.combinations) ? profile.combinations.filter(p => p && typeof p === 'object' && (!Array.isArray(p.formats) || p.formats.some(f => ['application/pdf','image/jpeg','image/png'].includes(f)))) : [];
   const autoSource = settings.source === 'auto' && !this._duplex;
   let colors = !autoSource && Array.isArray(profile?.colors) ? profile.colors : ['color', 'gray'];
   if (settings.color !== 'default' && !colors.includes(settings.color)) {
-    this._settingsError = 'This source does not support the selected color mode. Choose another color mode.';
+    this._settingsError = this._t('error.color');
     colors = [...colors, settings.color];
   }
-  optionChoices(fields.color, [['default', 'Integration default'], ...colors.filter(x => ['color', 'gray'].includes(x)).map(x => [x, x === 'gray' ? 'Grayscale' : 'Color'])], settings.color);
+  optionChoices(fields.color, [['default', this._t('choice.integration_default')], ...colors.filter(x => ['color', 'gray'].includes(x)).map(x => [x, x === 'gray' ? this._t('choice.grayscale') : this._t('field.color')])], settings.color);
   let resolutions = !autoSource && Array.isArray(profile?.resolutions) ? profile.resolutions : [150, 200, 300, 600];
   if (!autoSource && combinations.length && settings.color !== 'default') {
     const matching = combinations.filter(p => p.colors == null || (Array.isArray(p.colors) && p.colors.includes(settings.color)));
@@ -978,14 +1193,15 @@ C.prototype._syncOptions = function (locked) {
   }
   resolutions = resolutions.filter(dpi => Number.isInteger(dpi) && dpi >= 50 && dpi <= 1200);
   if ((autoSource || !Array.isArray(profile?.resolutions)) && settings.dpi !== 'default') resolutions = [...new Set([...resolutions, Number(settings.dpi)])].sort((a,b) => a-b);
-  let adjustment = this._settingsAdjustment || '';
+  let adjustment = this._settingsAdjustment ? this._t('help.dpi_adjusted', this._settingsAdjustment) : '';
   if (settings.dpi !== 'default' && resolutions.length && !resolutions.includes(Number(settings.dpi)) && !autoSource) {
     const nearest = [...resolutions].sort((a,b) => Math.abs(a-Number(settings.dpi))-Math.abs(b-Number(settings.dpi)) || a-b)[0];
-    adjustment = this._settingsAdjustment = `${settings.dpi} DPI is unavailable for these settings; using ${nearest} DPI.`;
+    this._settingsAdjustment = { requested: settings.dpi, dpi: nearest };
+    adjustment = this._t('help.dpi_adjusted', this._settingsAdjustment);
     if (!locked) settings.dpi = String(nearest);
   }
-  optionChoices(fields.dpi, [['default', 'Integration default'], ...resolutions.map(dpi => [dpi, `${dpi} DPI`])], settings.dpi);
-  optionChoices(fields.page_size, [['full','Full scan area'],['letter','Letter'],['a4','A4'],['custom','Custom']], settings.page_size);
+  optionChoices(fields.dpi, [['default', this._t('choice.integration_default')], ...resolutions.map(dpi => [dpi, this._t('choice.dpi', { dpi })])], settings.dpi);
+  optionChoices(fields.page_size, [['full',this._t('choice.full')],['letter',this._t('choice.letter')],['a4',this._t('choice.a4')],['custom',this._t('choice.custom')]], settings.page_size);
   for (const [name, field] of Object.entries(fields)) {
     const defaultValue = ({source:'auto',color:'default',dpi:'default',page_size:'full'})[name];
     field.disabled = locked || (!available.includes(name) && settings[name] === defaultValue);
@@ -998,10 +1214,10 @@ C.prototype._syncOptions = function (locked) {
     }
   }
   if (settings.page_size === 'custom' && ['width','height'].some(name => !Number.isInteger(settings[name]) || settings[name] < 1 || settings[name] > Number(fields[name].dataset.maxUnits))) {
-    this._settingsError = 'Enter a valid custom width and height within the scanner limits.';
+    this._settingsError = this._t('error.region');
   }
-  this._optionHelp.textContent = this._settingsError || adjustment || (!caps ? 'Device settings are unavailable. Scanning with existing defaults still works.'
-    : autoSource ? 'Source is chosen when scanning. Available resolution depends on the selected source and color.' : 'Settings apply to the next scan.');
+  setText(this._optionHelp, this._settingsError || adjustment || (!caps ? this._t('help.unavailable')
+    : autoSource ? this._t('help.auto_source') : this._t('help.next_job')));
 };
 C.prototype._scanRequest = function () {
   if (this._settingsError) throw new Error(this._settingsError);
@@ -1010,7 +1226,7 @@ C.prototype._scanRequest = function () {
   const available = this._capabilities?.body?.request_options || [];
   for (const name of ['source','color','dpi','page_size']) {
     const isExplicit = settings[name] !== ({source:'auto',color:'default',dpi:'default',page_size:'full'})[name];
-    if (isExplicit && !available.includes(name)) throw new Error('Update the scan integration to use the selected options.');
+    if (isExplicit && !available.includes(name)) throw new Error(this._t('error.update'));
   }
   if (this._duplex) request.source = 'Feeder';
   else if (settings.source !== 'auto' && available.includes('source')) request.source = settings.source;
