@@ -1,9 +1,10 @@
 # Shared scan and print card rollout plan
 
 Status: in-progress. Phases 1–4 are released and validated. Phase 5 is released
-and installed as scan 0.11.0 / print 0.10.0; minimum/current native host runtime
-checks, 572 tests and both hosted release workflows pass. Physical Android
-acceptance remains; native examples are optional. [Phase 5 validation](shared-card-phase-5-validation.md).
+and installed as scan 0.11.1 / print 0.10.1; minimum/current native host runtime
+checks, 576 tests and both hosted release workflows pass. The phone exposed a
+startup registry race, now reproduced and patched; physical Android retry
+remains. Native examples are optional. [Phase 5 validation](shared-card-phase-5-validation.md).
 
 Bring scanning and printing onto one Home Assistant visual and interaction
 contract, starting with the visible Two-sided switch selected in the design

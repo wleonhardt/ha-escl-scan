@@ -116,3 +116,20 @@ worked at 390 px. No print/scan job was submitted; both sensors stayed idle.
 The browser also logged card-mod's requestUpdate error after Options, although
 both dialogs closed correctly; that separate compatibility observation remains
 to investigate. Physical phone acceptance needs a retry after patch installation.
+
+Patch release/deployment: Scan `f7b5068` / `v0.11.1`, Print `b5fb396` / `v0.10.1`.
+Both release workflows and all six hosted checks pass (Scan validation
+`37946733953`, release `37946736548`; Print validation `37946735585`, release
+`37946737930`). Backed up the previous pair and resource storage to
+`/config/.document-card-backups/before-registry-fix-v0111-v0101-20261009.tar.gz`.
+Both idle integrations reloaded without restarting HA. Installed asset hashes:
+Scan `7e249b48ff37abfe47d2255fdc26469f07e08beb9baa467aeb08be3e3eb90d77`;
+Print `eac840eafb68595a0b4c2bc420a55f87d669cfc632076b031771515b4e5d22a8`.
+
+A final production cold load bypassed service worker/cache, with sixfold CPU
+slowdown and 150 KB/s download / 200 ms latency. Scan registered at 3.58 seconds,
+the registry changed at 4.43 seconds, and the new module recovered without a
+manual import or configuration change. Both real native controls rendered with
+no startup exceptions. Temporary candidate files were removed. The user was
+asked to reopen the original preview link, refresh three times and check both
+Options/Back dialogs. That physical retry is still pending.

@@ -1,6 +1,6 @@
 # Native scan and print features
 
-Status: released and installed as scan 0.11.0 / print 0.10.0. Keep standalone cards supported and the visible
+Status: released and installed as scan 0.11.1 / print 0.10.1. Keep standalone cards supported and the visible
 Two-sided switch as the default. Native examples remain opt-in until host and
 physical Android acceptance are recorded.
 

@@ -1,9 +1,10 @@
 # Next up
 
 ## Queue
-- Active: Phase 5 native Tile and optional Mushroom features, scan 0.11.0 /
-  print 0.10.0. Minimum/current host runtime checks and 572 tests pass; installed.
-  Both releases and all hosted checks pass. Physical Android acceptance remains. Standalone cards stay supported.
+- Active: Phase 5 native Tile and optional Mushroom features, scan 0.11.1 /
+  print 0.10.1. Minimum/current host runtime checks and 576 tests pass; installed.
+  Both releases and all hosted checks pass. The intermittent Android startup
+  race is patched; physical phone retry remains. Standalone cards stay supported.
   [Phase 5 validation](shared-card-phase-5-validation.md).
   [Canonical phased plan](shared-card-rollout-2026-10-08.md).
 - External coverage remains separate: automatic duplex scanning, additional
@@ -18,6 +19,8 @@
 - Awaiting reporter feedback on #5 (v0.4.4/v0.4.5 on Epson ET-4950 / WF-4830).
 
 ## Backlog / nice-to-have
+- Investigate card-mod's requestUpdate console error after native Options;
+  both dialogs and Back work in the browser. See Phase 5 validation.
 - Reconfigure flow for host/creds (options flow currently edits them).
 - Per-scan override for rotate_duplex_backs (service field / card toggle).
 - Add reviewed card languages using the English catalog and documented workflow.
