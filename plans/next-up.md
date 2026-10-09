@@ -21,7 +21,7 @@
   verifies 1F,1B,2F,2B upright with matching downloads. Release tags remain.
   User confirmed both new Options dialogs fit and work on the phone.
   Fixed raw scanner-side 409 guidance after the
-  device reported an empty feeder. Pair now has 502 passing tests.
+  device reported an empty feeder. Pair now has 512 passing tests.
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
 - Live-test still open: zeroconf discovery flow only (needs the entry removed;
@@ -41,7 +41,7 @@
 - 2026-10-08 — Paired mobile Back fix installed as scan 0.8.2 / print 0.7.2.
   Options now participates in HA dialog navigation; cached cards cannot reopen
   settings inline after leaving the view. 512 paired tests pass. Live browser
-  Back/Forward/Done verified; physical Android confirmation remains.
+  Back/Forward/Done verified; user confirmed the Back fix on the physical phone.
   [Validation](compatibility-validation-2026-10-08.md).
 - 2026-10-08 — Card feedback fixes installed as scan v0.7.1 / print v0.6.1.
   Fresh capability labels, retained Download PDF primary action and finished

@@ -1,6 +1,6 @@
 # Compatibility rollout validation
 
-Installed candidates: scan 0.8.1 / print 0.7.1. The live test installed scan 0.8.0
+Installed candidates: scan 0.8.2 / print 0.7.2. The live test installed scan 0.8.0
 first, then fixed a scanner-side 409 explanation in 0.8.1. Release tags remain
 pending physical acceptance. The implementation-only checks below preceded
 installation; live evidence is recorded separately at the end.
@@ -170,6 +170,14 @@ selected scan/print fields to defaults while capabilities are unavailable.
   each open card also leaves both hidden with `open=false`, `:modal=false`.
   The first browser reload briefly loaded a cached old scan resource before the
   new one; a second reload loaded only the current URLs and confirmed the new
-  disconnect callback. No print or scan jobs were submitted. Physical Android
-  confirmation pending.
+  disconnect callback. No print or scan jobs were submitted. User subsequently
+  confirmed the Back fix works on the physical phone.
 - Existing physical print release gates remain; no new release tags created.
+
+- Hosted validation passed for scan `8ba20e7` ([run 37873907577](https://github.com/wleonhardt/ha-escl-scan/actions/runs/37873907577))
+  and print `8ab7703` ([run 37873970387](https://github.com/wleonhardt/ha-ipp-print/actions/runs/37873970387)).
+  All six checks passed for each integration.
+- Next physical gate: submit the existing two-page short-edge PDF with copies=2,
+  Letter paper and short-edge binding. Expect two sheets, each FRONT/BACK upright
+  when flipped over its top edge like a notepad. This single job covers the two
+  remaining print settings; acceptance is pending printer readiness and output.
