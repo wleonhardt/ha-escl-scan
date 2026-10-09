@@ -1,6 +1,10 @@
 # Next up
 
 ## Queue
+- Active: user-requested HP Phase 4 physical tests. Print job 371 completed;
+  awaiting the user's printed-sheet/fronts-loaded confirmation before starting
+  the two-pass scan. [Live-test record](phase-4-hp-live-tests-2026-10-09.md).
+  Print 0.9.1 fixes provisional progress totals found in that job.
 - Next implementation: Phase 5 native Tile and optional Mushroom features.
   Verify minimum/current HA host support and Android registration before
   promoting the native examples; keep standalone cards supported.
