@@ -86,3 +86,33 @@ Installed assets match source:
 
 The user has been asked to check both features and Options/Back on the phone.
 Retain the standalone view regardless of the phone result; migration stays optional.
+
+## Android startup regression — patch pair 0.11.1 / 0.10.1
+
+The physical phone check exposed an intermittent Scan feature Configuration
+error; the user reports working/error results alternating across refreshes.
+A fresh browser load with service-worker/cache bypass reproduced the cause:
+the asset downloaded with the expected hash and its native constructor existed,
+but a late scoped custom-element registry polyfill replaced window.customElements.
+The new registry could not find the earlier Scan registrations. A later Print
+module could escape the race. Delaying the module alone did not reproduce it.
+
+The shared core retains each integration's five constructors and restores only
+missing definitions when the registry identity changes. Script/page load,
+page restoration, HA readiness and navigation cover startup and returning views.
+Normal events do one identity check; there is no ongoing timer/DOM scan and no
+replacement of mounted workflows or definitions supplied by another version.
+
+Both new regression tests fail against each released module and pass with the
+patch. They check non-bubbling script load, original constructor identity,
+retained scan intent / staged print file, Options, already-registered versions,
+and page restoration. All 576 tests pass (Scan 225 Python / 72 card; Print
+217 Python / 62 card), plus Ruff, compileall and shared-core parity.
+
+A scoped live preview loaded both patched modules before the native registry
+was replaced: both were initially present, briefly absent in the replacement,
+then restored automatically. Both native controls rendered and Options/Back
+worked at 390 px. No print/scan job was submitted; both sensors stayed idle.
+The browser also logged card-mod's requestUpdate error after Options, although
+both dialogs closed correctly; that separate compatibility observation remains
+to investigate. Physical phone acceptance needs a retry after patch installation.
