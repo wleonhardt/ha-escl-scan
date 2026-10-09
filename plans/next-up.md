@@ -1,6 +1,12 @@
 # Next up
 
 ## Queue
+
+- Paired activity expansion fixed in both live dashboards using one built-in
+  Vertical stack per card. Tile, Mushroom and standalone layouts pass independent
+  expansion checks at 320/390/768 px; all 610 tests pass. Examples updated;
+  scan 0.12.0 / print 0.11.0 runtime stays unchanged. Phone confirmation pending.
+  [Layout validation](card-independent-expansion-2026-10-09.md).
 - Paired alignment/device identity polish installed as scan 0.11.2 / print
   0.10.3; 579 tests, hosted checks and narrow real-host layout checks pass.
   The native preview now has a device heading. Friendly headings and explicit

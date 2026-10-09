@@ -62,3 +62,10 @@ Verify restart, idle hold, expiry/purge, missing files, invalid storage, private
 manual fronts, cancellation, multiple printer entries/reused IDs, stale downloads,
 non-admin authentication, mixed versions, keyboard and mobile layout. Hardware
 protocols are unchanged; fixtures can prove persistence without another print.
+
+## Paired layout follow-up
+
+Use one built-in Vertical stack per card in side-by-side layouts. Auto rows
+allow details to grow but do not prevent the shorter neighbour stretching.
+Put Sections sizing on each stack. The [live validation](../card-independent-expansion-2026-10-09.md)
+covers Tile, Mushroom and standalone hosts with asymmetric disclosure states.
