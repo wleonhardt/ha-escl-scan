@@ -1,6 +1,7 @@
 # Phase 6 validation — 2026-10-09
 
-Status: implementation complete; release and deployment validation in progress.
+Status: implemented, released and installed. Physical phone acceptance of the
+new disclosures and the first post-upgrade real job remain follow-up checks.
 Release pair: scan 0.12.0 / print 0.11.0, shared presentation core v4.
 The preceding alignment revision was accepted by the user on the phone, including Back.
 
@@ -48,6 +49,28 @@ need Rows: Auto to accommodate expanded content. Examples are updated.
 
 ## Release and live installation
 
-Pending hosted checks, tags, installation and startup verification.
+Both release commits passed all six hosted checks; both tag workflows published
+normal HACS releases (not drafts or prereleases):
+
+- Scan `8c3f27b6da778920f17c897f8e8592486891c92e`; validation `37974994426`,
+  release `37975197270`, tag `v0.12.0`.
+- Print `9d016ae55c980496ad22b7376ef9f1743e30a996`; validation `37974997129`,
+  release `37975198779`, tag `v0.11.0`.
+
+Both sensors were idle before installation. Backup:
+`/config/.document-card-backups/before-phase6-v0120-v0110-20261009.tar.gz`.
+Both integration folders and the dashboard/resources were preserved. Installed
+tracked release files, restarted HA successfully, then loaded a fresh preview.
+Real states are idle with the HP reachable; `latest_scan` is null and
+`recent_activity` is empty. Both disclosures render collapsed, both primary
+actions are correct, and there are no HA error cards or matching integration
+startup errors. Resource IDs are preserved and URLs match installed hashes:
+`/escl_scan/card-cfce9020b443.js`, `/ipp_print/card-7ec6a73c8417.js`.
+No dashboard configuration was changed. Disposable browser fixtures were removed.
+Standalone cards also render expanded results without horizontal or vertical
+content overflow in an isolated real-host row.
+
+Rollback can restore the backup and restart HA while idle; previous versions
+ignore the new version-1 Store keys. Keep the existing PDF retention policy.
 No physical print/scan has been submitted for this phase. The first new result
 will populate the production sections; pre-upgrade jobs are not reconstructed.

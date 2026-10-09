@@ -260,19 +260,21 @@ Implementation, host and physical Android acceptance: [Phase 5 validation](share
 
 ## Phase 6 Durable results and recent activity
 
-Start with Latest scan, then add a bounded activity view only if it helps.
+Implemented and installed as scan 0.12.0 / print 0.11.0.
+[Validation, storage and release evidence](shared-card-phase-6-validation.md).
+Phone acceptance of the new disclosures remains a follow-up.
 
-- [ ] Preserve discoverable latest completed scan metadata beyond the active
+- [x] Preserve discoverable latest completed scan metadata beyond the active
   sensor's completion timer. Reconcile metadata against stored files and
   retention on restart; expire dead links without extending retention silently.
-- [ ] Provide authenticated Open/Download actions and clear expired/unavailable
+- [x] Provide authenticated Open/Download actions and clear expired/unavailable
   handling. Never expose private front-side files from an incomplete duplex job.
-- [ ] Keep the completion acknowledgement transient while latest-result access
+- [x] Keep the completion acknowledgement transient while latest-result access
   remains available. Do not rely on a longer frontend timer for durability.
-- [ ] Add bounded print activity metadata with a documented lifetime. Do not
+- [x] Add bounded print activity metadata with a documented lifetime. Do not
   retain uploaded documents or offer reprint unless a separate storage policy
   is designed. Printer success describes reported device completion.
-- [ ] If scan history expands beyond Latest scan, define record limits, cleanup,
+- [x] If scan history expands beyond Latest scan, define record limits, cleanup,
   restart recovery, permissions and storage migration in a separate decision.
 
 Exit: latest scan remains accessible after card/HA reload while retained; purge
