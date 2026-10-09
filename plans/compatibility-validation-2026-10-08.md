@@ -146,3 +146,30 @@ selected scan/print fields to defaults while capabilities are unavailable.
   reload with no HA restart. All 25 HP paper option values match the advertised
   keywords; the live 390 px dialog fits without horizontal overflow. Details and
   rollback path are in the print repository's next-up record.
+
+
+### Mobile Back navigation follow-up: scan 0.8.2 / print 0.7.2
+
+- Phone recording showed Back leaving the printer view, then a cached Options
+  dialog returning inline beneath the cards. Reproduced on HA 2026.9.4: removing
+  and reinserting the open card left `open=true`, `hidden=false`, but `:modal=false`.
+- Both cards now use HA's dialog manager for Back/history and reset the native
+  panel on disconnection. Closed dialogs also have an explicit CSS display guard.
+  Done, Escape, native close and delayed registration/reopen paths stay in sync.
+- Tests: scan 215 Python + 51 card; print 206 Python + 40 card. Ruff and compileall
+  pass for both. Ten new regressions cover the shared navigation contract.
+- Backed up both components and dashboard resource metadata to
+  `/config/.document-card-backups/before-options-navigation-v082-v072-20261008.tar.gz`.
+  Installed both cards/manifests, reloaded entries (HTTP 200, no restart required).
+  Card hashes match local files; resources preserve their IDs and use
+  `/escl_scan/card-e23d99403207.js` and `/ipp_print/card-bf3cdfc2e787.js`.
+- Real HA browser: Back closes each Options modal on the same printer route;
+  second Back returns Home; Forward returns to the cached cards with both panels
+  hidden and `display:none`. Done restores focus and clears dialog history.
+  Both native panels measure 356 px in the 390 px viewport. Removing/reinserting
+  each open card also leaves both hidden with `open=false`, `:modal=false`.
+  The first browser reload briefly loaded a cached old scan resource before the
+  new one; a second reload loaded only the current URLs and confirmed the new
+  disconnect callback. No print or scan jobs were submitted. Physical Android
+  confirmation pending.
+- Existing physical print release gates remain; no new release tags created.

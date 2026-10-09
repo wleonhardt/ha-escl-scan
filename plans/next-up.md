@@ -16,7 +16,7 @@
   shared Options dialogs, paper/tray settings and safe diagnostics.
   [Plan and completed items](compatibility-rollout-2026-10-08.md).
   [Validation and remaining physical gates](compatibility-validation-2026-10-08.md).
-  Live test installed scan 0.8.1 / print 0.7.1 (including paper-label polish). Selected-options duplex print
+  Live test installed scan 0.8.2 / print 0.7.2 (including paper-label and Back-navigation fixes). Selected-options duplex print
   and Letter/grayscale/300 DPI scan/download pass; two-sheet color manual duplex
   verifies 1F,1B,2F,2B upright with matching downloads. Release tags remain.
   User confirmed both new Options dialogs fit and work on the phone.
@@ -38,6 +38,11 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-10-08 — Paired mobile Back fix installed as scan 0.8.2 / print 0.7.2.
+  Options now participates in HA dialog navigation; cached cards cannot reopen
+  settings inline after leaving the view. 512 paired tests pass. Live browser
+  Back/Forward/Done verified; physical Android confirmation remains.
+  [Validation](compatibility-validation-2026-10-08.md).
 - 2026-10-08 — Card feedback fixes installed as scan v0.7.1 / print v0.6.1.
   Fresh capability labels, retained Download PDF primary action and finished
   print filename cleanup. All 433 tests pass; live HP capability wording,

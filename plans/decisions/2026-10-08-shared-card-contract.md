@@ -88,3 +88,20 @@ and wider widths, in light/dark/custom themes. Behavior tests cover action
 separation, staged file lifecycle, duplicate prevention, frozen options, stale
 responses and existing manual duplex/cancel guarantees. Native-host and physical
 Android results are recorded separately from simulated browser layouts.
+
+## Options navigation (0.8.2 scan / 0.7.2 print)
+
+Keep the native dialog and card-local styles. A tiny custom dialog host implements
+HA's `show-dialog` / `showDialog` / `closeDialog` / `dialog-closed` contract so HA
+owns Back navigation and history cleanup. Do not add a separate global history
+stack. Register the Options button as HA's focus return target.
+
+Always close and hide Options on card disconnection. Native close/cancel, Done,
+Escape and HA Back synchronize the same state. Ignore a queued native close if
+the dialog has already reopened, and close a delayed HA host registration when
+the owning card has left. Null history parameters on older HA close safely.
+Selected settings and staged files remain owned by the card.
+
+Protocol inspected in the [minimum HA 2024.12 frontend](https://github.com/home-assistant/frontend/blob/20241127.4/src/dialogs/make-dialog-manager.ts)
+and [current frontend](https://github.com/home-assistant/frontend/blob/dev/src/dialogs/make-dialog-manager.ts).
+This is source compatibility evidence; it is not a minimum-version runtime test.

@@ -6,6 +6,15 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-08
+
+### Fixed
+- Close Options through Home Assistant's dialog navigation so Back dismisses
+  settings before leaving the dashboard. Reset the native dialog when the card
+  is removed, preventing an inline settings panel after returning to the page.
+- Keep native dismissals, Done and Escape synchronized with the Options button
+  and preserve selected settings when the same card reconnects.
+
 ## [0.8.1] - 2026-10-08
 
 ### Fixed
