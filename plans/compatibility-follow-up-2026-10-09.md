@@ -141,3 +141,48 @@ The user confirmed the dashboard looks good after installation. Multi-scanner
 routing is explicitly deferred to the backlog by the user's 2026-10-09 decision.
 The recommended next focus is the bounded diagnostics and real-device fixture
 work in the [scope decision](decisions/2026-10-08-compatibility-follow-ons.md).
+
+## Epson report review — 2026-10-09
+
+Read the complete body and comment history of
+[issue #5](https://github.com/wleonhardt/ha-escl-scan/issues/5). The issue is closed.
+The WF-4830 reporter [confirmed success on October 8](https://github.com/wleonhardt/ha-escl-scan/issues/5#issuecomment-6069504848);
+the queue incorrectly still marked that confirmation as pending. The reply does
+not specify installed release, firmware, orientation or batch length. The ET-4950
+report describes success after manually correcting the duplex height but has no
+subsequent acceptance of a released fix. Neither report includes a full capture.
+
+All three ET-4950 observations already have corresponding changes:
+
+- Duplex region: 0.4.4 separated the duplex maximum (2550 × 3510) from the
+  simplex maximum (2550 × 4200). Current selection passes the duplex region
+  through the tracked scan into job creation; Letter and A4 fit. Oversized custom
+  duplex regions are rejected before a job is created.
+- Inverted backs: 0.4.5 added the existing opt-in rotation option. Current code
+  rotates alternate pages after assembling the complete PDF and preserves
+  metadata. The option remains off by default; no model-wide assumption is made.
+- Long batches: current document requests have no total-transfer timeout, use a
+  900-second socket-read stall limit and bound temporary-response retries to
+  900 seconds. Control requests retain their short timeout. The report supplies
+  no response trace establishing a remaining problem with this policy.
+
+Added a provenance-labelled report fragment with only the reported simplex
+maximums and duplex fields; root/Adf wrappers are explicit synthetic scaffolding.
+It is not a full Epson capability capture. New coordinator regressions cover full
+simplex, full duplex, Letter/A4 duplex and rejection of a simplex-sized custom
+duplex area. Existing automatic-duplex rotation coverage now also exercises
+separate one-page downloads, so rotation cannot restart at each chunk boundary.
+
+No additional runtime defect was reproduced or vendor workaround justified.
+Only tests and documentation change; Scan remains 0.12.1 with no new setting,
+dependency, release tag or HA restart. No physical job or reporter message is
+needed for this review. Further ET-4950 work needs released-version diagnostics
+and an exact failing operation; orientation/long-batch acceptance needs the
+device or explicit reporter results.
+
+Validation: 249 Python tests and 78 card tests pass (327 total), plus Ruff,
+compileall, npm ci and diff whitespace checks. An isolated process restoring the
+original simplex-for-duplex region bug fails exactly the two relevant new cases
+(full duplex and oversized custom duplex), while the other three region cases
+pass. No tracked runtime file was modified by that check. Hosted checks run on
+the pushed test/documentation commit.

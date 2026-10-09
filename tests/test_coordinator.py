@@ -4,11 +4,16 @@ validation, cancel, clean shutdown, multi-document drain, page reconciliation.
 """
 import asyncio
 import io
+from pathlib import Path
 
 import pytest
 
 from custom_components.escl_scan.coordinator import ScanBusyError, ScanCoordinator
-from custom_components.escl_scan.scanner import DEFAULT_REGION, ScannerCapabilities
+from custom_components.escl_scan.scanner import (
+    DEFAULT_REGION,
+    ScannerCapabilities,
+    parse_scanner_capabilities,
+)
 
 from .fakes import FakeClient
 
@@ -493,6 +498,45 @@ async def test_region_from_capabilities_per_source(make_coord):
     assert (client.create_kwargs["width"], client.create_kwargs["height"]) == (2550, 3508)
 
 
+@pytest.fixture
+def epson_report_caps():
+    return parse_scanner_capabilities(
+        (Path(__file__).parent / "fixtures" / "epson-et4950-issue5-regions.xml").read_bytes()
+    )
+
+
+@pytest.mark.parametrize(("duplex", "page_size", "region"), [
+    (False, "full", (2550, 4200)),
+    (True, "full", (2550, 3510)),
+    (True, "letter", (2550, 3300)),
+    (True, "a4", (2480, 3508)),
+])
+async def test_epson_report_region_reaches_job(
+    make_coord, epson_report_caps, duplex, page_size, region,
+):
+    # Issue #5: choosing the simplex height for duplex caused a device-side 409.
+    # Exercise the parsed report through selection, tracking and job creation.
+    client = FakeClient(docs=[[VALID_PDF]], source="Feeder", caps=epson_report_caps)
+    coord = make_coord(client)
+    scan = await coord.start_scan(duplex=duplex, page_size=page_size)
+    await _drive(coord, scan)
+    assert scan.state == "completed"
+    assert scan.region == region
+    assert scan.duplex_mode == ("automatic" if duplex else "simplex")
+    assert client.create_kwargs["duplex"] is duplex
+    assert (client.create_kwargs["width"], client.create_kwargs["height"]) == region
+    assert (client.create_kwargs["x_offset"], client.create_kwargs["y_offset"]) == (0, 0)
+
+
+async def test_epson_report_rejects_simplex_sized_duplex_before_job(make_coord, epson_report_caps):
+    client = FakeClient(source="Feeder", caps=epson_report_caps)
+    coord = make_coord(client)
+    with pytest.raises(ValueError, match="outside the scanner source's supported area"):
+        await coord.start_scan(duplex=True, page_size="custom", width=2550, height=4200)
+    assert client.create_kwargs is None
+    assert not coord._driver_tasks
+
+
 async def test_region_default_without_capabilities(make_coord):
     client = FakeClient(docs=[[VALID_PDF]])
     coord = make_coord(client)
@@ -572,10 +616,13 @@ async def test_start_after_terminal_is_allowed(make_coord):
     assert scan2.scan_id != scan1.scan_id
 
 
-async def test_rotate_duplex_backs(make_coord):
+@pytest.mark.parametrize("separate_pages", [False, True])
+async def test_rotate_duplex_backs(make_coord, separate_pages):
     from pypdf import PdfReader
 
-    client = FakeClient(docs=[[real_pdf(4)]], source="Feeder", caps=CAPS)
+    # Rotation must use the final page order, including one PDF per download.
+    docs = [[real_pdf()]] * 4 if separate_pages else [[real_pdf(4)]]
+    client = FakeClient(docs=docs, source="Feeder", caps=CAPS)
     coord = make_coord(client, default_duplex=True, rotate_duplex_backs=True)
     scan = await coord.start_scan()
     await _drive(coord, scan)

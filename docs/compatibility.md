@@ -75,11 +75,13 @@ proxy, DNS-SD, persisted port allocation and loopback/default interface policy.
 | Target | Evidence available on 2026-10-09 | Remaining check |
 |---|---|---|
 | HP Color LaserJet MFP M283fdw | Physical glass/ADF/manual duplex, print copies/both bindings, offline recovery and retained-result restart tests; live DNS-SD and isolated confirmation/duplicate checks | Automatic duplex scanning is not available on this model |
+| Epson WF-4830 | Reporter confirmed the duplex fix works on 2026-10-08 in [issue #5](https://github.com/wleonhardt/ha-escl-scan/issues/5#issuecomment-6069504848) | Exact installed version/firmware, orientation and large-batch results were not supplied |
+| Epson ET-4950 | [Issue #5](https://github.com/wleonhardt/ha-escl-scan/issues/5) provides duplex region limits and reports success after correcting the height; report-derived regression covers job selection | Confirmation on a released fix, full capabilities/firmware, rotation and large-batch results |
 | Local CUPS queue to that HP | Current client queried PDF settings and passed Validate-Job; typed collections parsed | Actual conversion/output through that queue |
 | Brother family / Xerox B205-B215 / Ricoh matched models | Scoped recovery policies from sane-airscan source; synthetic retry/delay/cancel regressions | Device captures and physical hardware tests |
 | JPEG/PNG-only eSCL profiles | Synthetic acquisition, dimension, malformed/oversize, cancellation and duplex-order tests | A physical image-only scanner |
 | AirSane / ipp-usb | Documented route and manual endpoint support | Bridge/device instance not available for live testing |
-| Automatic-duplex ADF | Existing simulation and capability selection tests | A scanner that physically scans both sides automatically |
+| Automatic-duplex ADF | Existing simulation/selection tests and limited Epson community evidence above | Locally available automatic-duplex hardware for controlled order/orientation and long-batch tests |
 
 Discovery follow-up used live HP advertisements and read-only endpoint probes
 in an isolated HA flow registry. HTTP eSCL on port 8080 and IPP on port 631 work
@@ -90,7 +92,7 @@ untouched; no job was submitted during these discovery checks. Full integration
 initialization was stubbed in the isolated flow check, separately from the earlier
 production setup and physical jobs.
 
-Parser fixtures distinguish real redacted captures from synthetic data. Use the
+Fixtures distinguish real redacted captures, report-derived fragments and synthetic data. Use the
 [device compatibility report](../.github/ISSUE_TEMPLATE/device_compatibility.yml)
 for successful devices as well as failures. A report does not establish support
 for other models or firmware.

@@ -25,7 +25,11 @@ The user subsequently approved the first task below: improve JPEG failure
 diagnostics with no new settings or dependencies. The Print implementation and
 validation are recorded in its
 [JPEG diagnostics plan](https://github.com/wleonhardt/ha-ipp-print/blob/main/plans/2026-10-09-jpeg-diagnostics.md).
-The remaining device-report work is still a recommendation.
+The user then approved reviewing the existing Epson report. That review found
+WF-4830 success feedback and no evidence for an additional runtime workaround;
+report-derived regressions and the evidence matrix are recorded in the
+[compatibility follow-up](../compatibility-follow-up-2026-10-09.md#epson-report-review--2026-10-09).
+Collecting further device reports remains a recommendation.
 
 Work order:
 

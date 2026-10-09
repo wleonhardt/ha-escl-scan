@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Report-derived fragment, NOT a complete device capture.
+     Source: https://github.com/wleonhardt/ha-escl-scan/issues/5
+     ET-4950, reported with escl_scan 0.4.3 / HA 2026.9.3; firmware unknown.
+     Duplex fields below and simplex maximums are reported values.
+     Root/Adf/simplex wrappers and namespace declaration are test scaffolding.
+     The report supplies no setting profiles or platen dimensions. -->
+<scan:ScannerCapabilities xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03">
+  <scan:Adf>
+    <scan:AdfSimplexInputCaps>
+      <scan:MaxWidth>2550</scan:MaxWidth>
+      <scan:MaxHeight>4200</scan:MaxHeight>
+    </scan:AdfSimplexInputCaps>
+    <scan:AdfDuplexInputCaps>
+      <scan:MinWidth>96</scan:MinWidth>
+      <scan:MaxWidth>2550</scan:MaxWidth>
+      <scan:MinHeight>96</scan:MinHeight>
+      <scan:MaxHeight>3510</scan:MaxHeight>
+      <scan:MaxXOffset>2454</scan:MaxXOffset>
+      <scan:MaxYOffset>3414</scan:MaxYOffset>
+      <scan:MaxScanRegions>1</scan:MaxScanRegions>
+    </scan:AdfDuplexInputCaps>
+  </scan:Adf>
+</scan:ScannerCapabilities>

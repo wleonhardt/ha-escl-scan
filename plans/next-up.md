@@ -2,6 +2,14 @@
 
 ## Queue
 
+- Epson issue #5 reviewed on 2026-10-09: the WF-4830 reporter already confirmed
+  the fix works. ET-4950 release acceptance, orientation and large-batch evidence
+  remain unconfirmed. Current code addresses all three reported faults; no new
+  runtime workaround, setting or dependency is justified. Added report-derived
+  region/job regressions and separate-page rotation coverage; all 327 tests,
+  Ruff and compilation pass. See the
+  [review record](compatibility-follow-up-2026-10-09.md#epson-report-review--2026-10-09).
+
 - JPEG diagnostic task approved, released and installed as Print 0.11.2; Scan
   stays 0.12.1. All 316 Print tests and hosted/release checks pass. The real HP
   JPEG query and normal diagnostics download pass without a print job. Failure
@@ -60,7 +68,9 @@
   against all four live advertisements. Full integration setup was stubbed in
   that fixture; production entries stayed configured and loaded after restart.
 
-- Awaiting reporter feedback on #5 (v0.4.4/v0.4.5 on Epson ET-4950 / WF-4830).
+- Awaiting ET-4950 acceptance on released fixes for #5; WF-4830 confirmation
+  received 2026-10-08. Exact firmware/version and mode-specific evidence remain
+  limited; do not treat the general confirmation as a complete device matrix.
 
 ## Backlog / nice-to-have
 - Multiple scanner entries: explicitly deferred by the user on 2026-10-09.
