@@ -20,6 +20,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType
 
 from .capabilities import capability_snapshot
+from .connection import DeviceConnection
 from .const import (
     CARD_FILENAME,
     CARD_URL_PREFIX,
@@ -54,7 +55,7 @@ from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["button", "sensor"]
+PLATFORMS = ["button", "sensor", "binary_sensor"]
 
 _CARD_FILE = Path(__file__).parent / "static" / CARD_FILENAME
 
@@ -110,7 +111,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         file_ttl_seconds=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL),
         copy_dir=copy_dir,
     )
+    connection = DeviceConnection(hass, client.get_scanner_status, DOMAIN)
+
     async def _async_stop(event: Event) -> None:
+        await connection.async_close()
         await coordinator.async_shutdown()
 
     entry.async_on_unload(hass.bus.async_listen(EVENT_HOMEASSISTANT_STOP, _async_stop))
@@ -121,6 +125,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN][entry.entry_id] = {
             "client": client,
             "coordinator": coordinator,
+            "connection": connection,
         }
 
         # Views are idempotent — re-registering on reload is a no-op since the
@@ -166,9 +171,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.async_on_unload(
             async_track_time_interval(hass, coordinator.async_purge_now, PURGE_INTERVAL)
         )
+        connection.start()
         return True
 
     except BaseException:
+        await connection.async_close()
         await coordinator.async_shutdown()
         if hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator") is coordinator:
             hass.data[DOMAIN].pop(entry.entry_id, None)
@@ -180,6 +187,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unloaded:
         data = hass.data[DOMAIN].pop(entry.entry_id, None)
         if data:
+            if connection := data.get("connection"):
+                await connection.async_close()
             coordinator = data.get("coordinator")
             if coordinator is not None:
                 await coordinator.async_shutdown()
@@ -297,6 +306,19 @@ class ScanCapabilitiesView(HomeAssistantView):
         return self.json(capability_snapshot(coord.capability_cache, entity_id))
 
 
+def _target_coordinator(hass: HomeAssistant, entity_id) -> ScanCoordinator | None:
+    """Resolve a requested scan sensor; old requests may omit the single target."""
+    if entity_id is None:
+        return _current_coordinator(hass)
+    entity = er.async_get(hass).async_get(entity_id) if isinstance(entity_id, str) else None
+    if entity is None or entity.platform != DOMAIN or entity.domain != "sensor":
+        raise ValueError("Select a scan sensor from the eSCL Scan integration.")
+    coord = hass.data.get(DOMAIN, {}).get(entity.config_entry_id, {}).get("coordinator")
+    if coord is None:
+        raise ValueError("The selected scanner is not loaded. Check the integration.")
+    return coord
+
+
 class ScanStartView(HomeAssistantView):
     """POST /api/escl_scan/start
 
@@ -335,7 +357,10 @@ class ScanStartView(HomeAssistantView):
         if duplex is not None and not isinstance(duplex, bool):
             return self.json_message("invalid 'duplex' (must be a boolean)", status_code=400)
 
-        coord = self._coord
+        try:
+            coord = _target_coordinator(self._hass, data.get("entity_id"))
+        except ValueError as exc:
+            return self.json_message(str(exc), status_code=404)
         if coord is None:
             return self.json_message("integration not configured", status_code=503)
         try:
@@ -406,7 +431,10 @@ class ScanCancelView(HomeAssistantView):
         scan_id = data.get("scan_id") if isinstance(data, dict) else None
         if not isinstance(scan_id, str) or not scan_id:
             return self.json_message("missing or invalid 'scan_id'", status_code=400)
-        coord = self._coord
+        try:
+            coord = _target_coordinator(self._hass, data.get("entity_id"))
+        except ValueError as exc:
+            return self.json_message(str(exc), status_code=404)
         if coord is None:
             return self.json_message("integration not configured", status_code=503)
         scan = coord.get(scan_id)
@@ -442,7 +470,10 @@ class ScanBacksView(ScanCancelView):
         reverse_back_order = data.get("reverse_back_order", False)
         if not isinstance(reverse_back_order, bool):
             return self.json_message("'reverse_back_order' must be a boolean", status_code=400)
-        coord = self._coord
+        try:
+            coord = _target_coordinator(self._hass, data.get("entity_id"))
+        except ValueError as exc:
+            return self.json_message(str(exc), status_code=404)
         if coord is None:
             return self.json_message("integration not configured", status_code=503)
         if coord.get(scan_id) is None:

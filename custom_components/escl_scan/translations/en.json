@@ -84,6 +84,11 @@
           "awaiting-back-sides": "Waiting for back sides"
         }
       }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "Connection"
+      }
     }
   },
   "services": {

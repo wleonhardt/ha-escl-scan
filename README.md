@@ -252,6 +252,25 @@ actions:
         url: "{{ trigger.event.data.file_url }}"
 ```
 
+## Connection and recovery
+
+The integration adds a native **Connection** binary sensor to its device. It is
+unknown until the first check, connected when the protocol answers successfully,
+and disconnected when it cannot be reached. This does not promise paper, ink,
+or readiness: a stopped printer may still be reachable. Job `idle` is separate.
+Checks run every 60 seconds, back off to at most five minutes after failures, and
+have a ten-second deadline. No test document or scan is created by these checks.
+The job sensor also exposes `device_connection` with `state`, `checked_at`,
+`last_success_at` and `next_check_at`; the card marks stale evidence as unconfirmed.
+Use the native sensor in a Tile card for a dashboard connection summary.
+
+The cards recover current integration-tracked jobs from Home Assistant state
+when mounted or reconnected. They disable actions during a lost HA connection,
+keep the active device fixed, and never automatically replay a request. A print
+file staged in one card remains local to that card. Tracking is still in memory:
+restarting HA or reloading the integration does not recover past jobs. Durable
+scan results and activity history are a later phase.
+
 ## Sensor + events
 
 `sensor.printer_current_scan`
@@ -304,6 +323,10 @@ are never borrowed from the glass. Existing job sensor attributes are unchanged.
 Unknown targets return 404, malformed queries 400 and unloaded integration 503.
 Consumers should check `schema_version` and `request_options` before exposing
 new controls. See the [capability contract](plans/decisions/2026-10-08-capability-api.md).
+
+The start, cancel and scan_backs requests accept an optional `entity_id` naming
+the integration’s scan sensor. Invalid or unloaded explicit targets return 404;
+old clients may omit it to use the single configured scanner.
 
 ### `POST /api/escl_scan/start`
 

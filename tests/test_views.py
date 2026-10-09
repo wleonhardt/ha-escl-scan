@@ -162,3 +162,27 @@ async def test_file_precedence_404_409(api):
         await task
     coord.get(sid).file_path.unlink()  # simulate TTL purge
     assert (await http.get(f"/api/escl_scan/file/{sid}")).status == 404
+
+
+@pytest.mark.parametrize("path", ["start", "cancel", "scan_backs"])
+async def test_explicit_target_rejects_foreign_sensor_without_device_io(api, path):
+    http, client, coord = api
+    with patch.object(coord, "start_scan") as start:
+        response = await http.post(f"/api/escl_scan/{path}", json={
+            "entity_id": "sensor.foreign", "scan_id": "some-scan",
+        })
+        assert response.status == 404
+        assert "Select a scan sensor" in (await response.json())["message"]
+        start.assert_not_called()
+
+
+async def test_explicit_registered_sensor_routes_start(hass, api):
+    from homeassistant.helpers import entity_registry as er
+
+    http, _, coord = api
+    sensors = [e for e in er.async_get(hass).entities.values()
+               if e.platform == DOMAIN and e.domain == "sensor"]
+    assert len(sensors) == 1
+    response = await http.post("/api/escl_scan/start", json={"entity_id": sensors[0].entity_id})
+    assert response.status == 200
+    assert coord.get((await response.json())["scan_id"]) is not None

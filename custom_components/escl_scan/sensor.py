@@ -30,7 +30,9 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: ScanCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    async_add_entities([ScannerScanSensor(coordinator, entry.entry_id)])
+    async_add_entities([ScannerScanSensor(
+        coordinator, entry.entry_id, hass.data[DOMAIN][entry.entry_id]["connection"]
+    )])
 
 
 class ScannerScanSensor(SensorEntity):
@@ -42,7 +44,8 @@ class ScannerScanSensor(SensorEntity):
     _attr_options = SCAN_STATES
     _attr_should_poll = False
 
-    def __init__(self, coordinator: ScanCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: ScanCoordinator, entry_id: str, connection=None) -> None:
+        self._connection = connection
         self._coord = coordinator
         self._attr_unique_id = f"{entry_id}_current_scan"
         self._attr_device_info = coordinator.device_info(entry_id)
@@ -51,6 +54,8 @@ class ScannerScanSensor(SensorEntity):
         self._unsub = None
 
     async def async_added_to_hass(self) -> None:
+        if self._connection:
+            self.async_on_remove(self._connection.register_update_listener(self._handle_update))
         self._unsub = self._coord.register_update_listener(self._handle_update)
         self.async_write_ha_state()
 
@@ -71,4 +76,7 @@ class ScannerScanSensor(SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         scan = self._coord.current
-        return {"scan_id": None} if scan is None else scan.to_dict()
+        attrs = {"scan_id": None} if scan is None else scan.to_dict()
+        if self._connection:
+            attrs["device_connection"] = self._connection.snapshot()
+        return attrs

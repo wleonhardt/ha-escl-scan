@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.escl_scan.const import (
@@ -144,6 +145,14 @@ async def test_setup_and_unload(hass):
         assert coord is not None
         assert coord.host == "192.0.2.10"
         assert coord.capabilities is caps
+        monitor = hass.data[DOMAIN][entry.entry_id]["connection"]
+        await monitor.async_check()
+        await hass.async_block_till_done()
+        connections = [s for s in hass.states.async_all("binary_sensor")
+                       if "checked_at" in s.attributes]
+        assert len(connections) == 1 and connections[0].state == "on"
+        scan_state = hass.states.get("sensor.printer_current_scan")
+        assert scan_state.attributes["device_connection"]["state"] == "reachable"
         assert hass.states.get("sensor.printer_current_scan") is not None
 
         dev_reg = dr.async_get(hass)
@@ -345,3 +354,11 @@ async def test_homeassistant_stop_closes_client_and_cleans_active_scan(hass, tmp
         assert client.closed
         assert client.deleted == [scan.job_url]
         assert not list(coord._storage.iterdir())
+
+
+@pytest.fixture(autouse=True)
+def scanner_status():
+    from custom_components.escl_scan.scanner import ScannerStatus
+    with patch("custom_components.escl_scan.scanner.ScannerClient.get_scanner_status",
+               return_value=ScannerStatus("Idle", False)):
+        yield

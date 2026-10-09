@@ -4,6 +4,29 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.10.0] - 2026-10-09
+
+### Added
+- A native Connection binary sensor per device, independent of job state, with
+  last-check/last-success timestamps. Read-only protocol checks run once a minute,
+  back off to five minutes after failures, and stop cleanly on unload.
+- Shared, versioned presentation core for both document cards: localization,
+  Options dialogs, base styles and expandable error guidance. CI detects drift;
+  each integration still ships one complete card asset without a build step.
+
+### Changed
+- Cards explain stale/failed device checks separately from job outcomes and
+  disable device actions while disconnected from Home Assistant.
+
+### Fixed
+- Scope start, cancel, manual-back and download replies to the selected scanner
+  and request generation. Delayed replies cannot overwrite a newer scan or
+  survive navigation; active scans keep their original target.
+- Explicit scan-sensor routing validates the integration before device I/O;
+  existing API clients may continue omitting the single scanner target.
+- Reject non-protocol and oversized ScannerStatus responses before reporting
+  reachability, while retaining namespace-tolerant eSCL parsing.
+
 ## [Unreleased]
 
 ## [0.9.0] - 2026-10-08

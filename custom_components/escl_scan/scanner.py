@@ -266,6 +266,8 @@ def parse_scanner_status(xml: bytes) -> ScannerStatus:
     except ET.ParseError as exc:
         raise ValueError(f"ScannerStatus: invalid XML ({exc})") from exc
 
+    if _local(root.tag) != "ScannerStatus":
+        raise ValueError("expected ScannerStatus XML")
     state = _text(_find_local(root, "State")) or "Unknown"
     adf_state = _text(_find_local(root, "AdfState"))
     adf_loaded = adf_state == "ScannerAdfLoaded"
@@ -570,7 +572,12 @@ class ScannerClient:
             f"{self._base}/ScannerStatus", timeout=_SHORT_TIMEOUT
         ) as resp:
             resp.raise_for_status()
-            return parse_scanner_status(await resp.read())
+            data = bytearray()
+            async for chunk in resp.content.iter_chunked(64 * 1024):
+                if len(data) + len(chunk) > 1024 * 1024:
+                    raise ValueError("scanner status exceeds the 1 MiB limit")
+                data.extend(chunk)
+            return parse_scanner_status(bytes(data))
 
     async def get_capabilities(self) -> ScannerCapabilities:
         s = await self._session()

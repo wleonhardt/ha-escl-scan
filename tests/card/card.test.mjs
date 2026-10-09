@@ -162,7 +162,7 @@ test('manual duplex waiting shows instructions and resumes once without overwrit
   button.click();
   assert.equal(calls.fetch.length, 1);
   assert.equal(calls.fetch[0].url, '/api/escl_scan/scan_backs');
-  assert.deepEqual(JSON.parse(calls.fetch[0].init.body), { scan_id: 'manual1', reverse_back_order: false });
+  assert.deepEqual(JSON.parse(calls.fetch[0].init.body), { scan_id: 'manual1', reverse_back_order: false, entity_id: SENSOR });
   push(SENSOR, 'processing', { ...attrs, scan_phase: 'backs', pages_done: 4 });
   finish(jsonResponse({ ok: true, scan_id: 'manual1', state: 'pending' }));
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -490,16 +490,20 @@ test('attribute changes refresh status even with unchanged state and page count'
   assert.equal(el.shadowRoot.querySelector('.primary').textContent, 'Download PDF');
 });
 
-test('changing configured entity updates immediately and missing sensors clear cancel', () => {
+test('changing configured entity waits for the active scan and missing sensors clear cancel', () => {
   const win = boot();
   const el = mount(win);
   const { push } = makeHass(el);
   push(SENSOR, 'processing', { scan_id: 's1' });
   push('sensor.other', 'failed', { scan_id: 's2', error: 'jam' });
   el.setConfig({ entity: 'sensor.other' });
+  assert.equal(el._activeScanId, 's1', 'active scan target stays frozen');
+  assert.equal(status(el).textContent, 'Scanning…');
+  push(SENSOR, 'canceled', {scan_id:'s1'});
+  push('sensor.other', 'failed', {scan_id:'s2',error:'jam'});
   assert.equal(status(el).textContent, 'Scan failed: jam');
   el.setConfig({ entity: 'sensor.missing' });
-  assert.equal(status(el).textContent, 'Automatic source');
+  assert.equal(status(el).textContent, 'Scan status unavailable');
   assert.equal(el._activeScanId, null);
   assert.ok(!cancelShown(el));
 });
@@ -781,7 +785,7 @@ test('scan options preserve complete profiles, explain DPI adjustment and reject
   assert.match(el._optionHelp.textContent, /color mode/);
   changeOption(win, el, 'color', 'gray');
   await el._startScan();
-  assert.deepEqual(JSON.parse(calls.fetch[0].init.body), {duplex:false,source:'Platen',color:'gray',dpi:300,page_size:'full'});
+  assert.deepEqual(JSON.parse(calls.fetch[0].init.body), {duplex:false,source:'Platen',color:'gray',dpi:300,page_size:'full',entity_id:SENSOR});
 });
 test('scan options keep focus and user intent across hass updates; config defaults defer until job ends', async () => {
   const win=boot(), el=mount(win);
@@ -813,7 +817,7 @@ test('selected scan options can return to defaults while capabilities are unavai
   push(SENSOR,'idle');await optionsTick();el._toggleOptions(true);await optionsTick();
   assert.equal(el._optionFields.source.disabled,false);
   changeOption(win,el,'source','auto');await el._startScan();
-  assert.deepEqual(JSON.parse(calls.fetch[0].init.body),{duplex:false});
+  assert.deepEqual(JSON.parse(calls.fetch[0].init.body),{duplex:false,entity_id:SENSOR});
 });
 
 // Exercise HA's public showDialog/closeDialog contract. Real browser history
@@ -1057,4 +1061,85 @@ test('translated scan phases preserve protocol matching and reload guidance', ()
   assert.match(card._statusEl.textContent, /WAIT TEST/);
   card._renderScanState('processing', { duplex_mode: 'manual', scan_phase: 'backs', pages_done: 2 });
   assert.doesNotMatch(card._statusEl.textContent, /WAIT TEST/);
+});
+
+
+test('checked connection is independent from idle and stale evidence becomes unknown', () => {
+  const win = boot();
+  const el = mount(win, { entity: SENSOR });
+  const { push, calls } = makeHass(el);
+  const snapshot = { state: 'unreachable', checked_at: new Date().toISOString(), next_check_at: new Date(Date.now()+60_000).toISOString() };
+  push(SENSOR, 'idle', { device_connection: snapshot });
+  const warning = el.shadowRoot.querySelector('.connection');
+  assert.equal(warning.hidden, false);
+  assert.match(warning.textContent, /reach/i);
+  assert.match(warning.title, /check/i);
+  push(SENSOR, 'idle', { device_connection: { ...snapshot, state: 'reachable' } });
+  assert.equal(warning.hidden, true);
+  push(SENSOR, 'idle', { device_connection: { ...snapshot, state: 'reachable', next_check_at: '2000-01-01T00:00:00Z' } });
+  assert.equal(warning.hidden, false);
+  assert.match(warning.textContent, /not.*confirmed/i);
+});
+
+test('HA disconnect blocks actions and reconnect restores pushed state without submission', async () => {
+  const win = boot();
+  const el = mount(win, { entity: SENSOR });
+  const { push, calls } = makeHass(el);
+  push(SENSOR, 'processing', { scan_id: 'external', pages_done: 0 });
+  el.hass = { ...el._hass, connected: false };
+  assert.equal(el.shadowRoot.querySelector('.primary').disabled, true);
+  assert.equal(el.shadowRoot.querySelector('.cancel').disabled, true);
+  assert.match(el.shadowRoot.querySelector('.connection').textContent, /Home Assistant/);
+  el.shadowRoot.querySelector('.primary').click();
+  el.shadowRoot.querySelector('.cancel').click();
+  assert.equal(calls.fetch.length, 0);
+  push(SENSOR, 'canceled', { scan_id: 'external', pages_done: 0 });
+  assert.equal(el.shadowRoot.querySelector('.primary').disabled, false);
+  assert.match(el.shadowRoot.querySelector('.status').textContent, /canceled/i);
+  assert.equal(calls.fetch.length, 0);
+});
+
+test('shared long errors keep device text literal and expand recovery guidance', () => {
+  const win = boot();
+  const el = mount(win);
+  const message = 'Device could not confirm the outcome. Check the device before trying again; <img src=x onerror=alert(1)> is text, never markup.';
+  el._setStatus(message, 'err');
+  const node = el.shadowRoot.querySelector('.status');
+  assert.equal(node.textContent, message);
+  assert.equal(node.querySelector('img'), null);
+  assert.ok(node.querySelector('details'));
+});
+
+test('a detached delayed start cannot overwrite a newer observed scan on return', async () => {
+  const win = boot();
+  const el = mount(win, { entity: SENSOR });
+  let finish;
+  const { push } = makeHass(el, { fetchImpl: () => new Promise(resolve => { finish = resolve; }) });
+  push(SENSOR, 'idle');
+  const request = el._startScan();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  el.remove();
+  win.document.body.append(el);
+  push(SENSOR, 'processing', { scan_id: 'new-scan', pages_done: 2 });
+  finish(jsonResponse({ scan_id: 'old-scan', source: 'Feeder' }));
+  await request;
+  assert.equal(el._activeScanId, 'new-scan');
+  assert.match(status(el).textContent, /2/);
+});
+
+test('late back-side error cannot disable or relabel a different scan', async () => {
+  const win = boot();
+  const el = mount(win, { entity: SENSOR });
+  let finish;
+  const { push } = makeHass(el, { fetchImpl: () => new Promise(resolve => { finish = resolve; }) });
+  const waiting = id => ({ scan_id: id, duplex_mode: 'manual', front_pages: 2, pages_done: 2 });
+  push(SENSOR, 'awaiting-back-sides', waiting('first'));
+  const request = el._scanBacks();
+  push(SENSOR, 'awaiting-back-sides', waiting('second'));
+  finish(jsonResponse({ message: 'Old request failed' }, 409));
+  await request;
+  assert.equal(el._activeScanId, 'second');
+  assert.equal(el._backError, null);
+  assert.doesNotMatch(status(el).textContent, /Old request/);
+  assert.equal(el._resuming, null);
 });

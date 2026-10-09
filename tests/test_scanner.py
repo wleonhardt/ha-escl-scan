@@ -49,6 +49,8 @@ async def scanner(aiohttp_server, socket_enabled):
             await hook()
         if location := getattr(backend, "redirect_url", None):
             raise web.HTTPFound(location)
+        if hasattr(backend, "status_body"):
+            return web.Response(body=backend.status_body)
         return web.Response(
             body=b"<ScannerStatus><State>" + backend.scanner_state + b"</State>"
             b"<AdfState>" + backend.adf_state + b"</AdfState>"
@@ -461,3 +463,14 @@ async def test_scan_ticket_uses_standard_format_and_only_requested_extension(sca
     values = {el.tag.rsplit("}", 1)[-1]: el.text for el in root.iter()}
     assert ("DocumentFormatExt" in values) == extension
     assert values["XOffset"] == "20" and values["YOffset"] == "30"
+
+
+@pytest.mark.parametrize("body", [b"<html>Login</html>", b"x" * (1024 * 1024 + 1)],
+                         ids=["html", "oversized"])
+async def test_status_rejects_non_protocol_or_oversized_responses(scanner, body):
+    client, backend = scanner, scanner._backend
+    backend.status_body = body
+    with pytest.raises(ValueError):
+        await client.get_scanner_status()
+    assert backend.create_calls == 0
+    assert backend.deleted == []

@@ -14,6 +14,9 @@ if (!customElements.get(TAG)) {
   customElements.define(TAG, class extends HTMLElement {
     connectedCallback() { this._onHass?.(); }
     disconnectedCallback() {
+      this._requestEpoch = (this._requestEpoch || 0) + 1;
+      this._lastSig = null;
+      this._clearResultTimer?.();
       this._toggleOptions?.(false, false);
       this._capabilityRequest?.abort();
     }
@@ -133,11 +136,18 @@ const CARD_TRANSLATIONS = {
       "other": "Fronts ready ({count} sheets). Reload with backs facing the scanner. Choose which sheet feeds first: "
     },
     "choice.dpi": "{dpi} DPI",
-    "help.dpi_adjusted": "{requested} DPI is unavailable for these settings; using {dpi} DPI."
+    "help.dpi_adjusted": "{requested} DPI is unavailable for these settings; using {dpi} DPI.",
+    "connection.ha_lost": "Home Assistant disconnected. Reconnecting…",
+    "connection.reachable": "Device reachable",
+    "connection.unreachable": "Cannot reach this device. Check its power and connection.",
+    "connection.unknown": "Device connection has not been confirmed recently.",
+    "connection.checked": "Last checked: {time}"
   }
 };
 // END ENGLISH CATALOG
 
+// BEGIN DOCUMENT CARD CORE v2
+// Canonical source: ha-escl-scan/shared/card-core.js; synchronize with tools/sync-card-core.mjs.
 // Shared localization contract v1. Keep this helper identical in both cards.
 // Catalogs are bundled here: no build step, translation fetch or registration wait.
 class LocalizedMessage {
@@ -210,7 +220,202 @@ C.prototype._applyLanguage = function () {
   }
   return true;
 };
+// Checked connection is independent of a job's idle/running state.
+C.prototype._syncConnection = function () {
+  if (!this._connectionEl) return;
+  const offline = this._hass?.connected === false;
+  const snapshot = this._connectionSnapshot();
+  const checked = Date.parse(snapshot?.checked_at);
+  const next = Date.parse(snapshot?.next_check_at);
+  const fresh = Number.isFinite(checked) && Number.isFinite(next) && next + 30_000 > Date.now();
+  const state = fresh && ['reachable','unreachable'].includes(snapshot?.state) ? snapshot.state : 'unknown';
+  this._connectionEl.hidden = !offline && (!snapshot || state === 'reachable');
+  setText(this._connectionEl, this._t(offline ? 'connection.ha_lost' : 'connection.' + state));
+  let time = '';
+  if (Number.isFinite(checked)) {
+    try { time = new Date(checked).toLocaleString(cardLanguage(this._hass)); }
+    catch { time = new Date(checked).toISOString(); }
+  }
+  this._connectionEl.title = time ? this._t('connection.checked', { time }) : '';
+};
 // End shared localization helper.
+
+// Text stays text, including device-supplied errors. Long recovery guidance expands.
+function renderStatus(element, message, cls) {
+  const className = 'status' + (cls ? ' ' + cls : '');
+  if (typeof message === 'string' && element.textContent === message && element.className === className) return;
+  element.replaceChildren();
+  if (message instanceof Node) element.appendChild(message);
+  else {
+    const split = cls === 'err' && message.length > 100 ? message.indexOf('. ') : -1;
+    if (split > 0) {
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = message.slice(0, split + 2);
+      const recovery = document.createElement('div');
+      recovery.textContent = message.slice(split + 2);
+      details.append(summary, recovery);
+      element.appendChild(details);
+    } else element.textContent = message;
+  }
+  element.className = className;
+}
+
+const DOCUMENT_CARD_STYLES = `/* Shared document-card contract v1. Keep this base identical in both cards. */
+      :host { display: block; height: 100%; }
+      [hidden] { display: none !important; }
+      ha-card {
+        box-sizing: border-box; height: 100%; min-height: 200px; padding: 12px;
+        display: flex; flex-direction: column; gap: 8px;
+        color: var(--primary-text-color);
+      }
+      .header { display: flex; align-items: center; gap: 8px; min-width: 0; }
+      .icon { --mdc-icon-size: 24px; width: 24px; height: 24px; color: var(--primary-color); flex: none; }
+      .title { font-size: 16px; font-weight: 500; line-height: 24px; overflow-wrap: anywhere; }
+      .status { color: var(--secondary-text-color); font-size: 14px; line-height: 20px; min-height: 40px; overflow-wrap: anywhere; }
+      .status.err { color: var(--error-color); }
+      .status.ok { color: var(--success-color, var(--primary-color)); }
+      .status a { color: inherit; text-underline-offset: 2px; display: inline-flex; align-items: center; min-height: 44px; }
+      .status summary { cursor: pointer; min-height: 44px; }
+      .status details > div { padding-top: 8px; }
+      .controls { min-height: 44px; }
+      .actions { margin-top: auto; }
+      button, select { font: inherit; font-size: 14px; }
+      button {
+        min-height: 44px; padding: 8px 12px; border: 0;
+        border-radius: var(--ha-card-border-radius, 12px);
+        background: var(--secondary-background-color); color: var(--primary-text-color);
+        cursor: pointer; line-height: 20px; box-sizing: border-box;
+      }
+      button:disabled { opacity: .5; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible {
+        outline: 2px solid var(--primary-color); outline-offset: 2px;
+      }
+      .primary, .cancel { width: 100%; font-weight: 500; }
+      .cancel { display: none; color: var(--error-color); }
+      .cancel.show { display: block; }
+      @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+      .options-button { margin-inline-start: auto; flex: none; width: 44px; padding: 8px; }
+      .options { box-sizing: border-box; display: grid; gap: 12px; width: min(400px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; padding: 20px; border: 1px solid var(--divider-color); border-radius: var(--ha-card-border-radius, 12px); color: var(--primary-text-color); background: var(--card-background-color); }
+      .options:not([open]) { display: none; }
+      .options::backdrop { background: rgba(0, 0, 0, .45); }
+      .options h2 { font-size: 20px; margin: 0 0 4px; }
+      .option-field { display: grid; gap: 4px; min-width: 0; font-size: 14px; }
+      .option-field select, .option-field input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 8px; font: inherit; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 8px; }
+      .options-help { color: var(--secondary-text-color); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+      .warning { color: var(--warning-color, var(--primary-text-color)); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+      /* End shared document-card base. */`;
+
+// Shared document-card option helpers. Keep this small block identical in both cards.
+function optionChoices(select, choices, value) {
+  const signature = JSON.stringify(choices);
+  if (select.dataset.choices !== signature) {
+    select.replaceChildren(...choices.map(([key, label, disabled]) => {
+      const option = document.createElement('option');
+      option.value = String(key); option.textContent = label; option.disabled = !!disabled;
+      return option;
+    }));
+    select.dataset.choices = signature;
+  }
+  select.value = String(value);
+}
+function addOptionField(panel, key, label, type = 'select') {
+  const wrapper = document.createElement('label');
+  wrapper.className = 'option-field';
+  const caption = translatedText(label, {}, panel._hass); wrapper.append(caption);
+  const input = document.createElement(type === 'select' ? 'select' : 'input');
+  input.dataset.option = key;
+  input.setAttribute('aria-describedby', 'options-help');
+  if (type !== 'select') input.type = type;
+  wrapper.append(input); panel.append(wrapper);
+  return input;
+}
+// Let HA own Back navigation, including the Android app's dialog handling.
+// The native panel stays in the card's shadow root to retain its theme/styles.
+const OPTIONS_TAG = `${TAG}-options-dialog`;
+if (!customElements.get(OPTIONS_TAG)) {
+  customElements.define(OPTIONS_TAG, class extends HTMLElement {
+    showDialog(params) {
+      this._open = true;
+      const card = params?.card;
+      this._card = card;
+      // Older HA history entries cannot serialize the live card reference.
+      if (!card) { this.closeDialog(); return; }
+      card._optionsDialog = this;
+      // HA may finish loading the host after navigation or a quick dismissal.
+      if (!card.isConnected || !card._optionsOpen) this.closeDialog();
+    }
+    closeDialog() {
+      if (!this._open) return true;
+      this._open = false;
+      const card = this._card;
+      this._card = null;
+      if (card) {
+        card._optionsDialog = null;
+        card._toggleOptions(false, card.isConnected);
+      }
+      this.dispatchEvent(new CustomEvent('dialog-closed', {
+        bubbles: true, composed: true, detail: { dialog: OPTIONS_TAG },
+      }));
+      return true;
+    }
+  });
+}
+C.prototype._toggleOptions = function (open, restoreFocus = true) {
+  if (!this._optionsPanel || (open && (!this.isConnected || this._optionsOpen))) return;
+  const wasOpen = this._optionsOpen;
+  this._optionsOpen = open;
+  this._optionsPanel.hidden = !open;
+  this._optionsButton.setAttribute('aria-expanded', String(open));
+  if (open) {
+    this._refreshOptions();
+    this._optionsButton.focus();
+    this.dispatchEvent(new CustomEvent('show-dialog', {
+      bubbles: true, composed: true,
+      detail: {
+        dialogTag: OPTIONS_TAG, dialogImport: () => Promise.resolve(),
+        dialogParams: { card: this },
+      },
+    }));
+    if (!this._optionsPanel.open) this._optionsPanel.showModal?.();
+    this._optionsPanel.querySelector('h2')?.focus();
+  } else {
+    this._optionsPanel.close?.();
+    this._optionsDialog?.closeDialog();
+    if (wasOpen && restoreFocus && this.isConnected) this._optionsButton.focus();
+  }
+};
+C.prototype._createOptionsPanel = function () {
+  this._optionsButton = this.shadowRoot.querySelector('.options-button');
+  this._optionsButton[Symbol.for('HA focus target')] = true;
+  const panel = document.createElement('dialog');
+  panel._hass = this._hass;
+  panel.className = 'options'; panel.id = 'options'; panel.hidden = true;
+  panel.setAttribute('aria-labelledby', 'options-heading');
+  const heading = document.createElement('h2'); heading.id = 'options-heading'; heading.tabIndex = -1; heading.autofocus = true;
+  heading.dataset.i18n = 'dialog.title'; heading.textContent = this._t('dialog.title');
+  panel.append(heading); this.shadowRoot.append(panel);
+  panel.addEventListener('cancel', event => { event.preventDefault(); this._toggleOptions(false); });
+  // Native dismissals can close the panel without going through our buttons.
+  panel.addEventListener('close', () => {
+    if (!panel.open) this._toggleOptions(false);
+  });
+  this._optionsPanel = panel;
+  this._optionsButton.addEventListener('click', () => this._toggleOptions(!this._optionsOpen));
+  panel.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); this._toggleOptions(false); }
+  });
+  this._optionHelp = document.createElement('div');
+  this._optionHelp.id = 'options-help'; this._optionHelp.className = 'options-help'; this._optionHelp.setAttribute('aria-live', 'polite');
+  return panel;
+};
+C.prototype._finishOptionsPanel = function () {
+  this._optionsPanel.append(this._optionHelp);
+  const done = document.createElement('button'); done.type = 'button'; done.dataset.i18n = 'action.done'; done.textContent = this._t('action.done');
+  done.addEventListener('click', () => this._toggleOptions(false));
+  this._optionsPanel.append(done);
+};
+// END DOCUMENT CARD CORE v2
 
 
 function responseErrorMessage(response, body, conflictFallback) {
@@ -262,6 +467,7 @@ C.prototype.setConfig = function (config) {
 
 Object.defineProperty(C.prototype, 'hass', {
   set(hass) {
+    const connectionChanged = this._hass?.connected !== hass?.connected;
     this._hass = hass;
     // Lovelace pushes a fresh hass object on every state change. Drive all
     // progress rendering from here by diffing the scan sensor — no
@@ -270,7 +476,8 @@ Object.defineProperty(C.prototype, 'hass', {
     // started from another device.
     const languageChanged = this._applyLanguage();
     this._onHass();
-    if (languageChanged) this._syncControls();
+    if (languageChanged || connectionChanged) this._syncControls();
+    else this._syncConnection();
   },
   get() { return this._hass; },
   configurable: true,
@@ -335,50 +542,7 @@ C.prototype._render = function () {
   const root = this.attachShadow({ mode: 'open' });
   root.innerHTML = `
     <style>
-      /* Shared document-card contract v1. Keep this base identical in both cards. */
-      :host { display: block; height: 100%; }
-      [hidden] { display: none !important; }
-      ha-card {
-        box-sizing: border-box; height: 100%; min-height: 200px; padding: 12px;
-        display: flex; flex-direction: column; gap: 8px;
-        color: var(--primary-text-color);
-      }
-      .header { display: flex; align-items: center; gap: 8px; min-width: 0; }
-      .icon { --mdc-icon-size: 24px; width: 24px; height: 24px; color: var(--primary-color); flex: none; }
-      .title { font-size: 16px; font-weight: 500; line-height: 24px; overflow-wrap: anywhere; }
-      .status { color: var(--secondary-text-color); font-size: 14px; line-height: 20px; min-height: 40px; overflow-wrap: anywhere; }
-      .status.err { color: var(--error-color); }
-      .status.ok { color: var(--success-color, var(--primary-color)); }
-      .status a { color: inherit; text-underline-offset: 2px; display: inline-flex; align-items: center; min-height: 44px; }
-      .status summary { cursor: pointer; min-height: 44px; }
-      .status details > div { padding-top: 8px; }
-      .controls { min-height: 44px; }
-      .actions { margin-top: auto; }
-      button, select { font: inherit; font-size: 14px; }
-      button {
-        min-height: 44px; padding: 8px 12px; border: 0;
-        border-radius: var(--ha-card-border-radius, 12px);
-        background: var(--secondary-background-color); color: var(--primary-text-color);
-        cursor: pointer; line-height: 20px; box-sizing: border-box;
-      }
-      button:disabled { opacity: .5; cursor: default; }
-      button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible {
-        outline: 2px solid var(--primary-color); outline-offset: 2px;
-      }
-      .primary, .cancel { width: 100%; font-weight: 500; }
-      .cancel { display: none; color: var(--error-color); }
-      .cancel.show { display: block; }
-      @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
-      .options-button { margin-inline-start: auto; flex: none; width: 44px; padding: 8px; }
-      .options { box-sizing: border-box; display: grid; gap: 12px; width: min(400px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; padding: 20px; border: 1px solid var(--divider-color); border-radius: var(--ha-card-border-radius, 12px); color: var(--primary-text-color); background: var(--card-background-color); }
-      .options:not([open]) { display: none; }
-      .options::backdrop { background: rgba(0, 0, 0, .45); }
-      .options h2 { font-size: 20px; margin: 0 0 4px; }
-      .option-field { display: grid; gap: 4px; min-width: 0; font-size: 14px; }
-      .option-field select, .option-field input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 8px; font: inherit; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 8px; }
-      .options-help { color: var(--secondary-text-color); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
-      .warning { color: var(--warning-color, var(--primary-text-color)); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
-      /* End shared document-card base. */
+      ${DOCUMENT_CARD_STYLES}
       .toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; font-size: 14px; cursor: pointer; }
       .toggle small { display: block; color: var(--secondary-text-color); font-size: 12px; }
       .two-sided { appearance: none; position: relative; margin: 0; width: 36px; height: 22px; flex: none; border-radius: 12px; background: var(--disabled-text-color); cursor: pointer; }
@@ -392,6 +556,7 @@ C.prototype._render = function () {
     <ha-card>
       <div class="header"><ha-icon class="icon" icon="mdi:scanner" aria-hidden="true"></ha-icon><div class="title"></div><button class="options-button" type="button" aria-expanded="false" aria-controls="options" data-i18n-label="dialog.title" title=""><ha-icon icon="mdi:tune" aria-hidden="true"></ha-icon></button></div>
       <div class="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="connection warning" aria-live="polite" hidden></div>
       <div class="controls">
         <label class="toggle"><span><span data-i18n="action.two_sided"></span><small data-i18n="help.feeder"></small></span><input class="two-sided" type="checkbox" role="switch" data-i18n-label="accessibility.two_sided"></label>
       </div>
@@ -404,6 +569,7 @@ C.prototype._render = function () {
   this._card = root.querySelector('ha-card');
   this._titleEl = root.querySelector('.title');
   this._statusEl = root.querySelector('.status');
+  this._connectionEl = root.querySelector('.connection');
   this._cancelEl = root.querySelector('.cancel');
   this._primaryEl = root.querySelector('.primary');
   this._twoSidedEl = root.querySelector('.two-sided');
@@ -432,6 +598,11 @@ C.prototype._render = function () {
 C.prototype._syncControls = function () {
   if (!this._primaryEl) return;
   this._applyLanguage();
+  this._syncConnection();
+  const offline = this._hass?.connected === false;
+  this._cancelEl.disabled = offline;
+  if (this._backButton) this._backButton.disabled = offline || !!this._resuming;
+  if (this._backOrderEl) this._backOrderEl.disabled = offline || !!this._resuming;
   const locked = !!this._busy || !!this._activeScanId;
   if (!locked && this._pendingSettings) { Object.assign(this._settings, this._pendingSettings); this._pendingSettings = null; }
   if (!locked && this._resetDuplex) {
@@ -445,11 +616,11 @@ C.prototype._syncControls = function () {
     ? activeMode === 'manual' || activeMode === 'automatic' : !!this._duplex;
   const downloading = this._completedScan && this._downloadRequest === this._completedScan;
   this._twoSidedEl.disabled = locked || !!this._completedScan;
-  this._primaryEl.disabled = locked || !!downloading;
+  this._primaryEl.disabled = locked || !!downloading || offline;
   this._primaryEl.hidden = !!this._showCancel;
   this._primaryEl.textContent = this._busy ? this._t('action.starting') : downloading ? this._t('action.downloading')
     : this._completedScan ? this._t('action.download') : this._t('action.scan');
-  this._syncOptions(locked || !!this._completedScan);
+  this._syncOptions(locked || !!this._completedScan || offline);
   if (!locked && !this._completedScan && this._settingsError) this._primaryEl.disabled = true;
   if (this._showingIdle) setText(this._statusEl, this._idleStatus());
 };
@@ -468,6 +639,7 @@ C.prototype._idleStatus = function () {
 // Read only when the two-sided option is relevant. Cache per selected sensor,
 // coalesce hass pushes, and retry unknown/older backends without blocking Scan.
 C.prototype._refreshCapabilities = function () {
+  if (this._hass?.connected === false) return Promise.resolve();
   if (this._capabilityRequest && !this._capabilityRequest.signal.aborted) return this._capabilityTask;
   this._capabilityTask = this._fetchCapabilities();
   return this._capabilityTask;
@@ -526,24 +698,7 @@ C.prototype._apiFetch = function (path, init = {}) {
 C.prototype._setStatus = function (text, cls = '') {
   this._statusMessage = null;
   this._showingIdle = !text;
-  if (typeof text === 'string' && this._statusEl.textContent === (text || this._idleStatus())
-      && this._statusEl.className === 'status' + (cls ? ' ' + cls : '')) return;
-  this._statusEl.textContent = '';
-  if (text instanceof Node) this._statusEl.appendChild(text);
-  else {
-    const message = text || this._idleStatus();
-    const split = cls === 'err' && message.length > 100 ? message.indexOf('. ') : -1;
-    if (split > 0) {
-      const details = document.createElement('details');
-      const summary = document.createElement('summary');
-      summary.textContent = message.slice(0, split + 2);
-      const recovery = document.createElement('div');
-      recovery.textContent = message.slice(split + 2);
-      details.append(summary, recovery);
-      this._statusEl.appendChild(details);
-    } else this._statusEl.textContent = message;
-  }
-  this._statusEl.className = 'status' + (cls ? ' ' + cls : '');
+  renderStatus(this._statusEl, text || this._idleStatus(), cls);
 };
 
 C.prototype._setCancelVisible = function (visible) {
@@ -553,7 +708,12 @@ C.prototype._setCancelVisible = function (visible) {
 };
 
 C.prototype._startScan = async function (overrides) {
-  if (this._busy || this._activeScanId || this._completedScan) return;
+  if (this._busy || this._activeScanId || this._completedScan || this._hass?.connected === false) return;
+  const before = this._scanState();
+  this._lockedScanEntity = before?.entity_id || this._config?.entity || null;
+  const previousId = before?.attributes?.scan_id;
+  const epoch = this._requestEpoch || 0;
+  const currentRequest = () => this.isConnected && epoch === (this._requestEpoch || 0);
   this._busy = true;
   this._backError = null;
   this._reverseBackOrder = false;
@@ -566,7 +726,9 @@ C.prototype._startScan = async function (overrides) {
       await this._refreshCapabilities();
       if (!this._capabilities?.body) throw new Error(this._t('error.settings_load'));
     }
-    const request = overrides || this._scanRequest();
+    if (!currentRequest() || this._hass?.connected === false) return;
+    const request = { ...(overrides || this._scanRequest()) };
+    if (this._lockedScanEntity) request.entity_id = this._lockedScanEntity;
     const resp = await this._apiFetch('/api/escl_scan/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -581,6 +743,9 @@ C.prototype._startScan = async function (overrides) {
     if (typeof body?.scan_id !== 'string' || !body.scan_id) {
       throw new Error(this._t('error.response'));
     }
+    if (!currentRequest()) return;
+    const observedId = this._scanState()?.attributes?.scan_id;
+    if (observedId && observedId !== previousId && observedId !== body.scan_id) return;
     this._activeScanId = body?.scan_id ?? null;
     const src = this._sourceText(body.source);
     const adjusted = body.requested_dpi && body.dpi !== body.requested_dpi
@@ -595,6 +760,7 @@ C.prototype._startScan = async function (overrides) {
     }
     // From here on, the hass setter drives progress via _onHass().
   } catch (err) {
+    if (!currentRequest()) return;
     if (this._activeScanId) {
       this._lastSig = null;
       this._onHass();
@@ -603,69 +769,77 @@ C.prototype._startScan = async function (overrides) {
     }
   } finally {
     this._busy = false;
+    if (!currentRequest()) { this._lastSig = null; this._onHass(); }
     this._card.classList.remove('busy');
     this._syncControls();
   }
 };
 
+C.prototype._scanToken = function () {
+  return JSON.stringify([this._lockedScanEntity || this._scanState()?.entity_id, this._activeScanId, this._requestEpoch || 0]);
+};
 C.prototype._scanBacks = async function () {
   const current = this._scanState();
   const scanId = current?.attributes?.scan_id;
-  if (current?.state !== 'awaiting-back-sides' || !scanId || this._resuming) return;
-  this._resuming = true;
+  const token = this._scanToken();
+  if (current?.state !== 'awaiting-back-sides' || !scanId || this._resuming?.token === token || this._hass?.connected === false) return;
+  const operation = { token };
+  this._resuming = operation;
+  const isCurrent = () => this.isConnected && token === this._scanToken();
   this._backError = null;
   if (this._backButton) this._backButton.disabled = true;
   if (this._backOrderEl) this._backOrderEl.disabled = true;
+  const request = { scan_id: scanId, reverse_back_order: !!this._reverseBackOrder };
+  if (current.entity_id) request.entity_id = current.entity_id;
   try {
     const r = await this._apiFetch('/api/escl_scan/scan_backs', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scan_id: scanId, reverse_back_order: !!this._reverseBackOrder }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
     });
     if (!r.ok) {
       let body = null;
       try { body = await r.json(); } catch {}
-      throw new Error(responseErrorMessage(r, body,
-        this._t('error.backs')));
+      throw new Error(responseErrorMessage(r, body, this._t('error.backs')));
     }
-    if (this._scanState()?.state === 'awaiting-back-sides'
-        && this._activeScanId === scanId) this._setMessage('status.start_backs');
+    if (isCurrent() && this._scanState()?.state === 'awaiting-back-sides') this._setMessage('status.start_backs');
   } catch (err) {
     const st = this._scanState();
-    if (st?.state === 'awaiting-back-sides' && st.attributes?.scan_id === scanId) {
+    if (isCurrent() && st?.state === 'awaiting-back-sides') {
       this._backError = String(err?.message || err);
       this._renderScanState(st.state, st.attributes);
     }
   } finally {
-    this._resuming = false;
-    if (this._backButton) this._backButton.disabled = false;
-    if (this._backOrderEl) this._backOrderEl.disabled = false;
+    if (this._resuming === operation) {
+      this._resuming = null;
+      if (isCurrent()) {
+        if (this._backButton) this._backButton.disabled = this._hass?.connected === false;
+        if (this._backOrderEl) this._backOrderEl.disabled = this._hass?.connected === false;
+      } else { this._lastSig = null; this._onHass(); }
+    }
   }
 };
 
 C.prototype._cancelScan = async function () {
-  if (!this._activeScanId || this._canceling) return;
-  const scanId = this._activeScanId;
-  this._canceling = true;
+  if (!this._activeScanId || this._hass?.connected === false) return;
+  const scanId = this._activeScanId, token = this._scanToken();
+  if (this._canceling?.token === token) return;
+  const operation = { token };
+  this._canceling = operation;
+  const isCurrent = () => this.isConnected && token === this._scanToken();
+  const request = { scan_id: scanId };
+  const entity = this._lockedScanEntity || this._scanState()?.entity_id;
+  if (entity) request.entity_id = entity;
   try {
     const r = await this._apiFetch('/api/escl_scan/cancel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scan_id: scanId }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
     });
-    if (!r.ok) {
-      const body = await r.text();
-      if (this._activeScanId === scanId) {
-        this._setMessage('status.cancel_failed', { error: body.slice(0, 80) }, 'err');
-      }
-      return;
-    }
-    if (this._activeScanId === scanId) this._setMessage('action.canceling');
+    const body = r.ok ? '' : await r.text();
+    if (!isCurrent()) return;
+    if (!r.ok) this._setMessage('status.cancel_failed', { error: body.slice(0, 80) }, 'err');
+    else this._setMessage('action.canceling');
   } catch (err) {
-    if (this._activeScanId === scanId) {
-      this._setMessage('status.cancel_failed', { error: err?.message || err }, 'err');
-    }
+    if (isCurrent()) this._setMessage('status.cancel_failed', { error: err?.message || err }, 'err');
   } finally {
-    this._canceling = false;
+    if (this._canceling === operation) this._canceling = null;
   }
 };
 
@@ -677,7 +851,7 @@ const SCAN_SENSOR = 'sensor.printer_current_scan';
 C.prototype._scanState = function () {
   const states = this._hass?.states;
   if (!states) return null;
-  const id = this._config?.entity;
+  const id = (this._busy || this._activeScanId) && this._lockedScanEntity || this._config?.entity;
   if (id) return states[id] || null;
   if (states[SCAN_SENSOR]) return states[SCAN_SENSOR];
   if (this._sensorId && states[this._sensorId]) return states[this._sensorId];
@@ -707,11 +881,12 @@ C.prototype._clearResultTimer = function () {
 // Called from the hass setter on every state push. Diffs the scan sensor and
 // re-renders only when something meaningful changed.
 C.prototype._onHass = function () {
-  if (!this._rendered) return;
+  if (!this._rendered || !this.isConnected || this._hass?.connected === false) return;
   const st = this._scanState();
   const entity = st?.entity_id || this._config?.entity || null;
   if (this._resultEntity !== entity) {
     this._resultEntity = entity;
+    this._lockedScanEntity = entity;
     this._completedScan = null;
     this._downloadedScanId = null;
     this._capabilityRequest?.abort();
@@ -726,7 +901,7 @@ C.prototype._onHass = function () {
     this._lastSig = null;
     if (!this._busy) {
       this._clearResultTimer();
-      this._setStatus('');
+      this._setMessage('status.unavailable', {}, 'err');
       this._setCancelVisible(false);
     }
     return;
@@ -746,8 +921,11 @@ C.prototype._onHass = function () {
     this._completedScan = null;
     if (this._activeScanId !== sid) {
       this._backError = null;
+      this._resuming = null;
+      this._canceling = null;
       this._reverseBackOrder = false;
     }
+    this._lockedScanEntity = entity;
     this._activeScanId = sid;
     this._clearResultTimer();
     this._renderScanState(state, attrs);
@@ -778,11 +956,13 @@ C.prototype._onHass = function () {
 C.prototype._downloadScan = async function () {
   const result = this._completedScan;
   if (!result || this._busy || this._activeScanId || this._downloadRequest === result) return;
+  const epoch = this._requestEpoch || 0;
+  const currentDownload = () => this.isConnected && epoch === (this._requestEpoch || 0) && this._completedScan === result;
   this._downloadRequest = result;
   this._syncControls();
   try {
     const response = await this._apiFetch(result.url);
-    if (this._completedScan !== result) return;
+    if (!currentDownload()) return;
     if (response.status === 404 || response.status === 410) {
       this._completedScan = null;
       this._downloadedScanId = result.scanId;
@@ -791,7 +971,7 @@ C.prototype._downloadScan = async function () {
     }
     if (!response.ok) throw new Error(this._t('error.retry'));
     const blob = await response.blob();
-    if (this._completedScan !== result) return;
+    if (!currentDownload()) return;
     if (!blob.size || (blob.type && !['application/pdf', 'application/octet-stream'].includes(blob.type))) {
       throw new Error(this._t('error.pdf'));
     }
@@ -811,7 +991,7 @@ C.prototype._downloadScan = async function () {
     this._downloadedScanId = result.scanId;
     this._setStatus('');
   } catch (err) {
-    if (this._completedScan === result) {
+    if (currentDownload()) {
       this._setMessage('status.download_failed', { error: err?.message || this._t('error.retry') }, 'err');
     }
   } finally {
@@ -1024,115 +1204,7 @@ try {
   setTimeout(() => observer.disconnect(), 12_000);
 } catch {}
 
-// Shared document-card option helpers. Keep this small block identical in both cards.
-function optionChoices(select, choices, value) {
-  const signature = JSON.stringify(choices);
-  if (select.dataset.choices !== signature) {
-    select.replaceChildren(...choices.map(([key, label, disabled]) => {
-      const option = document.createElement('option');
-      option.value = String(key); option.textContent = label; option.disabled = !!disabled;
-      return option;
-    }));
-    select.dataset.choices = signature;
-  }
-  select.value = String(value);
-}
-function addOptionField(panel, key, label, type = 'select') {
-  const wrapper = document.createElement('label');
-  wrapper.className = 'option-field';
-  const caption = translatedText(label, {}, panel._hass); wrapper.append(caption);
-  const input = document.createElement(type === 'select' ? 'select' : 'input');
-  input.dataset.option = key;
-  input.setAttribute('aria-describedby', 'options-help');
-  if (type !== 'select') input.type = type;
-  wrapper.append(input); panel.append(wrapper);
-  return input;
-}
-// Let HA own Back navigation, including the Android app's dialog handling.
-// The native panel stays in the card's shadow root to retain its theme/styles.
-const OPTIONS_TAG = `${TAG}-options-dialog`;
-if (!customElements.get(OPTIONS_TAG)) {
-  customElements.define(OPTIONS_TAG, class extends HTMLElement {
-    showDialog(params) {
-      this._open = true;
-      const card = params?.card;
-      this._card = card;
-      // Older HA history entries cannot serialize the live card reference.
-      if (!card) { this.closeDialog(); return; }
-      card._optionsDialog = this;
-      // HA may finish loading the host after navigation or a quick dismissal.
-      if (!card.isConnected || !card._optionsOpen) this.closeDialog();
-    }
-    closeDialog() {
-      if (!this._open) return true;
-      this._open = false;
-      const card = this._card;
-      this._card = null;
-      if (card) {
-        card._optionsDialog = null;
-        card._toggleOptions(false, card.isConnected);
-      }
-      this.dispatchEvent(new CustomEvent('dialog-closed', {
-        bubbles: true, composed: true, detail: { dialog: OPTIONS_TAG },
-      }));
-      return true;
-    }
-  });
-}
-C.prototype._toggleOptions = function (open, restoreFocus = true) {
-  if (!this._optionsPanel || (open && (!this.isConnected || this._optionsOpen))) return;
-  const wasOpen = this._optionsOpen;
-  this._optionsOpen = open;
-  this._optionsPanel.hidden = !open;
-  this._optionsButton.setAttribute('aria-expanded', String(open));
-  if (open) {
-    this._refreshOptions();
-    this._optionsButton.focus();
-    this.dispatchEvent(new CustomEvent('show-dialog', {
-      bubbles: true, composed: true,
-      detail: {
-        dialogTag: OPTIONS_TAG, dialogImport: () => Promise.resolve(),
-        dialogParams: { card: this },
-      },
-    }));
-    if (!this._optionsPanel.open) this._optionsPanel.showModal?.();
-    this._optionsPanel.querySelector('h2')?.focus();
-  } else {
-    this._optionsPanel.close?.();
-    this._optionsDialog?.closeDialog();
-    if (wasOpen && restoreFocus && this.isConnected) this._optionsButton.focus();
-  }
-};
-C.prototype._createOptionsPanel = function () {
-  this._optionsButton = this.shadowRoot.querySelector('.options-button');
-  this._optionsButton[Symbol.for('HA focus target')] = true;
-  const panel = document.createElement('dialog');
-  panel._hass = this._hass;
-  panel.className = 'options'; panel.id = 'options'; panel.hidden = true;
-  panel.setAttribute('aria-labelledby', 'options-heading');
-  const heading = document.createElement('h2'); heading.id = 'options-heading'; heading.tabIndex = -1; heading.autofocus = true;
-  heading.dataset.i18n = 'dialog.title'; heading.textContent = this._t('dialog.title');
-  panel.append(heading); this.shadowRoot.append(panel);
-  panel.addEventListener('cancel', event => { event.preventDefault(); this._toggleOptions(false); });
-  // Native dismissals can close the panel without going through our buttons.
-  panel.addEventListener('close', () => {
-    if (!panel.open) this._toggleOptions(false);
-  });
-  this._optionsPanel = panel;
-  this._optionsButton.addEventListener('click', () => this._toggleOptions(!this._optionsOpen));
-  panel.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); this._toggleOptions(false); }
-  });
-  this._optionHelp = document.createElement('div');
-  this._optionHelp.id = 'options-help'; this._optionHelp.className = 'options-help'; this._optionHelp.setAttribute('aria-live', 'polite');
-  return panel;
-};
-C.prototype._finishOptionsPanel = function () {
-  this._optionsPanel.append(this._optionHelp);
-  const done = document.createElement('button'); done.type = 'button'; done.dataset.i18n = 'action.done'; done.textContent = this._t('action.done');
-  done.addEventListener('click', () => this._toggleOptions(false));
-  this._optionsPanel.append(done);
-};
+
 
 C.prototype._installOptions = function () {
   const panel = this._createOptionsPanel();
@@ -1242,4 +1314,8 @@ C.prototype._scanRequest = function () {
 C.prototype._hasExplicitSettings = function () {
   return this._settings && (this._settings.source !== 'auto' || this._settings.color !== 'default'
     || this._settings.dpi !== 'default' || this._settings.page_size !== 'full');
+};
+
+C.prototype._connectionSnapshot = function () {
+  return this._scanState()?.attributes?.device_connection;
 };
