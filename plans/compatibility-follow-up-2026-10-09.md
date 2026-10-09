@@ -186,3 +186,42 @@ original simplex-for-duplex region bug fails exactly the two relevant new cases
 (full duplex and oversized custom duplex), while the other three region cases
 pass. No tracked runtime file was modified by that check. Hosted checks run on
 the pushed test/documentation commit.
+
+## Scanner control-response hardening — 2026-10-09
+
+The user approved reproducing and fixing scanner response-size gaps, without new
+settings or dependencies. Scope is control replies only. PDF storage safeguards,
+print upload concurrency and additional scanner diagnostics remain proposals.
+
+Four local aiohttp regressions failed against 0.12.1: direct JobInfo accepted a
+valid XML body over 1 MiB; idle recovery accepted oversized Idle status; cleanup
+used that oversized status to delete a fixture's stale job; and scan-start error
+handling read the whole oversized body before truncating the displayed string.
+These are controlled local fixtures, not claims that the HP sent oversized data.
+
+One private asynchronous reader now applies the existing 1 MiB limit to all
+control bodies consumed by the scanner client. It counts decompressed bytes
+during streaming, with no reliance on Content-Length, and runs inside the
+existing response contexts. Main status/capability reads reuse it, eliminating
+their duplicate loops. JobInfo, idle recovery, cleanup status and creation error
+reads use it too. Error details still stop at 200 characters; unknown charsets or
+invalid character data cannot obscure the HTTP failure.
+
+Oversized status cannot confirm Idle or authorize deletion; cleanup remains
+restricted to an idle scanner and skips terminal jobs. HTTP 409 guidance, bounded
+503 recovery, tolerant XML parsing, HP JobInfo fallback, cancellation and retry
+rules remain intact. Successful scan creation still reads Location without
+consuming a response body. Document downloads keep their separate stream path.
+
+Focused checks cover the four original failures, exact 1 MiB acceptance and
+one-byte overflow for fixed, chunked and gzip job replies, unfinished error/job
+bodies, cancellation, and immediate follow-up status using a single connection
+slot. A 2 MiB document still streams intact. Small error responses retain their
+readable charset-aware 200-character detail. All 69 scanner-client tests pass.
+
+Validation: all 268 Python tests and 78 card tests pass (346 total), plus Ruff,
+compileall, npm ci and diff whitespace checks. The patched client also reads
+Idle status, capabilities and an existing terminal job from the actual HP.
+No physical scan/print job was created and no scanner job was deleted. Oversize,
+compression and interrupted-response checks ran only against local fixtures.
+Release and installation results will be recorded below.

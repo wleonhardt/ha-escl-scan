@@ -2,6 +2,13 @@
 
 ## Queue
 
+- Scanner response-size hardening implemented for 0.12.2. Reproduced four
+  unbounded control-body paths; all now share the existing 1 MiB limit.
+  Chunked/gzip boundaries, cancellation, connection release and separate
+  document streaming covered. No new settings/dependencies or retry policy.
+  All 346 tests and live read-only HP checks pass; delivery verification pending.
+  [Validation](compatibility-follow-up-2026-10-09.md#scanner-control-response-hardening--2026-10-09).
+
 - Print settings recovery released/installed as 0.11.3; Scan stays 0.12.1.
   A new explicit submission can make one early transient-failure settings lookup
   after 30 seconds. Failed early checks return to full backoff; no automatic

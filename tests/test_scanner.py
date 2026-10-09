@@ -1,8 +1,11 @@
 """ScannerClient tests against a real local aiohttp server. Covers the P2
 session-reuse fix, chunked streaming integrity, and response release.
 """
+import asyncio
+import gzip
 from unittest.mock import AsyncMock, patch
 
+import aiohttp
 from aiohttp import web
 import pytest
 
@@ -65,12 +68,15 @@ async def scanner(aiohttp_server, socket_enabled):
         backend.create_calls += 1
         backend.settings = await request.read()
         if backend.create_status != 201:
-            return web.Response(status=backend.create_status)
+            return web.Response(status=backend.create_status,
+                                body=getattr(backend, "create_body", b""))
         return web.Response(status=201, headers={"Location": "/eSCL/ScanJobs/j1"})
 
     async def jobinfo(request):
         if backend.jobinfo_404:
             raise web.HTTPNotFound()
+        if hasattr(backend, "jobinfo_body"):
+            return web.Response(body=backend.jobinfo_body)
         return web.Response(
             body=b"<ScanJob><JobState>" + backend.job_state + b"</JobState>"
             b"<ImagesCompleted>1</ImagesCompleted></ScanJob>"
@@ -82,11 +88,12 @@ async def scanner(aiohttp_server, socket_enabled):
             return web.Response(status=backend.next_prelude.pop(0))
         backend.next_calls += 1
         if backend.next_calls == 1:
+            body = getattr(backend, "document_body", VALID_PDF)
             resp = web.StreamResponse(status=200)
             resp.content_type = "application/pdf"
             await resp.prepare(request)
-            for i in range(0, len(VALID_PDF), 64_000):
-                await resp.write(VALID_PDF[i:i + 64_000])
+            for i in range(0, len(body), 64_000):
+                await resp.write(body[i:i + 64_000])
             await resp.write_eof()
             return resp
         raise web.HTTPNotFound()
@@ -474,3 +481,147 @@ async def test_status_rejects_non_protocol_or_oversized_responses(scanner, body)
         await client.get_scanner_status()
     assert backend.create_calls == 0
     assert backend.deleted == []
+
+
+@pytest.mark.parametrize("operation", ["job", "idle", "purge", "create"])
+async def test_control_response_gaps_reject_oversized_bodies(scanner, monkeypatch, operation):
+    # Valid XML plus trailing whitespace exposes unlimited reads, not XML errors.
+    body = (JOBINFO_XML if operation == "job" else
+            b"<ScannerStatus><State>Idle</State><Jobs><JobInfo>"
+            b"<JobUri>/eSCL/ScanJobs/stale</JobUri></JobInfo></Jobs></ScannerStatus>")
+    body += b" " * (1024 * 1024 + 1 - len(body))
+    backend = scanner._backend
+    if operation == "job":
+        backend.jobinfo_body = body
+        with pytest.raises(ValueError, match="1 MiB"):
+            await scanner.get_job_info(_url(scanner))
+    elif operation == "idle":
+        backend.status_body = body
+        monkeypatch.setattr("custom_components.escl_scan.scanner.SCANNER_IDLE_WAIT_SECONDS", 0)
+        assert not await scanner._wait_idle(await scanner._session())
+    elif operation == "purge":
+        backend.status_body = body
+        assert await scanner.purge_active_jobs() == 0
+    else:
+        backend.create_status = 500
+        backend.create_body = body
+        with pytest.raises(ValueError, match="1 MiB"):
+            await scanner.create_job(source="Platen", dpi=300, color="color")
+        assert backend.create_calls == 1
+    assert backend.deleted == []
+
+
+async def test_document_stream_can_exceed_control_response_limit(scanner):
+    body = b"%PDF-1.4\n" + b"z" * (2 * 1024 * 1024) + b"\n%%EOF\n"
+    scanner._backend.document_body = body
+    assert b"".join([part async for part in scanner.iter_next_document(_url(scanner))]) == body
+
+
+@pytest.mark.parametrize("transport", ["fixed", "chunked", "gzip"])
+@pytest.mark.parametrize("extra", [0, 1], ids=["at-limit", "over-limit"])
+async def test_job_response_limit_counts_decompressed_bytes(
+    aiohttp_server, socket_enabled, transport, extra,
+):
+    body = JOBINFO_XML + b" " * (1024 * 1024 + extra - len(JOBINFO_XML))
+
+    async def job(request):
+        if transport == "gzip":
+            compressed = gzip.compress(body)
+            assert len(compressed) < 1024 * 1024
+            return web.Response(body=compressed, headers={"Content-Encoding": "gzip"})
+        if transport == "fixed":
+            return web.Response(body=body)
+        response = web.StreamResponse()
+        await response.prepare(request)
+        for i in range(0, len(body), 8191):
+            await response.write(body[i:i + 8191])
+        await response.write_eof()
+        return response
+
+    app = web.Application()
+    app.router.add_get("/eSCL/ScanJobs/j1", job)
+    server = await aiohttp_server(app)
+    client = ScannerClient(host=server.host, port=server.port, use_tls=False)
+    try:
+        if extra:
+            with pytest.raises(ValueError, match="1 MiB"):
+                await client.get_job_info(_url(client))
+        else:
+            assert (await client.get_job_info(_url(client))).state == "Completed"
+    finally:
+        await client.async_close()
+
+
+@pytest.mark.parametrize("operation", ["job", "create"])
+@pytest.mark.parametrize("outcome", ["overflow", "cancel"])
+async def test_control_read_releases_connection_before_body_finishes(
+    aiohttp_server, socket_enabled, operation, outcome,
+):
+    sent, finish = asyncio.Event(), asyncio.Event()
+    calls = 0
+
+    async def unfinished(request):
+        nonlocal calls
+        calls += 1
+        response = web.StreamResponse(status=500 if operation == "create" else 200)
+        await response.prepare(request)
+        await response.write(b"x" * (1024 * 1024 + 1) if outcome == "overflow" else b"x")
+        sent.set()
+        await finish.wait()  # Client must exit without waiting for EOF.
+        return response
+
+    app = web.Application()
+    app.router.add_route("POST" if operation == "create" else "GET",
+                         "/eSCL/ScanJobs" if operation == "create" else "/eSCL/ScanJobs/j1",
+                         unfinished)
+    app.router.add_get("/eSCL/ScannerStatus", lambda r: web.Response(body=STATUS_XML))
+    server = await aiohttp_server(app)
+    client = ScannerClient(host=server.host, port=server.port, use_tls=False)
+    # A single connection slot exposes leaked responses on the follow-up read.
+    client._session_obj = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=1))
+    task = asyncio.create_task(
+        client.create_job(source="Platen", dpi=300, color="color") if operation == "create"
+        else client.get_job_info(_url(client))
+    )
+    try:
+        await asyncio.wait_for(sent.wait(), 2)
+        if outcome == "cancel":
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            with pytest.raises(ValueError, match="1 MiB"):
+                await asyncio.wait_for(task, 2)
+        assert not finish.is_set()
+        assert (await asyncio.wait_for(client.get_scanner_status(), 2)).is_idle
+        assert calls == 1
+    finally:
+        finish.set()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await client.async_close()
+
+
+@pytest.mark.parametrize(("charset", "body", "expected"), [
+    ("utf-8", "é".encode() * 300, "é" * 200),
+    ("iso-8859-1", b"caf\xe9", "café"),
+    ("unknown-charset", b"failure", "failure"),
+    ("utf-8", b"invalid \xff", "invalid \ufffd"),
+])
+async def test_bounded_create_error_keeps_short_readable_detail(
+    aiohttp_server, socket_enabled, charset, body, expected,
+):
+    async def reject(request):
+        return web.Response(status=500, body=body,
+                            headers={"Content-Type": f"text/plain; charset={charset}"})
+
+    app = web.Application()
+    app.router.add_post("/eSCL/ScanJobs", reject)
+    server = await aiohttp_server(app)
+    client = ScannerClient(host=server.host, port=server.port, use_tls=False)
+    try:
+        with pytest.raises(RuntimeError) as raised:
+            await client.create_job(source="Platen", dpi=300, color="color")
+        assert str(raised.value) == f"scan create failed: 500 {expected}"
+    finally:
+        await client.async_close()

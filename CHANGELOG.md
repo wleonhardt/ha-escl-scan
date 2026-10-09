@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.12.2] - 2026-10-09
+
+### Fixed
+- Apply the existing 1 MiB control-response limit to job status, idle recovery,
+  stale-job status checks and scan-start error bodies. One shared reader checks
+  bytes as they arrive, including decompressed/chunked responses, and releases
+  the connection on overflow or cancellation.
+- Oversized status replies cannot authorize stale-job cleanup. Small scan-start
+  errors retain their short detail, with safe handling of invalid character data.
+  Document streaming, scan settings, dependencies and retry policies are unchanged.
+
 ## [0.12.1] - 2026-10-09
 
 ### Fixed

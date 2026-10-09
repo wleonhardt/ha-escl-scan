@@ -390,6 +390,13 @@ a folder consumer may already have ingested the file.
 
 ## Troubleshooting
 
+Scanner status, capability, job-status and scan-start error replies are limited
+to 1 MiB after decompression. A reply exceeding that limit is rejected as it is
+read; oversized status data cannot authorize stale-job cleanup. This limit
+applies to control replies; scanned documents use the separate streaming path.
+An `exceeds the 1 MiB limit` error usually needs investigation of the device or
+bridge response. No setting is required to enable this protection.
+
 - **Download diagnostics** (device page → ⋮ → *Download diagnostics*) and
   attach it to bug reports: it contains the parsed `ScannerCapabilities`,
   the current/tracked scans, and redacted entry data.

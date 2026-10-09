@@ -36,6 +36,7 @@ TERMINAL_JOB_STATES = {"Completed", "Canceled", "Cancelled", "Aborted"}
 # executor round-trips down on multi-hundred-MB ADF batches, small enough that
 # transient per-chunk memory stays negligible on Pi-class hosts.
 _STREAM_CHUNK = 1024 * 1024
+_MAX_CONTROL_RESPONSE_BYTES = 1024 * 1024
 
 # Per-request timeout overrides on the shared session (which carries a longer
 # default for job creation). Status/poll/delete are quick control calls;
@@ -437,6 +438,20 @@ def _ssl_context(*, verify: bool, relaxed_ciphers: bool) -> ssl.SSLContext:
 # ── Client ──────────────────────────────────────────────────────────────────
 
 
+async def _read_control_response(response: aiohttp.ClientResponse, description: str) -> bytes:
+    """Bound decompressed control data as it arrives, including chunked/gzip replies.
+
+    Call within the response context so overflow and cancellation release it.
+    Document downloads use their separate streaming path.
+    """
+    data = bytearray()
+    async for chunk in response.content.iter_chunked(64 * 1024):
+        if len(data) + len(chunk) > _MAX_CONTROL_RESPONSE_BYTES:
+            raise ValueError(f"{description} response exceeds the 1 MiB limit")
+        data.extend(chunk)
+    return bytes(data)
+
+
 class ScannerClient:
     """eSCL client bound to a single scanner host."""
 
@@ -572,12 +587,7 @@ class ScannerClient:
             f"{self._base}/ScannerStatus", timeout=_SHORT_TIMEOUT
         ) as resp:
             resp.raise_for_status()
-            data = bytearray()
-            async for chunk in resp.content.iter_chunked(64 * 1024):
-                if len(data) + len(chunk) > 1024 * 1024:
-                    raise ValueError("scanner status exceeds the 1 MiB limit")
-                data.extend(chunk)
-            return parse_scanner_status(bytes(data))
+            return parse_scanner_status(await _read_control_response(resp, "scanner status"))
 
     async def get_capabilities(self) -> ScannerCapabilities:
         s = await self._session()
@@ -585,12 +595,9 @@ class ScannerClient:
             f"{self._base}/ScannerCapabilities", timeout=_SHORT_TIMEOUT
         ) as resp:
             resp.raise_for_status()
-            data = bytearray()
-            async for chunk in resp.content.iter_chunked(64 * 1024):
-                if len(data) + len(chunk) > 1024 * 1024:
-                    raise ValueError("scanner capabilities exceed the 1 MiB limit")
-                data.extend(chunk)
-            caps = parse_scanner_capabilities(bytes(data))
+            caps = parse_scanner_capabilities(
+                await _read_control_response(resp, "scanner capabilities")
+            )
             self.quirks = scanner_quirks(caps.make_and_model)
             return caps
 
@@ -651,7 +658,13 @@ class ScannerClient:
                 f"{self._base}/ScanJobs", data=body, headers=headers
             ) as r:
                 loc = r.headers.get("Location")
-                err = None if r.status in (200, 201) else (await r.text())[:200]
+                err = None
+                if r.status not in (200, 201):
+                    data = await _read_control_response(r, f"scan create error ({r.status})")
+                    try:
+                        err = data.decode(r.charset or "utf-8", errors="replace")[:200]
+                    except LookupError:  # Unknown charset must not hide the HTTP error.
+                        err = data.decode("utf-8", errors="replace")[:200]
                 return r.status, loc, err
 
         status, loc, err = await _post()
@@ -701,7 +714,9 @@ class ScannerClient:
                 async with session.get(
                     f"{self._base}/ScannerStatus", timeout=_SHORT_TIMEOUT
                 ) as resp:
-                    if resp.status == 200 and parse_scanner_status(await resp.read()).is_idle:
+                    if resp.status == 200 and parse_scanner_status(
+                        await _read_control_response(resp, "scanner status")
+                    ).is_idle:
                         return True
             except Exception as exc:  # noqa: BLE001 — keep polling until deadline
                 _LOGGER.debug("ScannerStatus poll failed while waiting for idle: %s", exc)
@@ -720,7 +735,7 @@ class ScannerClient:
         async with s.get(job_url, timeout=_SHORT_TIMEOUT) as resp:
             if resp.status != 404:
                 resp.raise_for_status()
-                return parse_job_info(await resp.read())
+                return parse_job_info(await _read_control_response(resp, "scanner job information"))
         status = await self.get_scanner_status()
         return status.job(job_url)
 
@@ -817,7 +832,7 @@ class ScannerClient:
             ) as resp:
                 if resp.status != 200:
                     return 0
-                status = parse_scanner_status(await resp.read())
+                status = parse_scanner_status(await _read_control_response(resp, "scanner status"))
         except Exception:
             return 0
         if not status.is_idle:
