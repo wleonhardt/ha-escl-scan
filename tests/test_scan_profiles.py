@@ -116,3 +116,20 @@ def test_real_redacted_hp_fixture_keeps_native_pdf_and_duplex_independent():
         selected = caps.select_options(source, "color", False, 300)
         assert selected.document_format == "application/pdf" and selected.dpi == 300
         assert selected.format_extension
+
+
+def test_partial_profiles_keep_public_summaries_unknown():
+    from unittest.mock import AsyncMock
+
+    from custom_components.escl_scan.capabilities import capability_snapshot
+    from custom_components.escl_scan.capability_cache import CapabilityCache
+    from custom_components.escl_scan.scan_profiles import SettingProfile
+    from custom_components.escl_scan.scanner import ScannerCapabilities
+    cache = CapabilityCache(AsyncMock())
+    cache.value = ScannerCapabilities(
+        setting_profiles={"Platen": [SettingProfile(colors=("RGB24",), resolutions=(300,)),
+                                     SettingProfile()]},
+        source_resolutions={"Platen": [300]}, source_color_modes={"Platen": ["RGB24"]})
+    profile = capability_snapshot(cache, None)["supported"]["profiles"]["Platen"]
+    assert profile["resolutions"] is None and profile["colors"] is None
+    assert profile["combinations"][0]["resolutions"] == [300]

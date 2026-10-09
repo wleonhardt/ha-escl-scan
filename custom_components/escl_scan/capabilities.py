@@ -24,8 +24,12 @@ def capability_snapshot(cache: CapabilityCache[ScannerCapabilities], entity_id: 
                 "minimum_region": caps.source_min.get(key),
             }
             known = caps.setting_profiles.get(key, [])
-            if known and all(profile.resolutions is not None for profile in known):
-                profiles[key]["resolutions"] = values or []
+            if known:
+                profiles[key]["resolutions"] = (values or []) if all(
+                    profile.resolutions is not None for profile in known) else None
+                profiles[key]["colors"] = [color for color, mode in (
+                    ("color", "RGB24"), ("gray", "Grayscale8")) if mode in (modes or [])] if all(
+                        profile.colors is not None for profile in known) else None
     return {
         "schema_version": 1,
         "domain": DOMAIN,

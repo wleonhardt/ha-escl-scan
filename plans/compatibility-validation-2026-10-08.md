@@ -7,11 +7,11 @@ files or running jobs were changed during this implementation.
 
 ## Automated checks
 
-- Scan: 208 Python tests, 45 card tests; Ruff passes.
-- Print: 206 Python tests, 34 card tests; Ruff and compileall pass.
+- Scan: 209 Python tests, 46 card tests; Ruff passes.
+- Print: 206 Python tests, 35 card tests; Ruff and compileall pass.
 - Both npm dependencies installed with npm ci; JSON/service definitions parse;
   diff whitespace checks clean. Hosted validation is checked on the pushed heads.
-- Total: 493 tests. Fixtures distinguish a redacted live HP capability capture
+- Total: 496 tests. Fixtures distinguish a redacted live HP capability capture
   from synthetic devices. Tests include profile references/ranges/combinations,
   image conversion dimensions and manual-duplex order, conversion cancellation,
   origin/port restrictions, recovery exhaustion/deadlines, IPP collection bounds,
@@ -66,3 +66,10 @@ Retain the existing card/entity IDs and document the actual installed hashes.
 Hosted scan validation caught Pillow redeclaration: it is already a Home Assistant
 core dependency and custom manifests must not list it. Removed the redundant
 requirement and retained conversion tests; no extra dependency installation is needed.
+
+The minimum supported HA 2024.12 already declares Pillow 11.0.0 in its
+[core dependencies](https://github.com/home-assistant/core/blob/2024.12.0/pyproject.toml).
+Browser mobile emulation at 390 px verified both 165 px cards without horizontal
+overflow; the options dialog measured 352 px and also had no horizontal overflow.
+Final outage regressions preserve explicit print settings and permit resetting
+selected scan/print fields to defaults while capabilities are unavailable.

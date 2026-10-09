@@ -23,6 +23,8 @@ match `custom_components/escl_scan/manifest.json`.
 - Add scoped Brother feeder delays, Xerox B205/B215 404/410 recovery and Ricoh
   status-before-load handling with bounded retries. Other devices retain their behavior.
 - Redact filenames, URLs, connection paths and device identities in diagnostics.
+- Keep incomplete capability summaries unknown and allow selected options to reset
+  to defaults during capability outages.
 - Preserve selected profile/format/region across manual duplex passes. Reject
   known incompatible settings and oversized images before consuming paper when possible.
 

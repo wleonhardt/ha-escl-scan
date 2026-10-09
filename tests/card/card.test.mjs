@@ -799,3 +799,12 @@ test('custom scan regions cannot submit missing dimensions; options-only duplex 
   changeOption(win,el,'width','215.9');changeOption(win,el,'height','279.4');
   assert.equal(el._primaryEl.disabled,false);assert.equal(el._scanRequest().height,3300);
 });
+
+test('selected scan options can return to defaults while capabilities are unavailable', async () => {
+  const win=boot(),el=mount(win,{source:'Platen'});
+  const {push,calls}=makeHass(el,{fetchImpl:async()=>jsonResponse({scan_id:'defaults'})});
+  push(SENSOR,'idle');await optionsTick();el._toggleOptions(true);await optionsTick();
+  assert.equal(el._optionFields.source.disabled,false);
+  changeOption(win,el,'source','auto');await el._startScan();
+  assert.deepEqual(JSON.parse(calls.fetch[0].init.body),{duplex:false});
+});

@@ -935,7 +935,8 @@ C.prototype._syncOptions = function (locked) {
   optionChoices(fields.dpi, [['default', 'Integration default'], ...resolutions.map(dpi => [dpi, `${dpi} DPI`])], settings.dpi);
   optionChoices(fields.page_size, [['full','Full scan area'],['letter','Letter'],['a4','A4'],['custom','Custom']], settings.page_size);
   for (const [name, field] of Object.entries(fields)) {
-    field.disabled = locked || !available.includes(name);
+    const defaultValue = ({source:'auto',color:'default',dpi:'default',page_size:'full'})[name];
+    field.disabled = locked || (!available.includes(name) && settings[name] === defaultValue);
     if (name === 'width' || name === 'height') {
       field.closest('label').hidden = settings.page_size !== 'custom';
       field.min = '0.1'; field.step = '0.1';
