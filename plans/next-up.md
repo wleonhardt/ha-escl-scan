@@ -16,7 +16,7 @@
   shared Options dialogs, paper/tray settings and safe diagnostics.
   [Plan and completed items](compatibility-rollout-2026-10-08.md).
   [Validation and remaining physical gates](compatibility-validation-2026-10-08.md).
-  Live test installed scan 0.8.1 / print 0.7.0. Selected-options duplex print
+  Live test installed scan 0.8.1 / print 0.7.1 (including paper-label polish). Selected-options duplex print
   and Letter/grayscale/300 DPI scan/download pass; two-sheet color manual duplex
   verifies 1F,1B,2F,2B upright with matching downloads. Release tags remain.
   User confirmed both new Options dialogs fit and work on the phone.

@@ -1,6 +1,6 @@
 # Compatibility rollout validation
 
-Installed candidates: scan 0.8.1 / print 0.7.0. The live test installed scan 0.8.0
+Installed candidates: scan 0.8.1 / print 0.7.1. The live test installed scan 0.8.0
 first, then fixed a scanner-side 409 explanation in 0.8.1. Release tags remain
 pending physical acceptance. The implementation-only checks below preceded
 installation; live evidence is recorded separately at the end.
@@ -141,3 +141,8 @@ selected scan/print fields to defaults while capabilities are unavailable.
   is empty. Load the pages until the scanner detects them, then try again."
   No document created. Both job sensors returned to idle. The fix is committed
   and pushed, with all six hosted checks green. No release tags created.
+- Phone walkthrough follow-up: print 0.7.1 replaces raw paper keywords with
+  readable names/dimensions, and tidies tray/color labels. Installed by entry
+  reload with no HA restart. All 25 HP paper option values match the advertised
+  keywords; the live 390 px dialog fits without horizontal overflow. Details and
+  rollback path are in the print repository's next-up record.
