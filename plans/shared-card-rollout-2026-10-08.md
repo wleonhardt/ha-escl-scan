@@ -3,8 +3,9 @@
 Status: Phases 1–5 are released and validated. The phone startup registry race
 is patched, and the user confirmed native cards and navigation work. Native
 Tile examples are recommended for new dashboards; existing dashboards remain
-unchanged. A subsequent unsupported image-format error is repaired separately
-in Print 0.10.2. Phase 6 has not started. [Phase 5 validation](shared-card-phase-5-validation.md).
+unchanged. An independently reproduced PNG error-classification bug is repaired
+in Print 0.10.2. The user confirmed their JPEG retry succeeded; the first failure
+remains undiagnosed. Phase 6 has not started. [Phase 5 validation](shared-card-phase-5-validation.md).
 
 Bring scanning and printing onto one Home Assistant visual and interaction
 contract, starting with the visible Two-sided switch selected in the design

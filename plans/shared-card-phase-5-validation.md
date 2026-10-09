@@ -133,10 +133,13 @@ the registry changed at 4.43 seconds, and the new module recovered without a
 manual import or configuration change. Both real native controls rendered with
 no startup exceptions. Temporary candidate files were removed. The user was
 asked to reopen the original preview link, refresh three times and check both
-Options/Back dialogs. That physical retry is still pending.
+Options/Back dialogs. The physical retry result is recorded below.
 
 Physical retry: the user confirmed “Cards and nav look good” on 2026-10-09.
-This closes the Phase 5 phone registration/navigation gate. A subsequent print
-attempt exposed a separate unsupported-format error classification, repaired in
+This closes the Phase 5 phone registration/navigation gate. Investigation of a
+subsequent print failure independently reproduced a PNG error-classification bug,
+repaired in
 [Print 0.10.2](https://github.com/wleonhardt/ha-ipp-print/blob/main/plans/2026-10-09-format-rejection.md).
-That fix does not add image conversion or change the native presentation.
+The user then confirmed their file was JPEG and a retry went through. The cause
+of their initial failure remains unconfirmed; the PNG fix is not evidence for
+that diagnosis. It does not add image conversion or change native presentation.
