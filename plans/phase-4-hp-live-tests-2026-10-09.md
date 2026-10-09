@@ -1,8 +1,8 @@
 # Phase 4 HP live tests — 2026-10-09
 
-Status: in progress; physical print and two-pass scan passed, including
-reload/reconnect and downloaded PDF inspection. HP shutdown detection passed;
-automatic recovery after power-on remains. Starting installed pair: scan 0.10.0 / print 0.9.0.
+Status: complete for the available HP. Physical print, two-pass scan,
+reload/reconnect, downloaded PDF inspection and real power-off/on detection passed.
+Starting installed pair: scan 0.10.0 / print 0.9.0; final pair: scan 0.10.0 / print 0.9.1.
 HP Color LaserJet MFP M283fdw, HA 2026.9.4. The user requested physical tests and
 confirmed Letter paper and a clear output tray.
 
@@ -51,14 +51,14 @@ restart). Backup: `/config/.document-card-backups/before-hp-progress-v091-202610
 Commit: `84b4eb070a4a9513ebd5b17eb6889b09d0e2e39d`. All six hosted checks and the v0.9.1 release workflow pass; the release is published.
 The installed card resource is `/ipp_print/card-90abe4fae503.js`.
 
-## Remaining physical checks
+## Physical acceptance checklist
 
 - [x] Confirm the printed sheets, load fronts, scan them and reach manual-back pause.
 - [x] Refresh the submitting dashboard during that pause; compare same scan ID/count.
 - [x] Briefly disconnect only that browser tab from HA and restore it; same scan recovers.
 - [x] Scan reversed backs, download PDF and inspect page count/order/orientation.
-- [ ] With no job active, user switches HP off/on to validate real unreachable/recovery.
-- [ ] Record completion and leave both integrations idle with no pending test jobs.
+- [x] With no job active, user switches HP off/on to validate real unreachable/recovery.
+- [x] Record completion and leave both integrations idle with no pending test jobs.
 
 No additional print should be sent unless needed and explained. Do not restart
 HA or reload the scan integration while the manual duplex scan is waiting.
@@ -110,6 +110,33 @@ a freshly opened dashboard also loaded both cards with the disconnected state.
 
 While the printer remained off, natural retries at about 13:34:09 and 13:36:12
 UTC still reported unreachable. The advertised retry intervals increased from
-60 to 120 to 240 seconds; the next check is scheduled for 13:40:12 UTC. No
-forced refresh, integration reload, restart or device job was used to advance
-these checks. Power-on recovery is pending the user's readiness confirmation.
+60 to 120 to 240 seconds, scheduling the next check for 13:40:12 UTC.
+
+The user confirmed the HP was back on and ready before that check. The same
+eSCL entity recovered to on at 13:40:12.535 UTC and IPP at 13:40:12.756 UTC.
+Both checks reported reachable with fresh last-success times and reset the next
+check to 60 seconds later. No forced refresh, integration reload, restart or
+device job was used to advance these checks.
+
+Both warnings disappeared automatically, and the native tiles returned to
+Connected. All three open dashboard tabs agreed; the 390 × 844 layout remained
+readable without horizontal overflow. Both job sensors stayed idle throughout
+the shutdown/recovery events; no job was replayed. The submitting card still
+showed Scan after its download, and the untouched observer correctly retained
+its separate Download PDF acknowledgement for the completed four-page result.
+
+## Outcome and limits
+
+The available HP's Phase 4 physical acceptance is complete. The only defect found
+in this run was the provisional print total, fixed and released in print 0.9.1.
+The installed pair has 225 scan Python + 64 scan card + 217 print Python + 54
+print card tests passing (560 total), with the code-release checks recorded above
+and in the original Phase 4 validation. No further code change was needed for
+the real connection tests.
+
+Recovery follows the advertised retry schedule: it is not immediate after
+power-on, and this run exercised a four-minute retry interval. The backend's
+five-minute cap and timeout paths retain automated coverage; they were not
+separately timed in this physical run. Automatic duplex scanner hardware,
+additional vendors/bridges, minimum-HA native feature hosting and fresh physical
+phone/assistive-technology acceptance remain separate coverage limits.

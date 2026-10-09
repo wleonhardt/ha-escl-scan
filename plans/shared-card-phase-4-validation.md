@@ -4,6 +4,14 @@ Released and installed: **scan 0.10.0 / print 0.9.0**. Phase 4 is complete.
 The visible Two-sided layout is preserved. Localization remains translation-ready
 English; additional reviewed languages are still separate work.
 
+Follow-up physical acceptance is complete on the HP: print job 371, a four-page
+manual duplex scan, real browser disconnect/reconnect during the back pause,
+and physical power-off/on detection with automatic recovery. That run found and
+fixed provisional print totals in print 0.9.1; the final installed pair has 560
+tests passing. See the [physical test addendum](phase-4-hp-live-tests-2026-10-09.md)
+for evidence and remaining hardware limits. The original release evidence below
+describes the initial scan 0.10.0 / print 0.9.0 milestone.
+
 ## Implementation and automated evidence
 
 - Scan: 225 Python tests and 64 card tests pass; Ruff passes.

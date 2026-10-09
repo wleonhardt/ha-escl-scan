@@ -1,11 +1,6 @@
 # Next up
 
 ## Queue
-- Active: user-requested HP Phase 4 physical tests. Print job 371 and scan
-  `a49d87b88844` passed, including real reconnect and the four-page PDF. Both
-  jobs are idle; shutdown detection passed, automatic power-on recovery remains.
-  [Live-test record](phase-4-hp-live-tests-2026-10-09.md).
-  Print 0.9.1 fixes provisional progress totals found in that job.
 - Next implementation: Phase 5 native Tile and optional Mushroom features.
   Verify minimum/current HA host support and Android registration before
   promoting the native examples; keep standalone cards supported.
@@ -29,6 +24,13 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-10-09 — HP Phase 4 physical acceptance passed: print job 371, manual
+  duplex scan `a49d87b88844`, reload and real browser reconnect during the back
+  pause, four-page PDF order/orientation/hash checks, and real HP shutdown plus
+  automatic recovery. Warnings clear, polling returns to 60 seconds and both jobs
+  remain idle without replay. Print 0.9.1 fixes provisional progress totals found
+  in the real job; final pair is scan 0.10.0 / print 0.9.1, with 560 tests passing.
+  [Live-test record](phase-4-hp-live-tests-2026-10-09.md).
 - 2026-10-09 — Phase 4 released and installed as scan 0.10.0 / print 0.9.0.
   Pushed job recovery, scoped delayed replies, honest counters/outcomes, native
   protocol connection sensors and vendored presentation core v2. Dashboard uses
