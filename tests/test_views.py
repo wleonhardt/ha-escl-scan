@@ -186,3 +186,27 @@ async def test_explicit_registered_sensor_routes_start(hass, api):
     response = await http.post("/api/escl_scan/start", json={"entity_id": sensors[0].entity_id})
     assert response.status == 200
     assert coord.get((await response.json())["scan_id"]) is not None
+
+
+async def test_restored_file_is_available_to_non_admin_but_requires_login(
+    hass, hass_read_only_access_token, hass_client_no_auth, api,
+):
+    from custom_components.escl_scan.results import LatestScan
+
+    http, _, coord = api
+    scan = await coord.start_scan()
+    await coord._driver_tasks[scan.scan_id]
+    await coord.latest.async_close()
+    coord.latest = LatestScan(hass, coord._storage, coord._file_ttl,
+                             next(iter(hass.data[DOMAIN])))
+    await coord.latest.async_load()
+    coord._scans.clear()
+    coord._current = None
+    url = f"/api/escl_scan/file/{scan.scan_id}"
+    response = await http.get(
+        url, headers={"Authorization": f"Bearer {hass_read_only_access_token}"}
+    )
+    assert response.status == 200
+    assert await response.read() == VALID_PDF
+    anon = await hass_client_no_auth()
+    assert (await anon.get(url)).status == 401

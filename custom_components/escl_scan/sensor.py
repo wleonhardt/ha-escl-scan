@@ -43,6 +43,7 @@ class ScannerScanSensor(SensorEntity):
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = SCAN_STATES
     _attr_should_poll = False
+    _unrecorded_attributes = frozenset({"latest_scan"})
 
     def __init__(self, coordinator: ScanCoordinator, entry_id: str, connection=None) -> None:
         self._connection = connection
@@ -77,6 +78,7 @@ class ScannerScanSensor(SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         scan = self._coord.current
         attrs = {"scan_id": None} if scan is None else scan.to_dict()
+        attrs["latest_scan"] = self._coord.latest.snapshot()
         if self._connection:
             attrs["device_connection"] = self._connection.snapshot()
         return attrs

@@ -32,6 +32,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from .capability_cache import CapabilityCache
 from .const import DOMAIN, EVENT_COMPLETED, EVENT_STATE_CHANGED
+from .results import LatestScan, inspect_file
 from .scanner import (
     DEFAULT_REGION,
     TERMINAL_JOB_STATES,
@@ -362,6 +363,7 @@ class ScanCoordinator:
         rotate_duplex_backs: bool = False,
         file_ttl_seconds: int,
         copy_dir: Path | None = None,
+        entry_id: str | None = None,
     ) -> None:
         self._hass = hass
         self._client = client
@@ -372,6 +374,7 @@ class ScanCoordinator:
         self._rotate_duplex_backs = rotate_duplex_backs
         self._file_ttl = file_ttl_seconds
         self._copy_dir = copy_dir
+        self.latest = LatestScan(hass, storage_dir, file_ttl_seconds, entry_id)
         self._caps: ScannerCapabilities | None = None
         self.capability_cache = CapabilityCache(lambda: self._client.get_capabilities())
         self._scans: dict[str, TrackedScan] = {}
@@ -428,6 +431,26 @@ class ScanCoordinator:
 
     def get(self, scan_id: str) -> TrackedScan | None:
         return self._scans.get(scan_id)
+
+    async def async_download_file(self, scan_id: str) -> tuple[Path, str] | None:
+        """Resolve only confirmed results, enforcing retention between sweeps."""
+        latest = self.latest.snapshot()
+        if latest and latest["scan_id"] == scan_id:
+            if await self.latest.async_reconcile():
+                self._notify()
+            latest = self.latest.snapshot()
+            if latest and latest["scan_id"] == scan_id and latest["availability"] == "available":
+                return self._storage / latest["filename"], latest["filename"]
+            return None
+        scan = self.get(scan_id)
+        if (scan is None or scan.state != STATE_COMPLETED or scan.file_path is None
+                or scan.finished_at is None):
+            return None
+        availability, _ = await self._hass.async_add_executor_job(
+            inspect_file, scan.file_path,
+            scan.finished_at + timedelta(seconds=self._file_ttl), self._file_ttl,
+        )
+        return (scan.file_path, scan.filename) if availability == "available" else None
 
     def register_update_listener(self, cb: Callable[[], None]) -> Callable[[], None]:
         self._update_listeners.append(cb)
@@ -632,6 +655,7 @@ class ScanCoordinator:
         self._driver_tasks.clear()
         self._hold_tasks.clear()
         self._purge_tasks.clear()
+        await self.latest.async_close()
         await self.capability_cache.async_close()
         try:
             await self._client.async_close()
@@ -741,6 +765,8 @@ class ScanCoordinator:
                         "scan %s: copy to %s failed: %s", scan.scan_id, self._copy_dir, exc
                     )
             self._mark_terminal(scan, final_state, final_reasons, error=None)
+            if await self.latest.async_reconcile():
+                self._notify()
         except asyncio.CancelledError:
             if not scan.is_terminal():
                 raise
@@ -1033,6 +1059,7 @@ class ScanCoordinator:
         scan.state_reasons = reasons
         scan.error = error
         scan.finished_at = datetime.now(UTC)
+        self.latest.completed(scan)
         _LOGGER.info(
             "scan %s reached terminal state %s (%s)",
             scan.scan_id, state, reasons or error or "no reason",
@@ -1100,6 +1127,8 @@ class ScanCoordinator:
                     return
                 deleted = await self._file_job(self._ensure_storage_and_purge)
                 self._reap_tracked(deleted)
+                if await self.latest.async_reconcile():
+                    self._notify()
         finally:
             self._purge_tasks.discard(task)
 

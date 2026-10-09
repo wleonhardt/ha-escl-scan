@@ -17,6 +17,7 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .capabilities import capability_snapshot
@@ -50,6 +51,7 @@ from .const import (
     STORAGE_SUBDIR,
 )
 from .coordinator import ScanBusyError, ScanCoordinator
+from .results import STORAGE_VERSION, store_key
 from .scanner import ScannerClient
 from .services import async_register_services
 
@@ -110,6 +112,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ),
         file_ttl_seconds=data.get(CONF_FILE_TTL, DEFAULT_FILE_TTL),
         copy_dir=copy_dir,
+        entry_id=entry.entry_id,
     )
     connection = DeviceConnection(hass, client.get_scanner_status, DOMAIN)
 
@@ -121,6 +124,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         # Best-effort: setup must succeed when the scanner is asleep/offline.
         await coordinator.async_refresh_capabilities()
+        await coordinator.latest.async_load()
+        await coordinator.async_purge_now()
         hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN][entry.entry_id] = {
             "client": client,
@@ -198,6 +203,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the entry when its options are saved."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Forget result metadata when its configured scanner is removed."""
+    await Store(hass, STORAGE_VERSION, store_key(entry.entry_id)).async_remove()
 
 
 async def _sync_lovelace_resources(hass: HomeAssistant) -> None:
@@ -511,22 +521,23 @@ class ScanFileView(HomeAssistantView):
         #   404 — scan_id unknown OR file already TTL-purged from disk
         #   409 — scan_id valid but not ready (in progress, canceled,
         #         failed: anything not 'completed')
-        if scan is None:
+        latest = coord.latest.snapshot()
+        if scan is None and (not latest or latest["scan_id"] != scan_id):
             return self.json_message("not found", status_code=404)
-        if scan.state != "completed":
+        if scan is not None and scan.state != "completed":
             return self.json_message(
                 f"scan not ready (state={scan.state})", status_code=409,
             )
-        if scan.file_path is None or not await self._hass.async_add_executor_job(
-            scan.file_path.is_file
-        ):
+        result = await coord.async_download_file(scan_id)
+        if result is None:
             return self.json_message(
                 "file expired or missing on disk", status_code=404,
             )
         return web.FileResponse(
-            scan.file_path,
+            result[0],
             headers={
                 "Content-Type": "application/pdf",
-                "Content-Disposition": f'inline; filename="{scan.filename}"',
+                "Content-Disposition": f'inline; filename="{result[1]}"',
+                "Cache-Control": "private, no-store",
             },
         )
