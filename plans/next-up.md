@@ -2,12 +2,14 @@
 
 ## Queue
 
-- Recommended next: a bounded compatibility diagnostics/fixture pass. Audit
-  the existing Download diagnostics output for useful, redacted failure categories
-  and request stages, starting with the unresolved JPEG settings lookup. Turn
-  actual device reports/captures into regressions before adding workarounds.
-  Existing report forms and cards are sufficient; this is a proposed focus,
-  not approval for new runtime features. See the
+- JPEG diagnostic task approved, released and installed as Print 0.11.2; Scan
+  stays 0.12.1. All 316 Print tests and hosted/release checks pass. The real HP
+  JPEG query and normal diagnostics download pass without a print job. Failure
+  evidence survives a successful retry in isolated tests; the historical cause
+  remains unknown. [Print validation](https://github.com/wleonhardt/ha-ipp-print/blob/main/plans/2026-10-09-jpeg-diagnostics.md).
+  Recommended next: turn actual device reports/captures into regressions before
+  adding workarounds, using the existing report forms. Multiple-scanner support
+  remains deferred. See the
   [scope decision](decisions/2026-10-08-compatibility-follow-ons.md).
 
 - Native cards promoted to the main Printer dashboard at the user's request;

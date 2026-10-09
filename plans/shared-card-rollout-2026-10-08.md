@@ -1,7 +1,7 @@
 # Shared scan and print card rollout plan
 
-Status: Phases 0–6 are complete. Current pair: scan 0.12.1 / print 0.11.1,
-including the subsequent discovery/card-mod compatibility fixes.
+Status: Phases 0–6 are complete. Current pair: scan 0.12.1 / print 0.11.2,
+including discovery/card-mod fixes and the later JPEG diagnostics improvement.
 HP scan/print, refresh/restart retention and physical phone acceptance passed.
 The approved native cards were promoted to the main Printer dashboard on
 2026-10-09 at the user's request, retaining connection tiles and navigation.

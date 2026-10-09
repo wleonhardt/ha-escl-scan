@@ -21,7 +21,13 @@ The user confirmed the main dashboard looks good and explicitly chose to keep
 multiple-scanner support in the backlog to avoid unnecessary complexity.
 Compatibility with other device models can progress independently.
 
-Recommended next work, pending implementation selection:
+The user subsequently approved the first task below: improve JPEG failure
+diagnostics with no new settings or dependencies. The Print implementation and
+validation are recorded in its
+[JPEG diagnostics plan](https://github.com/wleonhardt/ha-ipp-print/blob/main/plans/2026-10-09-jpeg-diagnostics.md).
+The remaining device-report work is still a recommendation.
+
+Work order:
 
 1. Audit existing diagnostic downloads for the minimum useful failure evidence:
    operation stage, bounded error category/status, capability freshness and
