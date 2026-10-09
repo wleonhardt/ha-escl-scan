@@ -12,7 +12,8 @@ from .const import CONF_COPY_DIR, CONF_HOST, CONF_PASSWORD, CONF_USER, DOMAIN
 
 TO_REDACT = {
     CONF_HOST, CONF_PASSWORD, CONF_USER, CONF_COPY_DIR, "unique_id",
-    "serial_number", "uuid", "file_path", "copied_to", "error",
+    "serial_number", "uuid", "discovery_uuid", "file_path", "copied_to", "error",
+    "filename", "file_url", "base_path",
 }
 
 
@@ -29,6 +30,7 @@ async def async_get_config_entry_diagnostics(
             TO_REDACT,
         ),
         "capabilities": asdict(caps) if caps else None,
+        "applied_quirks": list(getattr(entry_data.get("client"), "quirks", ())),
         "current_scan": (
             coordinator.current.to_dict() if coordinator and coordinator.current else None
         ),

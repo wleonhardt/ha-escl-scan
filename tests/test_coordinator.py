@@ -979,3 +979,86 @@ async def test_capability_refresh_cannot_change_region_between_manual_passes(mak
     await _drive(coord, scan)
     assert scan.state == "completed"
     assert client.create_kwargs["height"] == 3300
+
+
+def image_bytes(width, fmt):
+    from PIL import Image
+    stream = io.BytesIO()
+    with Image.new("RGB", (width, 100), "white") as image:
+        image.save(stream, fmt)
+    return stream.getvalue()
+
+
+@pytest.mark.parametrize("fmt,mime", [("JPEG", "image/jpeg"), ("PNG", "image/png")])
+async def test_image_manual_duplex_freezes_format_and_orders_pages(make_coord, fmt, mime):
+    from pypdf import PdfReader
+
+    from custom_components.escl_scan.scan_profiles import SettingProfile
+
+    class ImageClient(TwoPassClient):
+        async def create_job(self, **kwargs):
+            self.create_calls += 1
+            self.create_kwargs = kwargs
+            self._docs = [[page] for page in self.passes.pop(0)]
+            return f"https://scanner/eSCL/ScanJobs/j{self.create_calls}"
+
+    client = ImageClient([image_bytes(100, fmt), image_bytes(200, fmt)],
+                         [image_bytes(400, fmt), image_bytes(300, fmt)])
+    client.caps.setting_profiles = {"Feeder": [SettingProfile(formats=(mime,), resolutions=(300,))]}
+    coord = make_coord(client)
+    scan = await coord.start_scan(duplex=True, page_size="letter")
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
+    assert scan.document_format == mime and not scan.file_path.exists()
+    first = dict(client.create_kwargs)
+    # A capability refresh cannot change an already accepted two-pass job.
+    client.caps.setting_profiles["Feeder"] = [SettingProfile(formats=("application/pdf",))]
+    await coord.async_scan_backs(scan.scan_id, reverse_back_order=True)
+    await _drive(coord, scan)
+    assert scan.state == "completed" and scan.pages_done == 4
+    assert client.create_kwargs == first
+    assert [float(page.mediabox.width) for page in PdfReader(scan.file_path).pages] == [24,72,48,96]
+
+
+async def test_image_pixel_budget_rejects_before_consuming_paper(make_coord):
+    from custom_components.escl_scan.scan_profiles import SettingProfile
+    caps = ScannerCapabilities(
+        setting_profiles={"Platen": [SettingProfile(formats=("image/png",))]})
+    client = FakeClient(caps=caps)
+    with pytest.raises(ValueError, match="40 megapixels"):
+        await make_coord(client).start_scan(source="Platen", dpi=1200)
+    assert client.create_kwargs is None
+
+
+async def test_cancel_during_image_conversion_waits_for_cleanup(make_coord, monkeypatch):
+    import threading
+
+    from custom_components.escl_scan.coordinator import _PdfFileWriter
+    from custom_components.escl_scan.scan_profiles import SettingProfile
+    entered, release = threading.Event(), threading.Event()
+    original = _PdfFileWriter.convert_image
+    def convert(writer, mime, dpi):
+        entered.set()
+        assert release.wait(3)
+        original(writer, mime, dpi)
+    monkeypatch.setattr(_PdfFileWriter, "convert_image", convert)
+    caps = ScannerCapabilities(
+        setting_profiles={"Platen": [SettingProfile(formats=("image/png",))]})
+    coord = make_coord(FakeClient(docs=[[image_bytes(100, "PNG")]], caps=caps))
+    scan = await coord.start_scan()
+    try:
+        await _wait_for(entered.is_set)
+        task = asyncio.create_task(coord.async_cancel(scan.scan_id))
+        await asyncio.sleep(0)
+        release.set()
+        await task
+        await _drive(coord, scan)
+        assert scan.state == "canceled" and not list(coord._storage.iterdir())
+    finally:
+        release.set()
+
+
+async def test_explicit_duplex_never_silently_scans_glass(make_coord):
+    client = FakeClient(source="Platen")
+    with pytest.raises(ValueError, match="requires the feeder"):
+        await make_coord(client).start_scan(duplex=True)
+    assert client.create_kwargs is None

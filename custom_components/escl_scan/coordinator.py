@@ -75,6 +75,10 @@ class ScanBusyError(RuntimeError):
     """Raised by start_scan when a scan is already in progress."""
 
 
+MAX_IMAGE_BYTES = 50 * 1024 * 1024
+MAX_IMAGE_PIXELS = 40_000_000
+
+
 class _PdfFileWriter:
     """Streams scan bytes to a scratch file, capturing the head/tail needed
     for PDF validation without re-reading the file.
@@ -125,6 +129,36 @@ class _PdfFileWriter:
             self._tmp.unlink()
         except OSError:
             pass
+
+    def convert_image(self, document_format: str, dpi: int) -> None:
+        """Decode one bounded image and replace scratch with a PDF, in executor."""
+        from PIL import Image
+
+        dest = self._tmp.with_name(self._tmp.name + ".image-pdf")
+        try:
+            with Image.open(self._tmp) as source:
+                expected = {"image/jpeg": "JPEG", "image/png": "PNG"}[document_format]
+                if source.format != expected or getattr(source, "n_frames", 1) != 1:
+                    raise ValueError("scanner returned an unexpected or multi-frame image")
+                if not 0 < source.width * source.height <= MAX_IMAGE_PIXELS:
+                    raise ValueError("scan image exceeds the 40 megapixel limit; lower the DPI")
+                if "A" in source.getbands() or "transparency" in source.info:
+                    with (source.convert("RGBA") as rgba,
+                          Image.new("RGB", source.size, "white") as rgb):
+                        with rgba.getchannel("A") as alpha:
+                            rgb.paste(rgba, mask=alpha)
+                        rgb.save(dest, "PDF", resolution=dpi)
+                else:
+                    with source.convert("RGB") as rgb:
+                        rgb.save(dest, "PDF", resolution=dpi)
+            dest.replace(self._tmp)
+            self.bytes_written = self._tmp.stat().st_size
+            with self._tmp.open("rb") as stream:
+                self.head = stream.read(8)
+                stream.seek(max(0, self.bytes_written - 1024))
+                self.tail = stream.read(1024)
+        finally:
+            dest.unlink(missing_ok=True)
 
 
 def _safe_unlink(path: Path) -> None:
@@ -251,6 +285,11 @@ class TrackedScan:
     color: str
     submitted_at: datetime
     region: tuple[int, int] = DEFAULT_REGION
+    offsets: tuple[int, int] = (0, 0)
+    requested_dpi: int | None = None
+    document_format: str = "application/pdf"
+    format_extension: bool = True
+    page_size: str = "full"
     duplex: bool = False
     duplex_mode: str = "simplex"
     scan_phase: str | None = None
@@ -279,6 +318,9 @@ class TrackedScan:
             "scan_id": self.scan_id,
             "source": self.source,
             "dpi": self.dpi,
+            "requested_dpi": self.requested_dpi,
+            "document_format": self.document_format,
+            "page_size": self.page_size,
             "color": self.color,
             "duplex": self.duplex,
             "duplex_mode": self.duplex_mode,
@@ -414,6 +456,9 @@ class ScanCoordinator:
         dpi: int | None = None,
         color: str | None = None,
         duplex: bool | None = None,
+        page_size: str = "full",
+        width: int | None = None,
+        height: int | None = None,
     ) -> TrackedScan:
         """Kick off a scan. Returns the tracked scan immediately; the
         driver task assembles pages in the background.
@@ -429,6 +474,12 @@ class ScanCoordinator:
             raise ValueError("invalid scan color")
         if duplex is not None and type(duplex) is not bool:
             raise ValueError("duplex must be a boolean")
+        if page_size not in ("full", "letter", "a4", "custom"):
+            raise ValueError("invalid page size")
+        if page_size != "custom" and (width is not None or height is not None):
+            raise ValueError("width and height require custom page size")
+        if source == "Platen" and duplex:
+            raise ValueError("two-sided scanning requires the feeder")
         if self._shutting_down:
             raise ScanBusyError("scanner integration is shutting down")
         if self._starting or self._driver_tasks or (
@@ -443,6 +494,8 @@ class ScanCoordinator:
         try:
             caps = await self.async_refresh_capabilities()
             actual_source = source or await self._client.detect_source()
+            if duplex is True and actual_source != "Feeder":
+                raise ValueError("Two-sided scanning requires the feeder; load it or select Feeder")
             actual_dpi = dpi or self._default_dpi
             actual_color = color or self._default_color
             want_duplex = self._default_duplex if duplex is None else duplex
@@ -452,24 +505,34 @@ class ScanCoordinator:
                 and caps is not None and caps.adf_duplex
             )
             manual_duplex = want_duplex and actual_source == "Feeder" and not actual_duplex
-            if caps is not None:
-                caps.validate_options(actual_source, actual_color, actual_duplex)
-            if caps is not None and (
-                snapped := caps.snap_dpi(actual_dpi, actual_source, actual_duplex)
-            ) != actual_dpi:
+            selected = (caps or ScannerCapabilities()).select_options(
+                actual_source, actual_color, actual_duplex, actual_dpi,
+            )
+            if selected.dpi != actual_dpi:
                 _LOGGER.info(
                     "scanner has no %d dpi mode; using nearest supported %d dpi",
-                    actual_dpi, snapped,
+                    actual_dpi, selected.dpi,
                 )
-                actual_dpi = snapped
+            region = (caps or ScannerCapabilities()).select_region(
+                actual_source, actual_duplex, page_size, width, height,
+            )
+            if (selected.document_format != "application/pdf"
+                    and region[0] * region[1] * (selected.dpi / 300) ** 2 > MAX_IMAGE_PIXELS):
+                raise ValueError(
+                    "scan image would exceed 40 megapixels; lower the DPI or page size")
 
             scan_id = uuid.uuid4().hex[:12]
             scan = TrackedScan(
                 scan_id=scan_id,
                 source=actual_source,
-                dpi=actual_dpi,
+                dpi=selected.dpi,
+                requested_dpi=actual_dpi,
+                document_format=selected.document_format,
+                format_extension=selected.format_extension,
+                page_size=page_size,
                 color=actual_color,
-                region=caps.region_for(actual_source, actual_duplex) if caps else DEFAULT_REGION,
+                region=region[:2],
+                offsets=region[2:],
                 duplex=actual_duplex,
                 duplex_mode="manual" if manual_duplex else (
                     "automatic" if actual_duplex else "simplex"
@@ -599,6 +662,8 @@ class ScanCoordinator:
         create = self._hass.loop.create_task(self._client.create_job(
             source=scan.source, dpi=scan.dpi, color=scan.color, duplex=scan.duplex,
             width=region[0], height=region[1],
+            x_offset=scan.offsets[0], y_offset=scan.offsets[1],
+            document_format=scan.document_format, format_extension=scan.format_extension,
         ))
         try:
             scan.job_url = await asyncio.shield(create)
@@ -787,6 +852,9 @@ class ScanCoordinator:
                 try:
                     await self._file_job(writer.open)
                     async for chunk in self._client.iter_next_document(scan.job_url):
+                        if (scan.document_format != "application/pdf"
+                                and writer.bytes_written + len(chunk) > MAX_IMAGE_BYTES):
+                            raise ValueError("scan image exceeds the 50 MiB limit; lower the DPI")
                         got_data = True
                         await self._file_job(writer.write, chunk)
                 finally:
@@ -795,6 +863,8 @@ class ScanCoordinator:
                     await self._file_job(writer.cleanup)
                     parts.pop()
                     break
+                if scan.document_format != "application/pdf":
+                    await self._file_job(writer.convert_image, scan.document_format, scan.dpi)
                 doc_index += 1
                 scan.pages_done = max(scan.pages_done, scan.front_pages + doc_index)
                 scan.last_seen = datetime.now(UTC)

@@ -11,7 +11,11 @@
           "user": "User name (for basic auth, if required)",
           "password": "Password (only if scanner requires basic auth)",
           "verify_tls": "Verify TLS certificate",
-          "relaxed_ciphers": "Allow legacy cipher suites"
+          "relaxed_ciphers": "Allow legacy cipher suites",
+          "base_path": "Scanner resource path"
+        },
+        "data_description": {
+          "base_path": "Usually eSCL. Use the advertised resource path for a bridge or proxy; enter / for the server root."
         }
       },
       "zeroconf_confirm": {
@@ -45,11 +49,13 @@
           "default_duplex": "Scan both sides by default (automatic or manual)",
           "rotate_duplex_backs": "Rotate scanned back sides 180 degrees",
           "file_ttl_seconds": "Scanned file retention (seconds before purge)",
-          "copy_to_dir": "Also copy finished scans to this folder (optional)"
+          "copy_to_dir": "Also copy finished scans to this folder (optional)",
+          "base_path": "Scanner resource path"
         },
         "data_description": {
           "copy_to_dir": "Absolute path, e.g. a Paperless consume folder. Must be listed under allowlist_external_dirs in configuration.yaml. Leave empty to disable.",
-          "file_ttl_seconds": "Scans older than this are deleted from the integration's own storage. Copies made to the folder above are never deleted."
+          "file_ttl_seconds": "Scans older than this are deleted from the integration's own storage. Copies made to the folder above are never deleted.",
+          "base_path": "Usually eSCL. Use the advertised resource path for a bridge or proxy; enter / for the server root."
         }
       }
     },
@@ -100,6 +106,18 @@
         "duplex": {
           "name": "Duplex",
           "description": "Scan both sides using automatic duplex if advertised; otherwise pause for a manual back-side pass (Feeder only)."
+        },
+        "page_size": {
+          "name": "Page size",
+          "description": "Full scan area, Letter, A4 or custom dimensions."
+        },
+        "width": {
+          "name": "Custom width",
+          "description": "Width in units of 1/300 inch; requires custom page size."
+        },
+        "height": {
+          "name": "Custom height",
+          "description": "Height in units of 1/300 inch; requires custom page size."
         }
       }
     },

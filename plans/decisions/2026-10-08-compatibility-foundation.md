@@ -26,3 +26,13 @@ Accepted during the user-authorized compatibility rollout, 2026-10-08.
   host-rewriting or security downgrades are not enabled.
 - Default paper remains the explicit HP sides workaround; ready paper is separate
   metadata. Existing omitted-field submissions retain device-default semantics.
+
+Implementation evidence: routine HP media-col-database requests returned 938,053
+bytes and could not complete inside the per-read budget. Query media/source
+keywords and the small default collection instead; retain full collection parsing
+for received data and targeted future diagnostics. Validate tray/paper together.
+
+Single-scanner enforcement moves into the flow so discovery can reconcile saved
+or live UUID evidence before rejecting a second scanner. This is not multi-scanner
+support. Existing unique/entity IDs remain unchanged. Different print queue paths
+are distinct even if a server repeats its UUID.

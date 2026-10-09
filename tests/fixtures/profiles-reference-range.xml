@@ -1,0 +1,11 @@
+<!-- Synthetic regression: named profiles and intersecting stepped ranges. -->
+<ScannerCapabilities>
+  <SettingProfiles><SettingProfile name="shared">
+    <ColorMode>RGB24</ColorMode><DocumentFormat>image/jpeg</DocumentFormat>
+    <SupportedResolutions><ResolutionRange>
+      <XResolutionRange><Min>100</Min><Max>600</Max><Step>100</Step></XResolutionRange>
+      <YResolutionRange><Min>200</Min><Max>500</Max><Step>100</Step></YResolutionRange>
+    </ResolutionRange></SupportedResolutions>
+  </SettingProfile></SettingProfiles>
+  <PlatenInputCaps><SettingProfiles><SettingProfile ref="shared"/></SettingProfiles></PlatenInputCaps>
+</ScannerCapabilities>

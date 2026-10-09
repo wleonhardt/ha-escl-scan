@@ -25,6 +25,8 @@ from xml.etree import ElementTree as ET
 import aiohttp
 from yarl import URL
 
+from .scan_profiles import ScanSelection, SettingProfile, parse_profiles, select_profile
+
 _LOGGER = logging.getLogger(__name__)
 
 # Terminal job states (eSCL JobInfo/JobState).
@@ -52,13 +54,28 @@ NEXT_DOCUMENT_RETRY_SECONDS = 900.0
 SCANNER_IDLE_WAIT_SECONDS = 15.0
 
 
+def scanner_quirks(model: str | None) -> tuple[str, ...]:
+    """Evidence: sane-airscan airscan-escl.c; keep unrelated devices unchanged.
+
+    Firmware versions are unavailable in these upstream reports. Policies are
+    bounded and fixture-tested; they are not physical certification of models.
+    """
+    model = (model or "").strip().casefold()
+    if model in ("b205", "b215", "xerox b205", "xerox b215"):
+        return ("retry_missing_document",)
+    if model.startswith("brother "):
+        return ("next_page_delay",)
+    if model in ("ricoh", "ricoh sp c261sfnw"):
+        return ("status_before_load",)
+    return ()
+
+
 # ── ScanSettings XML template ────────────────────────────────────────────────
 #
 # Region units are 1/300". The coordinator passes the source's MaxWidth /
 # MaxHeight from ScannerCapabilities so the full bed is scanned whatever the
-# paper size. When capabilities are unavailable we fall back to A4-ish
-# 2550 x 3508 (Letter width, A4 height) — scanners clamp oversize regions
-# down to the bed, but never grow a too-small one, so erring large is safe.
+# paper size. Unknown dimensions retain the legacy Letter-width/A4-height
+# region below. Firmware may reject this if it exceeds the actual scan area.
 DEFAULT_REGION = (2550, 3508)
 
 _SCAN_SETTINGS_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -70,13 +87,13 @@ _SCAN_SETTINGS_XML = """<?xml version="1.0" encoding="UTF-8"?>
     <pwg:ScanRegion>
       <pwg:Height>{height}</pwg:Height>
       <pwg:Width>{width}</pwg:Width>
-      <pwg:XOffset>0</pwg:XOffset>
-      <pwg:YOffset>0</pwg:YOffset>
+      <pwg:XOffset>{x_offset}</pwg:XOffset>
+      <pwg:YOffset>{y_offset}</pwg:YOffset>
       <pwg:ContentRegionUnits>escl:ThreeHundredthsOfInches</pwg:ContentRegionUnits>
     </pwg:ScanRegion>
   </pwg:ScanRegions>
   <pwg:InputSource>{source}</pwg:InputSource>
-  <scan:DocumentFormatExt>{format}</scan:DocumentFormatExt>
+  <pwg:DocumentFormat>{format}</pwg:DocumentFormat>{format_extension}
   <scan:XResolution>{dpi}</scan:XResolution>
   <scan:YResolution>{dpi}</scan:YResolution>
   <scan:ColorMode>{color}</scan:ColorMode>{duplex}
@@ -145,6 +162,44 @@ class ScannerCapabilities:
     source_color_modes: dict[str, list[str]] = field(default_factory=dict)
     sources: list[str] = field(default_factory=list)
     adf_duplex_known: bool = False
+    setting_profiles: dict[str, list[SettingProfile]] = field(default_factory=dict)
+    source_min: dict[str, tuple[int, int]] = field(default_factory=dict)
+    adf_alignment: tuple[str, str] = ("Left", "Top")
+
+    def select_options(self, source: str, color: str, duplex: bool, dpi: int) -> ScanSelection:
+        self.validate_options(source, color, duplex)
+        key = "FeederDuplex" if source == "Feeder" and duplex else source
+        profiles = self.setting_profiles.get(key)
+        if profiles is None:
+            return ScanSelection(self.snap_dpi(dpi, source, duplex), "application/pdf", True)
+        return select_profile(profiles, color, dpi)
+
+    def select_region(
+        self, source: str, duplex: bool, page_size: str,
+        width: int | None = None, height: int | None = None,
+    ) -> tuple[int, int, int, int]:
+        """Return dimensions and offsets in 1/300 inch units."""
+        maximum = self.region_for(source, duplex)
+        key = "FeederDuplex" if source == "Feeder" and duplex else source
+        if page_size == "full":
+            width, height = maximum
+        elif page_size == "letter":
+            width, height = 2550, 3300
+        elif page_size == "a4":
+            width, height = 2480, 3508
+        elif page_size != "custom":
+            raise ValueError("invalid page size")
+        minimum = self.source_min.get(key, (1, 1))
+        if (type(width) is not int or type(height) is not int
+                or not minimum[0] <= width <= maximum[0]
+                or not minimum[1] <= height <= maximum[1]):
+            raise ValueError("page size is outside the scanner source's supported area")
+        x, y = self.adf_alignment if source == "Feeder" else ("Left", "Top")
+        x_offset = (maximum[0] - width) // 2 if x == "Center" else (
+            maximum[0] - width if x == "Right" else 0)
+        y_offset = (maximum[1] - height) // 2 if y == "Center" else (
+            maximum[1] - height if y == "Bottom" else 0)
+        return width, height, x_offset, y_offset
 
     @property
     def device_id(self) -> str | None:
@@ -173,7 +228,9 @@ class ScannerCapabilities:
             raise ValueError(f"scanner does not support source={source}")
         key = "FeederDuplex" if source == "Feeder" and duplex else source
         modes = self.source_color_modes.get(key, [])
-        if modes and _color_mode(color) not in modes:
+        profiles = self.setting_profiles.get(key, [])
+        if (modes and _color_mode(color) not in modes
+                and not any(profile.colors is None for profile in profiles)):
             raise ValueError(f"scanner does not support color={color} for {key}")
 
 
@@ -273,16 +330,23 @@ def parse_scanner_capabilities(xml: bytes) -> ScannerCapabilities:
 
     source_resolutions = {}
     source_color_modes = {}
+    setting_profiles = {}
+    source_min = {}
     for source, name in (
         ("Platen", "PlatenInputCaps"), ("Feeder", "AdfSimplexInputCaps"),
         ("FeederDuplex", "AdfDuplexInputCaps"),
     ):
         if (node := _find_local(root, name)) is not None:
-            source_resolutions[source] = _resolutions(node)
+            profiles = setting_profiles[source] = parse_profiles(root, node)
+            source_resolutions[source] = sorted({dpi for profile in profiles
+                                                for dpi in profile.resolutions or ()})
             source_color_modes[source] = list(dict.fromkeys(
-                mode for el in node.iter() if _local(el.tag) == "ColorMode"
-                and (mode := _text(el))
+                mode for profile in profiles for mode in profile.colors or ()
             ))
+            w = _int(_text(_find_local(node, "MinWidth")))
+            h = _int(_text(_find_local(node, "MinHeight")))
+            if w and h and w > 0 and h > 0:
+                source_min[source] = (w, h)
     color_modes: list[str] = []
     for el in root.iter():
         if _local(el.tag) == "ColorMode" and (t := _text(el)) and t not in color_modes:
@@ -302,6 +366,12 @@ def parse_scanner_capabilities(xml: bytes) -> ScannerCapabilities:
         sources=(["Platen"] if "Platen" in source_resolutions else [])
         + (["Feeder"] if adf is not None else []),
         adf_duplex_known=adf is not None,
+        setting_profiles=setting_profiles,
+        source_min=source_min,
+        adf_alignment=(
+            _text(_find_local(adf, "XImagePosition")) or "Left",
+            _text(_find_local(adf, "YImagePosition")) or "Top",
+        ) if adf is not None else ("Left", "Top"),
     )
 
 
@@ -389,7 +459,7 @@ class ScannerClient:
         self._default_timeout = aiohttp.ClientTimeout(total=timeout)
         scheme = "https" if use_tls else "http"
         self._origin = str(URL.build(scheme=scheme, host=host.strip("[]"), port=port))
-        self._base = f"{self._origin}/{base_path.strip('/')}"
+        self._base = f"{self._origin}/{base_path.strip('/')}".rstrip("/")
         # Built once, lazily, and reused across every request — a fresh
         # session/connector/SSL context per call meant a TLS handshake and a
         # CA-bundle read on every 1.5s poll. Guarded so concurrent first-use
@@ -397,6 +467,9 @@ class ScannerClient:
         self._ssl_ctx: ssl.SSLContext | None = None
         self._session_obj: aiohttp.ClientSession | None = None
         self._session_lock = asyncio.Lock()
+        self.quirks: tuple[str, ...] = ()
+        self._feeder_job = False
+        self._next_page_at = 0.0
 
     @property
     def host(self) -> str:
@@ -508,7 +581,9 @@ class ScannerClient:
                 if len(data) + len(chunk) > 1024 * 1024:
                     raise ValueError("scanner capabilities exceed the 1 MiB limit")
                 data.extend(chunk)
-            return parse_scanner_capabilities(bytes(data))
+            caps = parse_scanner_capabilities(bytes(data))
+            self.quirks = scanner_quirks(caps.make_and_model)
+            return caps
 
     # ── ScanJob lifecycle ───────────────────────────────────────────────
 
@@ -532,6 +607,9 @@ class ScannerClient:
         document_format: str = "application/pdf",
         width: int = DEFAULT_REGION[0],
         height: int = DEFAULT_REGION[1],
+        x_offset: int = 0,
+        y_offset: int = 0,
+        format_extension: bool = True,
     ) -> str:
         """Create a ScanJob; returns the job's absolute URL.
 
@@ -547,6 +625,11 @@ class ScannerClient:
             format=document_format,
             width=width,
             height=height,
+            x_offset=x_offset,
+            y_offset=y_offset,
+            format_extension=(
+                f"\n  <scan:DocumentFormatExt>{document_format}</scan:DocumentFormatExt>"
+                if format_extension else ""),
             duplex=_DUPLEX_XML if duplex else "",
         ).encode("utf-8")
         headers = {"Content-Type": "text/xml; charset=utf-8"}
@@ -580,6 +663,8 @@ class ScannerClient:
             raise RuntimeError(f"scan create failed: {status} {err or ''}")
         if not loc:
             raise RuntimeError("scan create: no Location header")
+        self._feeder_job = source == "Feeder"
+        self._next_page_at = 0
         return self._absolute(loc)
 
     async def _wait_idle(self, session: aiohttp.ClientSession) -> bool:
@@ -623,7 +708,7 @@ class ScannerClient:
         whether any chunk arrived.
 
         Status code handling before the first chunk:
-          * 404 / 410 — canonical "no more documents". Stop.
+          * 404 / 410 — normally exhausted. Matched Xerox firmware requires status confirmation.
           * 503 — HP returns this in two contradictory ways:
                   (a) the document IS exhausted (signals "done")
                   (b) the next page is still being scanned ("retry me")
@@ -644,16 +729,23 @@ class ScannerClient:
         backoff = 0.5
         job = URL(job_url)
         next_url = job.with_path(job.path.rstrip("/") + "/NextDocument").with_query(job.query)
+        if "status_before_load" in self.quirks:
+            await self.get_scanner_status()
+        if self._feeder_job and "next_page_delay" in self.quirks:
+            await asyncio.sleep(max(0, self._next_page_at - loop.time()))
         while True:
+            started = loop.time()
             async with s.get(
                 next_url, timeout=_STREAM_TIMEOUT
             ) as resp:
                 if resp.status in (404, 410):
-                    return
-                if resp.status not in (500, 503):
+                    if "retry_missing_document" not in self.quirks:
+                        return
+                elif resp.status not in (500, 503):
                     resp.raise_for_status()
                     async for chunk in resp.content.iter_chunked(_STREAM_CHUNK):
                         yield chunk
+                    self._next_page_at = loop.time() + min(1.0, (loop.time() - started) / 2)
                     return
             if not await self._job_still_running(job_url):
                 return
@@ -671,6 +763,12 @@ class ScannerClient:
         except Exception as exc:
             _LOGGER.debug("JobInfo probe during NextDocument retry failed: %s", exc)
             return True
+        if info is None and "retry_missing_document" in self.quirks:
+            try:
+                status = await self.get_scanner_status()
+                return not status.is_idle or status.adf_loaded
+            except Exception:
+                return True
         return info is not None and not info.is_terminal
 
     async def delete_job(self, job_url: str) -> bool:

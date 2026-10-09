@@ -6,6 +6,26 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-08
+
+### Added
+- Match source, color, transfer format and resolution within complete eSCL profiles,
+  including bounded named references and intersecting square resolution ranges.
+- Prefer native PDF; convert advertised JPEG/PNG scans to PDF in executor work
+  with 50 MiB encoded/40 MP decoded limits, physical dimensions and cancellation cleanup.
+- Select full area, Letter, A4 or custom regions with advertised bounds and feeder alignment.
+- Shared Options dialog for source, color, resolution and paper size; optional
+  Two-sided placement inside Options, stable focus and settings frozen during a job.
+- Advanced scanner resource path for software bridges; discovery UUID aliases
+  preserve serial-based IDs across address changes. One scanner remains supported.
+
+### Fixed
+- Add scoped Brother feeder delays, Xerox B205/B215 404/410 recovery and Ricoh
+  status-before-load handling with bounded retries. Other devices retain their behavior.
+- Redact filenames, URLs, connection paths and device identities in diagnostics.
+- Preserve selected profile/format/region across manual duplex passes. Reject
+  known incompatible settings and oversized images before consuming paper when possible.
+
 ## [0.7.1] - 2026-10-08
 
 ### Changed

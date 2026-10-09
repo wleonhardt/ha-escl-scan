@@ -1,6 +1,8 @@
 """ScannerClient tests against a real local aiohttp server. Covers the P2
 session-reuse fix, chunked streaming integrity, and response release.
 """
+from unittest.mock import AsyncMock, patch
+
 from aiohttp import web
 import pytest
 
@@ -58,7 +60,7 @@ async def scanner(aiohttp_server, socket_enabled):
 
     async def create(request):
         backend.create_calls += 1
-        await request.read()
+        backend.settings = await request.read()
         if backend.create_status != 201:
             return web.Response(status=backend.create_status)
         return web.Response(status=201, headers={"Location": "/eSCL/ScanJobs/j1"})
@@ -113,6 +115,35 @@ async def test_session_is_reused(scanner):
     s1 = await scanner._session()
     s2 = await scanner._session()
     assert s1 is s2
+
+
+@pytest.mark.parametrize("status", [404, 410])
+async def test_xerox_transient_missing_document_does_not_end_batch(scanner, status):
+    scanner.quirks = ("retry_missing_document",)
+    scanner._backend.next_prelude = [status]
+    scanner._backend.job_state = b"Processing"
+    with patch("custom_components.escl_scan.scanner.asyncio.sleep", AsyncMock()):
+        url = scanner.base_url + "/ScanJobs/j1"
+        data = b"".join([chunk async for chunk in scanner.iter_next_document(url)])
+    assert data == VALID_PDF
+    scanner._backend.job_state = b"Completed"
+    assert not [chunk async for chunk in scanner.iter_next_document(url)]
+
+
+async def test_xerox_retry_deadline_is_failure_not_partial_success(scanner, monkeypatch):
+    scanner.quirks = ("retry_missing_document",)
+    scanner._backend.next_prelude = [404]
+    scanner._backend.job_state = b"Processing"
+    monkeypatch.setattr("custom_components.escl_scan.scanner.NEXT_DOCUMENT_RETRY_SECONDS", 0)
+    with pytest.raises(TimeoutError):
+        _ = [chunk async for chunk in scanner.iter_next_document(scanner.base_url + "/ScanJobs/j1")]
+
+
+async def test_ricoh_status_probe_precedes_document(scanner):
+    scanner.quirks = ("status_before_load",)
+    with patch.object(scanner, "get_scanner_status", AsyncMock()) as status:
+        _ = [chunk async for chunk in scanner.iter_next_document(scanner.base_url + "/ScanJobs/j1")]
+        status.assert_awaited_once()
 
 
 async def test_status_and_detect_source(scanner):
@@ -360,3 +391,42 @@ async def test_capability_response_is_bounded(aiohttp_server, socket_enabled, ov
             assert (await client.get_capabilities()).make_and_model == "Test"
     finally:
         await client.async_close()
+
+
+async def test_brother_delay_is_feeder_only_and_cancellable(scanner, monkeypatch):
+    import asyncio
+    scanner.quirks = ("next_page_delay",)
+    scanner._next_page_at = asyncio.get_running_loop().time() + 60
+    scanner._feeder_job = False
+    # Glass never incurs the Brother inter-page workaround.
+    assert b"".join([part async for part in scanner.iter_next_document(_url(scanner))]) == VALID_PDF
+    scanner._feeder_job = True
+    scanner._next_page_at = asyncio.get_running_loop().time() + 60
+    waiting = asyncio.Event()
+    async def delay(seconds):
+        assert seconds > 0
+        waiting.set()
+        await asyncio.Event().wait()
+    monkeypatch.setattr("custom_components.escl_scan.scanner.asyncio.sleep", delay)
+    async def consume():
+        return [part async for part in scanner.iter_next_document(_url(scanner))]
+    task = asyncio.create_task(consume())
+    await waiting.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    monkeypatch.undo()
+
+
+@pytest.mark.parametrize("extension", [False, True])
+async def test_scan_ticket_uses_standard_format_and_only_requested_extension(scanner, extension):
+    from xml.etree import ElementTree as ET
+    await scanner.create_job(source="Platen", color="gray", dpi=300,
+                             document_format="image/png", format_extension=extension,
+                             width=1000, height=2000, x_offset=20, y_offset=30)
+    root = ET.fromstring(scanner._backend.settings)
+    standard = root.find(".//{http://www.pwg.org/schemas/2010/12/sm}DocumentFormat")
+    assert standard is not None and standard.text == "image/png"
+    values = {el.tag.rsplit("}", 1)[-1]: el.text for el in root.iter()}
+    assert ("DocumentFormatExt" in values) == extension
+    assert values["XOffset"] == "20" and values["YOffset"] == "30"

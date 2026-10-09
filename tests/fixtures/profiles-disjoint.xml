@@ -1,0 +1,13 @@
+<!-- Synthetic regression: profile membership, not a physical-device capture. -->
+<ScannerCapabilities>
+  <PlatenInputCaps><MaxWidth>2550</MaxWidth><MaxHeight>3508</MaxHeight>
+    <SettingProfiles>
+      <SettingProfile><ColorMode>RGB24</ColorMode><DocumentFormat>application/pdf</DocumentFormat>
+        <DiscreteResolution><XResolution>300</XResolution><YResolution>300</YResolution></DiscreteResolution>
+      </SettingProfile>
+      <SettingProfile><ColorMode>Grayscale8</ColorMode><DocumentFormatExt>image/png</DocumentFormatExt>
+        <DiscreteResolution><XResolution>600</XResolution><YResolution>600</YResolution></DiscreteResolution>
+      </SettingProfile>
+    </SettingProfiles>
+  </PlatenInputCaps>
+</ScannerCapabilities>

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import unquote
 
 from homeassistant.config_entries import (
     ConfigEntry,
@@ -56,6 +57,18 @@ _DPI = vol.All(vol.Coerce(int), vol.Range(min=50, max=1200))
 _TTL = vol.All(vol.Coerce(int), vol.Range(min=0))
 
 
+def _base_path(value: str) -> str:
+    decoded = unquote(value)
+    if (len(value) > 512 or any(c in decoded for c in "?#\\\r\n")
+            or "://" in decoded or any(part in (".", "..") for part in decoded.split("/"))):
+        raise vol.Invalid("enter a scanner resource path, such as eSCL")
+    return value.strip("/")
+
+
+def _normalize_uuid(value: str | None) -> str | None:
+    return value.strip().casefold().removeprefix("urn:uuid:").strip("{}") or None if value else None
+
+
 class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
     """Ask the user for scanner connection details and validate with a
     ScannerStatus probe. Any well-formed eSCL response confirms the path."""
@@ -75,19 +88,44 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
         # TXT keys vary in case between vendors (HP: `uuid`, others: `UUID`).
         props = {str(k).lower(): v for k, v in discovery_info.properties.items()}
         host = discovery_info.host
-        self._async_abort_entries_match({CONF_HOST: host})
-        uuid = props.get("uuid")
+        uuid = _normalize_uuid(props.get("uuid"))
         name = props.get("ty") or discovery_info.name.split(".", 1)[0]
         self._discovered = {
             CONF_HOST: host,
             CONF_PORT: discovery_info.port or DEFAULT_PORT,
             CONF_USE_TLS: discovery_info.type == _ZEROCONF_TLS_TYPE,
-            CONF_BASE_PATH: (props.get("rs") or DEFAULT_BASE_PATH).strip("/"),
+            CONF_BASE_PATH: _base_path(props.get("rs") or DEFAULT_BASE_PATH),
             CONF_USER: DEFAULT_USER,
             CONF_PASSWORD: "",
             CONF_VERIFY_TLS: False,
             CONF_RELAXED_CIPHERS: False,
         }
+        for entry in self._async_current_entries():
+            effective = {**entry.data, **entry.options}
+            live = self.hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+            coordinator = live.get("coordinator")
+            caps = coordinator.capabilities if coordinator else None
+            known = _normalize_uuid(
+                entry.data.get("discovery_uuid") or (caps.uuid if caps else None) or entry.unique_id
+            )
+            if uuid and known == uuid:
+                # A serial-based legacy ID remains unchanged. Match UUID
+                # only from saved/probed evidence, never infer it from a model.
+                if (effective.get(CONF_USE_TLS, True) == self._discovered[CONF_USE_TLS]
+                        and effective.get(CONF_BASE_PATH, DEFAULT_BASE_PATH).strip("/")
+                        == self._discovered[CONF_BASE_PATH]):
+                    changes = {CONF_HOST: host, CONF_PORT: self._discovered[CONF_PORT]}
+                    self.hass.config_entries.async_update_entry(
+                        entry, data={**entry.data, **changes, "discovery_uuid": uuid},
+                        options={**entry.options,
+                                 **{k: v for k, v in changes.items() if k in entry.options}},
+                    )
+                return self.async_abort(reason="already_configured")
+        self._async_abort_entries_match({CONF_HOST: host})
+        if uuid:
+            self._discovered["discovery_uuid"] = uuid
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
         await self.async_set_unique_id(uuid or f"{host}:{self._discovered[CONF_PORT]}")
         self._abort_if_unique_id_configured(updates={CONF_HOST: host})
         self.context["title_placeholders"] = {"name": name}
@@ -97,6 +135,8 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_zeroconf_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
         if user_input is None:
             return self.async_show_form(
                 step_id="zeroconf_confirm",
@@ -105,6 +145,10 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(title=self._discovered_name, data=self._discovered)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
+        # Enforce the single-scanner policy here so discovery can first
+        # reconcile an existing scanner after its DHCP address changes.
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
         errors: dict[str, str] = {}
         if user_input is not None:
             client = ScannerClient(
@@ -116,6 +160,7 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
                 verify_tls=user_input.get(CONF_VERIFY_TLS, False),
                 relaxed_ciphers=user_input.get(CONF_RELAXED_CIPHERS, False),
                 timeout=10.0,
+                base_path=user_input.get(CONF_BASE_PATH, DEFAULT_BASE_PATH),
             )
             caps = None
             try:
@@ -133,11 +178,15 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
                 # Serial/UUID survives a DHCP address change; host:port is
                 # the fallback for devices that don't serve capabilities.
                 device_id = caps.device_id if caps else None
+                if caps and caps.uuid:
+                    user_input["discovery_uuid"] = _normalize_uuid(caps.uuid)
                 await self.async_set_unique_id(
                     device_id
                     or f"{user_input[CONF_HOST]}:{user_input.get(CONF_PORT, DEFAULT_PORT)}"
                 )
                 self._abort_if_unique_id_configured()
+                if self._async_current_entries():
+                    return self.async_abort(reason="single_instance_allowed")
                 model = caps.make_and_model if caps else None
                 return self.async_create_entry(
                     title=model or f"eSCL scanner at {user_input[CONF_HOST]}",
@@ -148,6 +197,7 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
             {
                 vol.Required(CONF_HOST): str,
                 vol.Optional(CONF_PORT, default=DEFAULT_PORT): _PORT,
+                vol.Optional(CONF_BASE_PATH, default=DEFAULT_BASE_PATH): vol.All(str, _base_path),
                 vol.Optional(CONF_USE_TLS, default=True): bool,
                 vol.Optional(CONF_USER, default=DEFAULT_USER): str,
                 vol.Optional(CONF_PASSWORD, default=""): _PASSWORD_SELECTOR,
@@ -192,6 +242,8 @@ class EsclScanOptionsFlow(OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Required(CONF_HOST, default=data.get(CONF_HOST, "")): str,
+                vol.Optional(CONF_BASE_PATH, default=data.get(CONF_BASE_PATH, DEFAULT_BASE_PATH)):
+                    vol.All(str, _base_path),
                 vol.Optional(
                     CONF_PORT, default=data.get(CONF_PORT, DEFAULT_PORT)
                 ): _PORT,

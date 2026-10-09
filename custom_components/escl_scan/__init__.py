@@ -340,7 +340,9 @@ class ScanStartView(HomeAssistantView):
             return self.json_message("integration not configured", status_code=503)
         try:
             scan = await coord.start_scan(
-                source=source, dpi=dpi, color=color, duplex=duplex
+                source=source, dpi=dpi, color=color, duplex=duplex,
+                page_size=data.get("page_size", "full"), width=data.get("width"),
+                height=data.get("height"),
             )
         except ScanBusyError:
             current = coord.current

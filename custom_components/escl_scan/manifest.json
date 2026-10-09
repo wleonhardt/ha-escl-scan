@@ -20,10 +20,10 @@
     "escl_scan"
   ],
   "requirements": [
-    "pypdf>=4.0"
+    "pypdf>=4.0",
+    "Pillow>=10.4"
   ],
-  "single_config_entry": true,
-  "version": "0.7.1",
+  "version": "0.8.0",
   "zeroconf": [
     "_uscan._tcp.local.",
     "_uscans._tcp.local."

@@ -183,3 +183,26 @@ async def test_options_flow_rejects_bad_dpi(hass: HomeAssistant):
             result["flow_id"],
             {CONF_HOST: "192.0.2.10", CONF_DEFAULT_DPI: 0, CONF_FILE_TTL: 120},
         )
+
+
+async def test_discovery_uuid_reconciles_serial_id_and_preserves_options(hass):
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="SERIAL-ONE",
+                            data={CONF_HOST: "192.0.2.10", "discovery_uuid": "urn:uuid:{UUID-ABC}"},
+                            options={CONF_HOST: "192.0.2.11"})
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_ZEROCONF}, data=_zeroconf())
+    assert result["type"] == data_entry_flow.FlowResultType.ABORT
+    assert entry.unique_id == "SERIAL-ONE"
+    assert entry.options[CONF_HOST] == entry.data[CONF_HOST] == "192.0.2.20"
+
+
+def test_manual_scanner_paths_allow_root_and_bridges_but_not_escaped_urls():
+    import voluptuous as vol
+
+    from custom_components.escl_scan.config_flow import _base_path
+    assert _base_path("/") == ""
+    assert _base_path("/eSCL/device-one/") == "eSCL/device-one"
+    for path in ("https://other/eSCL", "eSCL/../private", "eSCL%3fx=1", "eSCL%5cprivate"):
+        with pytest.raises(vol.Invalid):
+            _base_path(path)

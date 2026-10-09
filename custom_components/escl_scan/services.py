@@ -32,12 +32,21 @@ ATTR_DUPLEX = "duplex"
 ATTR_SCAN_ID = "scan_id"
 ATTR_REVERSE_BACK_ORDER = "reverse_back_order"
 
+def _dimension(value):
+    if type(value) is not int:
+        raise vol.Invalid("dimensions must be whole numbers in 1/300 inch units")
+    return value
+
+
 START_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_SOURCE): vol.In(["Platen", "Feeder"]),
         vol.Optional(ATTR_DPI): vol.All(vol.Coerce(int), vol.Range(min=50, max=1200)),
         vol.Optional(ATTR_COLOR): vol.In(["color", "gray"]),
         vol.Optional(ATTR_DUPLEX): bool,
+        vol.Optional("page_size"): vol.In(["full", "letter", "a4", "custom"]),
+        vol.Optional("width"): vol.All(_dimension, vol.Range(min=1, max=60000)),
+        vol.Optional("height"): vol.All(_dimension, vol.Range(min=1, max=60000)),
     }
 )
 CANCEL_SCHEMA = vol.Schema({vol.Optional(ATTR_SCAN_ID): str})
@@ -71,6 +80,8 @@ def async_register_services(hass: HomeAssistant) -> None:
                 dpi=call.data.get(ATTR_DPI),
                 color=call.data.get(ATTR_COLOR),
                 duplex=call.data.get(ATTR_DUPLEX),
+                page_size=call.data.get("page_size", "full"),
+                width=call.data.get("width"), height=call.data.get("height"),
             )
         except ScanBusyError as exc:
             raise ServiceValidationError(

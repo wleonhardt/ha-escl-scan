@@ -18,7 +18,14 @@ def capability_snapshot(cache: CapabilityCache[ScannerCapabilities], entity_id: 
                 if values else None,
                 "colors": [color for color, mode in (("color", "RGB24"), ("gray", "Grayscale8"))
                            if mode in modes] if modes else None,
+                "combinations": [p.public() for p in caps.setting_profiles.get(key, [])],
+                "maximum_region": caps.region_for(
+                    "Feeder" if key.startswith("Feeder") else "Platen", key == "FeederDuplex"),
+                "minimum_region": caps.source_min.get(key),
             }
+            known = caps.setting_profiles.get(key, [])
+            if known and all(profile.resolutions is not None for profile in known):
+                profiles[key]["resolutions"] = values or []
     return {
         "schema_version": 1,
         "domain": DOMAIN,
@@ -31,6 +38,8 @@ def capability_snapshot(cache: CapabilityCache[ScannerCapabilities], entity_id: 
             "manual_duplex": "Feeder" in caps.sources if caps and caps.sources else None,
             "profiles": profiles,
         },
-        "request_options": ["source", "dpi", "color", "duplex"],
-        "limits": {"dpi_min": 50, "dpi_max": 1200, "format": "application/pdf"},
+        "request_options": ["source", "dpi", "color", "duplex", "page_size", "width", "height"],
+        "limits": {"dpi_min": 50, "dpi_max": 1200, "format": "application/pdf",
+                   "page_sizes": ["full", "letter", "a4", "custom"],
+                   "region_units": "1/300 inch", "image_megapixels": 40},
     }

@@ -27,6 +27,27 @@ start:
       example: false
       selector:
         boolean:
+    page_size:
+      example: letter
+      selector:
+        select:
+          options: [full, letter, a4, custom]
+    width:
+      example: 2550
+      selector:
+        number:
+          min: 1
+          max: 60000
+          step: 1
+          mode: box
+    height:
+      example: 3300
+      selector:
+        number:
+          min: 1
+          max: 60000
+          step: 1
+          mode: box
 
 cancel:
   fields:
