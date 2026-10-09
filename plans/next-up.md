@@ -2,11 +2,13 @@
 
 ## Queue
 
-- Print settings recovery follow-up implemented for 0.11.3; Scan stays 0.12.1.
+- Print settings recovery released/installed as 0.11.3; Scan stays 0.12.1.
   A new explicit submission can make one early transient-failure settings lookup
   after 30 seconds. Failed early checks return to full backoff; no automatic
   print resends or new settings/dependencies. All 335 Print tests and a controlled
-  failure → real read-only HP JPEG recovery check pass. Delivery pending.
+  failure → real read-only HP JPEG recovery check pass. Hosted/release checks
+  pass; live diagnostics, cards and unchanged retained activity verified after
+  HA restart. No physical job was sent.
   [Validation](https://github.com/wleonhardt/ha-ipp-print/blob/main/plans/2026-10-09-jpeg-diagnostics.md#bounded-settings-recovery-follow-up--2026-10-09).
 
 - Epson issue #5 reviewed on 2026-10-09: the WF-4830 reporter already confirmed
