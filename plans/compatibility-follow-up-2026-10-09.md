@@ -224,4 +224,21 @@ compileall, npm ci and diff whitespace checks. The patched client also reads
 Idle status, capabilities and an existing terminal job from the actual HP.
 No physical scan/print job was created and no scanner job was deleted. Oversize,
 compression and interrupted-response checks ran only against local fixtures.
-Release and installation results will be recorded below.
+Released and installed as Scan 0.12.2 (Print stays 0.11.3):
+
+- Source commit `9d0e9d66dcaeb76586b3bc1aa4d7fddb4ced4217`;
+  [all hosted checks passed](https://github.com/wleonhardt/ha-escl-scan/actions/runs/38005319588).
+- [Release workflow passed](https://github.com/wleonhardt/ha-escl-scan/actions/runs/38005442316)
+  and published [v0.12.2](https://github.com/wleonhardt/ha-escl-scan/releases/tag/v0.12.2).
+- Installed the tracked release files after backing up the existing component to
+  `/config/.document-card-backups/before-control-limits-v0122-20261009.tar.gz`.
+  Source/manifest/card hashes match the release; card content is unchanged.
+- `ha core check` passed. Restarted with both job sensors idle; HA stays 2026.9.4.
+  Both integrations load, both devices report reachable, scanner capabilities
+  are fresh, and downloaded diagnostics report Scan 0.12.2.
+- After refresh/restart, each native feature renders once. Latest scan
+  `eb6a6af1b516` and recent print job 373 match the pre-restart records exactly.
+  The retained scan downloads as HTTP 200, `application/pdf`, 152,766 bytes with
+  a PDF header. A newer user scan appeared during release preparation, so the
+  final idle baseline was refreshed before restarting. This task submitted no
+  physical jobs and deleted none.
