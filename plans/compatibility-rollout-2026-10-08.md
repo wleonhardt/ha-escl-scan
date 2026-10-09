@@ -1,6 +1,6 @@
 # IPP and eSCL compatibility rollout
 
-Status: software implemented, validated, pushed and installed; physical acceptance in progress. Canonical plan for
+Status: software implemented, validated, pushed and installed; HP physical acceptance passed; final UI audit/release tags pending. Canonical plan for
 ha-escl-scan and ha-ipp-print. Starting commits: scan cccdc47, print 0009f74.
 Evidence: [cross-project research](ipp-escl-compatibility-research-2026-10-08.md).
 
@@ -134,3 +134,9 @@ old backends remain usable, mobile/narrow layouts and keyboard behavior pass.
   combined tests and hosted scan checks pass. E5 installation is complete;
   two-sheet manual duplex also passed with 1F,1B,2F,2B upright. Tags remain.
   See the current validation record for external hardware and remaining gates.
+
+- Final HP acceptance: installed scan 0.8.2 / print 0.7.2. User confirmed the
+  mobile Back fix and job 370's two correctly oriented short-edge duplex copies.
+  All available-HP physical gates are closed. Phase 3's final editor label/help
+  and string-centralization audit is tracked in the shared rollout; E5 release
+  tags remain pending. Other hardware/bridge claims remain evidence-limited.

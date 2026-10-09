@@ -167,21 +167,27 @@ cost. Verify one-sided and both binding modes on the HP where supported.
 
 Build one interaction pattern with different supported settings for each task.
 
-- [ ] Scan panel: Auto/Feeder/Glass, Color/Grayscale and supported DPI. Preserve
+- [x] Scan panel: Auto/Feeder/Glass, Color/Grayscale and supported DPI. Preserve
   backend DPI snapping as a safety fallback and show the effective value.
-- [ ] Print panel: copies, Two-sided binding and a printer selector only when
+- [x] Print panel: copies, Two-sided binding and a printer selector only when
   more than one printer exists. Route upload, progress and cancel to the same
   selected sensor. Require a clear selection when the target is ambiguous.
-- [ ] Keep back order in the manual reload step, with First sheet first and
+- [x] Keep back order in the manual reload step, with First sheet first and
   Last sheet first guidance. Do not move it into ordinary print/scan defaults.
-- [ ] Add the optional options-only duplex layout without changing the default
+- [x] Add the optional options-only duplex layout without changing the default
   visible switch. Keep panel contents usable at mobile widths without clipping.
 - [ ] Match editor naming, entity selection, defaults, visibility and help text.
   Provide new-card stubs and preserve old configurations through normalization.
-- [ ] Freeze settings and target during upload/submission/running jobs. Snapshot
+- [x] Freeze settings and target during upload/submission/running jobs. Snapshot
   the submitted options so later default changes cannot change the current job.
-- [ ] Preserve focused controls on state updates, return focus after closing
-  options and announce status politely. Centralize strings for later translation.
+- [x] Preserve focused controls on state updates, return focus after closing
+  options and announce status politely. Phone Back navigation confirmed.
+- [ ] Centralize strings for later translation.
+
+Final audit: the visual editors exist, but their select choices still expose raw
+values such as `Platen`, `gray`, and `two-sided-short-edge`. Finish readable editor
+choice labels/help and review keyboard/screen-reader behavior before marking the
+editor item complete. This is separate from the now-passed HP physical tests.
 
 Exit: every visible setting has an implemented backend path and supported
 choices; stale metadata produces a useful rejection without a wrong job.

@@ -7,8 +7,8 @@
   remains before Phase 5. [Validation](shared-card-phase-1-validation.md).
   Phase 2 capability/upload APIs implemented and installed as scan v0.7.0 /
   print v0.6.0, followed by card fixes scan v0.7.1 / print v0.6.1. Live API,
-  print jobs and physical phone downloads pass; physical four-sheet confirmation
-  and release tags pending. [Phase 2 validation](shared-card-phase-2-validation.md).
+  print jobs and physical phone downloads pass. Later jobs 368/370 close the
+  long-edge, two-copy and short-edge physical gates; release tags remain pending. [Phase 2 validation](shared-card-phase-2-validation.md).
   Phase 3 options implemented in the compatibility rollout; release gate pending.
   [Full plan](shared-card-rollout-2026-10-08.md).
 - Compatibility implementation: scan 0.8.0 / print 0.7.0 implemented and pushed with 496 passing tests and green hosted checks, including
@@ -19,7 +19,9 @@
   Live test installed scan 0.8.2 / print 0.7.2 (including paper-label and Back-navigation fixes). Selected-options duplex print
   and Letter/grayscale/300 DPI scan/download pass; two-sheet color manual duplex
   verifies 1F,1B,2F,2B upright with matching downloads. Release tags remain.
-  User confirmed both new Options dialogs fit and work on the phone.
+  User confirmed both new Options dialogs fit and work on the phone, including
+  Back navigation. Job 370 completed two-copy short-edge printing, and the user
+  confirmed two sheets with both sides upright when flipped like a notepad.
   Fixed raw scanner-side 409 guidance after the
   device reported an empty feeder. Pair now has 512 passing tests.
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
@@ -38,6 +40,11 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
+- 2026-10-08 — Remaining HP print acceptance passed on print 0.7.2 / scan 0.8.2.
+  User confirmed two copies and short-edge duplex orientation from job 370;
+  the printer reported 4/4 impressions and the filename cleared. Physical
+  release gates for the available HP are closed. Final Phase 3 editor/string
+  audit and release tags remain; external scanner/bridge checks stay separate.
 - 2026-10-08 — Paired mobile Back fix installed as scan 0.8.2 / print 0.7.2.
   Options now participates in HA dialog navigation; cached cards cannot reopen
   settings inline after leaving the view. 512 paired tests pass. Live browser

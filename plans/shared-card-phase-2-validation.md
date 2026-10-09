@@ -1,7 +1,8 @@
 # Phase 2 capability and upload validation
 
 Status: implementation, hosted validation and live API/job verification complete;
-physical output confirmation pending. Scan v0.7.0 and print v0.6.0, 2026-10-08.
+physical requirements subsequently confirmed on scan v0.8.2 / print v0.7.2.
+Original implementation: scan v0.7.0 and print v0.6.0, 2026-10-08.
 
 ## Implementation
 
@@ -124,3 +125,14 @@ and the action returns to Scan. This closes the phone download check. The
 earlier four-sheet print count/orientation confirmation and HACS release tags
 remain pending; no additional physical print or scan was submitted by the agent
 for these UI checks.
+
+
+## Physical gate closure on the current candidate
+
+On 2026-10-08 the user confirmed long-edge output from job 368 and exactly two
+short-edge duplex sheets from job 370, each FRONT/BACK upright when flipped like
+a notepad. Job 370 used copies=2 and completed 4/4 impressions. These later tests
+close the copy-count and binding acceptance requirements on print 0.7.2; they do
+not retroactively assert inspection of the original jobs 365–367. Phone download,
+Options fit and Back navigation are also confirmed. Release tags remain pending.
+See [paired validation](compatibility-validation-2026-10-08.md).

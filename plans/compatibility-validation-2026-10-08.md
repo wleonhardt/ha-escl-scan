@@ -1,8 +1,7 @@
 # Compatibility rollout validation
 
 Installed candidates: scan 0.8.2 / print 0.7.2. The live test installed scan 0.8.0
-first, then fixed a scanner-side 409 explanation in 0.8.1. Release tags remain
-pending physical acceptance. The implementation-only checks below preceded
+first, then fixed a scanner-side 409 explanation in 0.8.1. HP physical acceptance is complete; release tags remain pending. The implementation-only checks below preceded
 installation; live evidence is recorded separately at the end.
 
 ## Automated checks
@@ -48,8 +47,8 @@ an installed-version check.
 
 ## Physical and external gates
 
-1. Phase 2 two-copy and short-edge output confirmation remains outstanding.
-   New job 368 closes the long-edge physical check on the current candidate.
+1. HP print acceptance passed: user confirmed long-edge output from job 368
+   and exactly two correctly oriented short-edge duplex sheets from job 370.
 2. Passed on the installed candidate: Letter scan, two-sheet manual duplex batch,
    selected-options print, output dimensions/order/orientation, Download PDF,
    filename clearing and no extra jobs on the tested rejection paths. See below.
@@ -188,5 +187,6 @@ selected scan/print fields to defaults while capabilities are unavailable.
 - The printer reported `job-completed-successfully`, 4/4 impressions, no warning.
   Submission/completion: 22:43:52–22:44:18 America/New_York. The card cleared its
   filename and active job, retained no staged document, and restored Choose file.
-- Physical confirmation remains pending: exactly two sheets, each FRONT/BACK
-  upright when flipped over the top edge like a notepad. No release tags yet.
+- User confirmed exactly two sheets, each FRONT/BACK upright when flipped over
+  the top edge like a notepad. This closes the two-copy and short-edge physical
+  print gates on the installed pair. No release tags yet.
