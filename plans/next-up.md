@@ -11,6 +11,11 @@
   and release tags pending. [Phase 2 validation](shared-card-phase-2-validation.md).
   Next implementation: Phase 3 options.
   [Full plan](shared-card-rollout-2026-10-08.md).
+- Compatibility research completed across CUPS, sane-airscan, NAPS2 and related
+  projects. Recommends correcting format claims and scanner profile/completion
+  handling before expanding Phase 3 controls, then improving capability models
+  and optional bridge support. Proposed sequencing; no runtime changes or new
+  protocol decision accepted. [Research and evidence](ipp-escl-compatibility-research-2026-10-08.md).
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
 - Live-test still open: zeroconf discovery flow only (needs the entry removed;
