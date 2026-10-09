@@ -6,6 +6,13 @@ match `custom_components/escl_scan/manifest.json`.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-08
+
+### Fixed
+- Explain scanner-side start conflicts using a bounded status read: tell users
+  to load an empty feeder or check a busy device instead of displaying raw 409.
+  Unknown status keeps general guidance; no automatic retry or job deletion.
+
 ## [0.8.0] - 2026-10-08
 
 ### Added

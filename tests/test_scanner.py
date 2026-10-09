@@ -30,6 +30,7 @@ class _Backend:
         self.next_prelude = []
         self.job_state = b"Completed"
         self.scanner_state = b"Idle"
+        self.adf_state = b"ScannerAdfLoaded"
         self.create_status = 201
         self.jobinfo_404 = False  # HP: GET ScanJobs/{uuid} is always 404
         self.status_images = b"1"
@@ -50,7 +51,7 @@ async def scanner(aiohttp_server, socket_enabled):
             raise web.HTTPFound(location)
         return web.Response(
             body=b"<ScannerStatus><State>" + backend.scanner_state + b"</State>"
-            b"<AdfState>ScannerAdfLoaded</AdfState>"
+            b"<AdfState>" + backend.adf_state + b"</AdfState>"
             b"<Jobs><JobInfo><JobUri>/eSCL/ScanJobs/stale</JobUri></JobInfo>"
             b"<JobInfo><JobUri>/eSCL/ScanJobs/j1</JobUri>"
             b"<ImagesCompleted>" + backend.status_images + b"</ImagesCompleted>"
@@ -156,6 +157,36 @@ async def test_create_job_returns_absolute_url(scanner):
     url = await scanner.create_job(source="Platen", dpi=300, color="color")
     assert url.endswith("/eSCL/ScanJobs/j1")
     assert url.startswith("http://127.0.0.1:")
+
+
+@pytest.mark.parametrize(("state", "adf", "source", "message"), [
+    (b"Idle", b"ScannerAdfEmpty", "Feeder", "The feeder is empty. Load the pages"),
+    (b"Processing", b"ScannerAdfEmpty", "Feeder", "The scanner is busy or needs attention"),
+    (b"Idle", b"", "Feeder", "The scanner could not start. Check its screen"),
+    (b"Idle", b"ScannerAdfLoaded", "Feeder", "The scanner could not start. Check its screen"),
+    (b"Idle", b"ScannerAdfEmpty", "Platen", "The scanner could not start. Check its screen"),
+])
+async def test_create_conflict_explains_status_without_retry_or_delete(
+    scanner, state, adf, source, message,
+):
+    backend = scanner._backend
+    backend.create_status = 409
+    backend.scanner_state = state
+    backend.adf_state = adf
+    with pytest.raises(RuntimeError, match=message):
+        await scanner.create_job(source=source, dpi=300, color="gray")
+    assert backend.create_calls == 1
+    assert backend.deleted == []
+
+
+async def test_create_conflict_status_failure_keeps_safe_guidance(scanner):
+    scanner._backend.create_status = 409
+    with patch.object(scanner, "get_scanner_status", side_effect=TimeoutError), pytest.raises(
+        RuntimeError, match="The scanner could not start. Check its screen"
+    ):
+        await scanner.create_job(source="Feeder", dpi=300, color="gray")
+    assert scanner._backend.create_calls == 1
+    assert scanner._backend.deleted == []
 
 
 async def test_stream_document_intact(scanner):

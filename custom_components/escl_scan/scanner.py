@@ -132,6 +132,7 @@ class ScannerStatus:
     # JobInfo per JobUri. HP MFPs answer 404 on GET ScanJobs/{uuid} and only
     # report job state/ImagesCompleted here (spec: ScannerStatus/Jobs).
     jobs: dict[str, JobInfo] = field(default_factory=dict)
+    adf_state: str | None = None
 
     @property
     def is_idle(self) -> bool:
@@ -282,7 +283,8 @@ def parse_scanner_status(xml: bytes) -> ScannerStatus:
         if uri:
             jobs[uri] = _job_info_from(el)
     return ScannerStatus(
-        state=state, adf_loaded=adf_loaded, active_job_uris=uris, jobs=jobs
+        state=state, adf_loaded=adf_loaded, active_job_uris=uris, jobs=jobs,
+        adf_state=adf_state,
     )
 
 
@@ -659,6 +661,22 @@ class ScannerClient:
                 purged,
             )
             status, loc, err = await _post()
+        if status == 409:
+            # A rejected create has no owned job to cancel or retry. Ask for
+            # status once to explain the conflict without consuming paper.
+            detail = "The scanner could not start. Check its screen and try again when it is ready."
+            try:
+                device = await self.get_scanner_status()
+            except Exception:
+                pass
+            else:
+                if not device.is_idle:
+                    detail = ("The scanner is busy or needs attention. "
+                              "Check its screen and wait until it is ready.")
+                elif source == "Feeder" and device.adf_state == "ScannerAdfEmpty":
+                    detail = ("The feeder is empty. Load the pages until the scanner detects them, "
+                              "then try again.")
+            raise RuntimeError(detail)
         if status not in (200, 201):
             raise RuntimeError(f"scan create failed: {status} {err or ''}")
         if not loc:
