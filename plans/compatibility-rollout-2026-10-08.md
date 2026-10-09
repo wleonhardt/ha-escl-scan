@@ -1,6 +1,8 @@
 # IPP and eSCL compatibility rollout
 
-Status: software implemented, validated, pushed and installed; HP physical acceptance passed; final UI audit/release tags pending. Canonical plan for
+Status: stages A–E complete. Software released/installed and available-HP
+physical acceptance passed; final UI/localization audit shipped in Phase 3.
+Other hardware/bridge acceptance remains external. Canonical plan for
 ha-escl-scan and ha-ipp-print. Starting commits: scan cccdc47, print 0009f74.
 Evidence: [cross-project research](ipp-escl-compatibility-research-2026-10-08.md).
 
@@ -105,7 +107,7 @@ old backends remain usable, mobile/narrow layouts and keyboard behavior pass.
   and controlled physical jobs only when the relevant paper/device is ready.
 - [x] E4 Preserve outstanding four-sheet print confirmation and automatic-duplex
   hardware test as physical gates; track external-device limitations explicitly.
-- [ ] E5 Push completed changes; release/install only a validated stage, with
+- [x] E5 Push completed changes; release/install only a validated stage, with
   rollback and installed versions recorded separately from repository versions.
 
 ## Execution record
@@ -140,3 +142,11 @@ old backends remain usable, mobile/narrow layouts and keyboard behavior pass.
   All available-HP physical gates are closed. Phase 3's final editor label/help
   and string-centralization audit is tracked in the shared rollout; E5 release
   tags remain pending. Other hardware/bridge claims remain evidence-limited.
+
+- Closeout, 2026-10-09: E5's release gate was completed by Phase 3's paired
+  Scan 0.9.0 / Print 0.8.0 release and installation, followed by Phases 4–6.
+  [Phase 3 validation](shared-card-phase-3-validation.md) records the final
+  editor/localization audit and successful hosted/release workflows. Current
+  installed pair is Scan 0.12.1 / Print 0.11.1; the
+  [compatibility follow-up](compatibility-follow-up-2026-10-09.md) closes available
+  HP discovery and card-mod checks and records the remaining external gates.

@@ -4,8 +4,13 @@
 
 - Native cards promoted to the main Printer dashboard at the user's request;
   connection tiles, page chip and navigation preserved. Original rollout complete.
-  Compatibility follow-up is active: isolated real-HP discovery, card-mod Options
-  investigation and device-report coverage. [Follow-up plan](compatibility-follow-up-2026-10-09.md).
+  Compatibility follow-up released/installed as Scan 0.12.1 / Print 0.11.1:
+  discovery validates connections, secure discovery offers explicit legacy
+  ciphers, and Options works with card-mod. All 617 tests, four live HP discovery
+  flow checks and hosted/release checks pass. Main layout, Back, activity and PDF
+  verified after restart. Device report forms are ready; additional vendors,
+  bridges and automatic-duplex hardware remain external gates.
+  [Follow-up plan](compatibility-follow-up-2026-10-09.md).
 
 - Paired activity expansion fixed in both live dashboards using one built-in
   Vertical stack per card. Tile, Mushroom and standalone layouts pass independent
@@ -41,8 +46,9 @@
   [Compatibility validation](compatibility-validation-2026-10-08.md).
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
-- Zeroconf discovery acceptance is being tested in an isolated HA fixture
-  against live HP advertisements; the production entry stays configured.
+- HP discovery confirmation/duplicate checks pass in an isolated HA fixture
+  against all four live advertisements. Full integration setup was stubbed in
+  that fixture; production entries stayed configured and loaded after restart.
 
 - Awaiting reporter feedback on #5 (v0.4.4/v0.4.5 on Epson ET-4950 / WF-4830).
 
@@ -50,8 +56,6 @@
 - Multiple scanner entries: plan entry-scoped routing, sensors, jobs and file
   retention before lifting the current single-scanner limit. See the
   [device identity follow-up](card-alignment-and-device-names-2026-10-09.md).
-- Investigate card-mod's requestUpdate console error after native Options;
-  both dialogs and Back work in the browser. See Phase 5 validation.
 - Reconfigure flow for host/creds (options flow currently edits them).
 - Per-scan override for rotate_duplex_backs (service field / card toggle).
 - Add reviewed card languages using the English catalog and documented workflow.

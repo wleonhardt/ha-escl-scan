@@ -1,6 +1,8 @@
 # Rollout closeout and compatibility follow-up
 
-Status: main dashboard promoted; compatibility checks in progress.
+Status: main dashboard promoted; available-HP compatibility follow-up complete.
+Scan 0.12.1 / Print 0.11.1 released, installed and verified after restart.
+Additional vendor/bridge hardware and automatic-duplex ADF acceptance remain open.
 The original six-phase rollout is complete. This follow-up is explicitly
 requested by the user and does not silently include multi-scanner support,
 new transports/authentication, converters, presets or new translations.
@@ -99,4 +101,41 @@ reporter was contacted and no unsupported hardware support is claimed.
 Required local checks pass: Scan 243 Python + 78 card; Print 231 Python + 65 card
 (617 total), npm ci, Ruff and Print compileall. JSON/translations, issue/example
 YAML and shared-core parity are checked. Live discovery adds four separate HP
-flow checks. Hosted validation, release and installed-version checks follow.
+flow checks. Fixed an existing unquoted colon in Print's bug-report YAML while
+validating the reporting forms.
+
+## Delivery and installed verification
+
+- Code commits: Scan `3ad824a`, Print `96effa3`. All six hosted checks pass in
+  each repository: [Scan validation](https://github.com/wleonhardt/ha-escl-scan/actions/runs/37982517673),
+  [Print validation](https://github.com/wleonhardt/ha-ipp-print/actions/runs/37982518449).
+- Published [Scan 0.12.1](https://github.com/wleonhardt/ha-escl-scan/releases/tag/v0.12.1)
+  and [Print 0.11.1](https://github.com/wleonhardt/ha-ipp-print/releases/tag/v0.11.1)
+  through successful tag-triggered release workflows.
+- Installed the tracked release sources with rollback archive
+  `/config/.document-card-backups/before-compat-v0121-v0111-20261009.tar.gz`.
+  HA configuration check passed; both jobs were idle before the core restart.
+  HA remains 2026.9.4. Both entries return `loaded` and both devices `reachable`.
+- Installed manifests and full card hashes match the releases. Active resources
+  are `/escl_scan/card-a5a7bef90d84.js` and `/ipp_print/card-d5f2508ef4af.js`;
+  resource IDs are preserved. Both native features render on a fresh main page.
+- With installed card-mod 4.2.1 wrapping each real dialog host, Options opens,
+  Back closes and focus returns to its button for both cards. No captured errors
+  or rejected promises. At 390 px both dialogs are 356 px wide. Independent
+  disclosure expansion passes again at 320/390/768 px without moved controls,
+  stretched neighbors or horizontal overflow.
+- Latest scan `8812dcdc7880` and print job 373 retain their metadata and expiry.
+  The authenticated PDF still returns 200, 540,520 bytes and SHA-256
+  `26f4d5cf31f802c94c5808e18de42eba9e2cefac8db4028854d0771f0c8c0313`.
+  No scan or print was submitted during this follow-up.
+- Removed the temporary candidate modules from HA; no candidate tag/config was
+  saved in either dashboard. Main migration and preview remain intact.
+
+## Next evidence needed
+
+Use the new device report forms to collect reproducible cases from automatic
+duplex scanners, other printer/scanner vendors and AirSane/ipp-usb installations.
+Turn redacted captures into focused regression fixtures before adding a vendor
+workaround. Physical output acceptance still requires the relevant device.
+Multi-scanner routing remains a separate planned feature, not a compatibility
+claim or an implicit expansion of this work.
