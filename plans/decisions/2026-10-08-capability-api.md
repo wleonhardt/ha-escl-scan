@@ -32,6 +32,12 @@ Omitted options retain printer defaults. Explicit sides always require a fresh
 per-job default-paper read; a failed read submits nothing and observes backoff.
 No accepted/ambiguous job is retried automatically.
 
+Print 0.11.3 adds a user-approved exception for new explicit print attempts:
+one early settings lookup after 30 seconds for transient failures, then full
+backoff if it also fails. Ordinary capability GETs and Scan retain the baseline
+policy. No document is automatically resent. See the
+[Print recovery decision](https://github.com/wleonhardt/ha-ipp-print/blob/main/plans/decisions/2026-10-08-capability-api.md#print-recovery-exception--2026-10-09).
+
 The additive response advertises the backend's accepted request fields. Phase 3
 must check this metadata and leave options unavailable on an older backend.
 No additional settings UI ships in Phase 2. A subsequent user-feedback fix uses
