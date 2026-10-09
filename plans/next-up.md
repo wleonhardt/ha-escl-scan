@@ -4,7 +4,7 @@
 - Paired alignment/device identity polish installed as scan 0.11.2 / print
   0.10.3; 579 tests, hosted checks and narrow real-host layout checks pass.
   The native preview now has a device heading. Friendly headings and explicit
-  per-printer card names are documented; physical phone spacing check remains.
+  per-printer card names are documented; the user confirmed phone spacing and Back work.
   [Validation and naming decision](card-alignment-and-device-names-2026-10-09.md).
 - Phase 5 native Tile/Mushroom features accepted: the user confirmed cards and
   navigation work on the phone after scan 0.11.1 / print 0.10.1 fixed the startup
@@ -16,8 +16,8 @@
   their file was JPEG and a retry went through; the first failure remains
   undiagnosed. The PNG fix is independently verified.
   [Print validation](https://github.com/wleonhardt/ha-ipp-print/blob/main/plans/2026-10-09-format-rejection.md).
-- Next planned phase: durable Latest scan/recent activity; implementation has
-  not started. [Canonical phased plan](shared-card-rollout-2026-10-08.md).
+- Phase 6 implemented: durable Latest scan and bounded print activity; release
+  and deployment validation in progress. [Canonical phased plan](shared-card-rollout-2026-10-08.md).
 - External coverage remains separate: automatic duplex scanning, additional
   vendor/bridge hardware and assistive-technology device acceptance.
   Minimum-HA native feature hosting passed in Phase 5.
@@ -38,8 +38,6 @@
 - Reconfigure flow for host/creds (options flow currently edits them).
 - Per-scan override for rotate_duplex_backs (service field / card toggle).
 - Add reviewed card languages using the English catalog and documented workflow.
-- Card: persistent scan history/download access across dashboard reloads.
-  The mounted card now retains its latest result until download or a newer scan.
 - Community forum thread + device compatibility reports.
 
 ## Done

@@ -1,8 +1,7 @@
 # Paired card alignment and device identity
 
 Status: implemented and installed as scan 0.11.2 / print 0.10.3; local and
-hosted validation pass. No backend or device job changes. Phone acceptance of
-this spacing revision remains separate from browser verification.
+hosted validation pass. No backend or device job changes. The user confirmed this spacing revision looks good on the phone and Back works.
 
 The phone screenshot exposed uneven headings and Two-sided rows. On the real
 HA 2026.9.4 Tile host, Print's feature was 28 px taller: its file hint occupied

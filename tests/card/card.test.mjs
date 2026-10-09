@@ -1366,3 +1366,97 @@ test('registry recovery preserves already registered versions and handles page r
   assert.equal(win.customElements.get(FEATURE), original);
   assert.equal(next.calls.length, 5);
 });
+
+function latestResult(overrides = {}) {
+  const scan_id = 'abcdef123456';
+  return { scan_id, filename: `scan-20261009-120000-feeder-${scan_id}.pdf`, pages_done: 2,
+    finished_at: new Date(Date.now() - 60000).toISOString(), expires_at: new Date(Date.now() + 3600000).toISOString(),
+    availability: 'available', file_url: `/api/escl_scan/file/${scan_id}`, ...overrides };
+}
+
+test('latest scan survives idle remount and download without taking over the primary action', async () => {
+  const win = boot(), card = mount(win), latest = latestResult();
+  const { push, calls } = makeHass(card, { fetchImpl: async () => ({ ok: true, status: 200, blob: async () => new win.Blob(['%PDF'], { type: 'application/pdf' }) }) });
+  push(SENSOR, 'idle', { latest_scan: latest });
+  const disclosure = card.shadowRoot.querySelector('.activity');
+  assert.equal(disclosure.hidden, false);
+  assert.equal(disclosure.open, false);
+  assert.equal(card._primaryEl.textContent, 'Scan');
+  disclosure.open = true;
+  card._activityDownloadButton.focus();
+  push(SENSOR, 'idle', { latest_scan: latest });
+  assert.equal(card.shadowRoot.activeElement, card._activityDownloadButton);
+  card._activityDownloadButton.click();
+  card._activityDownloadButton.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(calls.fetch.length, 1);
+  assert.equal(calls.fetch[0].url, latest.file_url);
+  assert.equal(win.downloads.length, 1);
+  assert.equal(card._primaryEl.textContent, 'Scan');
+  assert.ok(card._activityDownloadButton);
+  card.remove(); win.document.body.append(card);
+  assert.equal(card._primaryEl.textContent, 'Scan');
+  assert.ok(card._activityDownloadButton);
+});
+
+test('latest download preserves newer progress and discards replies after target, result or mount changes', async () => {
+  for (const change of ['progress', 'target', 'result', 'disconnect']) {
+    const win = boot(), card = mount(win), latest = latestResult();
+    let finish;
+    const { push } = makeHass(card, { fetchImpl: () => new Promise(resolve => { finish = resolve; }) });
+    push(SENSOR, 'idle', { latest_scan: latest });
+    const pending = card._downloadLatest(card._activityRecords[0]);
+    if (change === 'progress') push(SENSOR, 'processing', { scan_id: 'new-scan', pages_done: 3, latest_scan: latest });
+    if (change === 'target') card.setConfig({ entity: 'sensor.other_scan' });
+    if (change === 'result') push(SENSOR, 'idle', { latest_scan: latestResult({ scan_id: '123456abcdef', file_url: '/api/escl_scan/file/123456abcdef' }) });
+    if (change === 'disconnect') card.remove();
+    finish({ ok: true, status: 200, blob: async () => new win.Blob(['%PDF'], { type: 'application/pdf' }) });
+    await pending;
+    assert.equal(win.downloads.length, change === 'progress' ? 1 : 0, change);
+    if (change === 'progress') {
+      assert.equal(card._activeScanId, 'new-scan');
+      assert.match(status(card).textContent, /3/);
+      assert.ok(cancelShown(card));
+    }
+  }
+});
+
+test('latest result expiry, missing files and untrusted URLs never offer a download', async () => {
+  const win = boot(), card = mount(win);
+  const { push } = makeHass(card);
+  assert.equal(card._activityEl.hidden, true, 'old backends have no disclosure');
+  for (const overrides of [
+    { expires_at: new Date(Date.now() - 1).toISOString() },
+    { availability: 'missing' }, { file_url: 'https://example.com/private' },
+    { scan_id: '../private' }, { filename: null },
+  ]) {
+    push(SENSOR, 'idle', { latest_scan: latestResult(overrides) });
+    assert.equal(card._activityDownloadButton, null);
+  }
+  const nativeSetTimeout = win.setTimeout.bind(win);
+  const timers = [];
+  win.setTimeout = (fn, ms, ...args) => { if (ms > 1000) { timers.push(fn); return 999; } return nativeSetTimeout(fn, ms, ...args); };
+  const latest = latestResult();
+  push(SENSOR, 'idle', { latest_scan: latest });
+  assert.ok(card._activityDownloadButton);
+  win.Date.now = () => Date.parse(latest.expires_at) + 1;
+  timers.at(-1)();
+  assert.equal(card._activityDownloadButton, null);
+  assert.match(card._activityList.textContent, /expired/);
+});
+
+test('latest download failure stays local, expires on 404 and remains available when scanner is offline', async () => {
+  const win = boot(), card = mount(win), latest = latestResult();
+  let code = 503;
+  const { push, calls } = makeHass(card, { fetchImpl: async () => ({ status: code, ok: false }) });
+  push(SENSOR, 'idle', { latest_scan: latest, device_connection: { state: 'unreachable', checked_at: new Date().toISOString() } });
+  assert.equal(card._activityDownloadButton.disabled, false);
+  await card._downloadLatest(card._activityRecords[0]);
+  assert.match(card._activityFeedback.textContent, /Try again/);
+  assert.ok(card._activityDownloadButton);
+  code = 404;
+  await card._downloadLatest(card._activityRecords[0]);
+  assert.equal(calls.fetch.length, 2);
+  assert.equal(card._activityDownloadButton, null);
+  assert.equal(card._primaryEl.textContent, 'Scan');
+});

@@ -4,6 +4,19 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.12.0] - 2026-10-09
+
+### Added
+- Standalone Sections cards default to automatic rows for expanding activity.
+- Add a collapsed **Latest scan** section with authenticated PDF download after
+  dashboard reloads and Home Assistant restarts. The primary completion action
+  still returns to Scan after download.
+- Persist only the latest successful result metadata, respecting the existing
+  PDF retention deadline. Missing and expired files show guidance; incomplete
+  duplex fronts, failed jobs and canceled scans are never published.
+- Reconcile files on startup, purge and download; reject symlinks and keep
+  downloads available while the scanner is offline. No document archive is added.
+
 ## [0.11.2] - 2026-10-09
 
 ### Fixed

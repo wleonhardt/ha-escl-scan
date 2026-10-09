@@ -155,8 +155,18 @@ after the scanner returns to idle and switches back to **Scan** once the PDF
 has been handed to your browser's download handler. A failed download can be
 retried; an expired file offers Scan again. The browser controls saving the file
 and does not report whether you cancel its save dialog. The result is retained
-only in the current card instance; reloading the dashboard, changing its scanner
-or starting a newer scan elsewhere can replace it. Persistent history is planned.
+in **Latest scan**, a collapsed section below the actions, after the primary
+action returns to Scan. It survives dashboard reloads and HA restarts. Only the
+latest successfully completed PDF is listed; older files are not a history.
+Its existing retention deadline still applies and is never extended by restart
+or download. Expired or missing files show guidance instead of a dead link.
+Downloads require an HA login and work while the scanner itself is offline.
+Incomplete duplex fronts and failed/canceled scans are never published.
+
+The integration keeps compact result metadata in private HA storage and exposes
+it as `latest_scan` on the job sensor, excluded from Recorder. Removing the
+integration removes this metadata. Results from before this upgrade are not
+reconstructed from files; the first newly completed scan populates the section.
 
 Both scan and print cards inherit the dashboard theme's surface and shape. Add
 them directly to a Sections view for automatic sizing, or keep an existing
@@ -290,6 +300,7 @@ scan results and activity history are a later phase.
 | attributes.state_reasons | The scanner's eSCL `JobStateReasons` |
 | attributes.submitted_at / finished_at | ISO timestamps |
 | attributes.file_url | Download URL once complete (`/api/escl_scan/file/{id}`) |
+| attributes.latest_scan | Latest successful result: ID, basename, count, finish/expiry, availability and authenticated URL while retained; survives restart |
 | attributes.file_path | Absolute path of the stored PDF once complete (for `shell_command`, Paperless uploads, …) |
 | attributes.copied_to | Path of the copy made by *copy to folder*, if enabled |
 
@@ -543,3 +554,7 @@ data:
 For `page_size: custom`, provide both `width` and `height` as positive integers
 in 1/300 inch units (Letter is 2550 × 3300). Dimensions must fit the selected
 source. Both passes of a manual duplex scan use the same accepted settings.
+
+For standalone cards in Sections, use **Rows: Auto** (`grid_options.rows: auto`)
+so expanded Latest scan/Recent activity can grow. Existing cards with a fixed
+row count need that dashboard setting changed once. New cards default to Auto.
