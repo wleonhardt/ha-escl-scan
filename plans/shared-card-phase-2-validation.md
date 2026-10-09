@@ -46,8 +46,10 @@ matched repository files; HA 2026.9.4 restarted successfully with both updates.
 Live capability responses returned 200 with the expected entities and schema.
 The HP advertises glass DPI 75/150/200/300/600/1200 and feeder DPI
 75/150/200/300, color/gray on both, manual duplex scanning and no automatic
-duplex scan. Print advertises all three binding modes, PDF/JPEG/PNG and
-999 device copies (the integration still caps requests at 99).
+duplex scan. The then-current print API advertised all three binding modes,
+PDF/JPEG/PNG and 999 device copies (the integration caps requests at 99).
+The compatibility rollout later corrected that API's octet-stream inference:
+this HP explicitly supports PDF/JPEG, not PNG.
 Four simultaneous reads of each endpoint returned identical fetch/attempt
 timestamps, while explicit sides jobs refreshed print metadata.
 

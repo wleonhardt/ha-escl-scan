@@ -1,6 +1,6 @@
 # IPP and eSCL compatibility rollout
 
-Status: software implementation complete, validated and pushed; installation and physical acceptance remain staged. Canonical plan for
+Status: software implemented, validated, pushed and installed; physical acceptance in progress. Canonical plan for
 ha-escl-scan and ha-ipp-print. Starting commits: scan cccdc47, print 0009f74.
 Evidence: [cross-project research](ipp-escl-compatibility-research-2026-10-08.md).
 
@@ -127,3 +127,10 @@ old backends remain usable, mobile/narrow layouts and keyboard behavior pass.
   (scan 209 Python/46 card; print 206 Python/35 card). Changes are on both main
   branches. E5's push is complete; tags/installation remain pending the physical
   acceptance stage. No release tags were created in this rollout.
+
+- Live acceptance: installed scan 0.8.1 / print 0.7.0 with backup and verified
+  hashes. Real card duplex printing and Letter/grayscale/300 DPI scan/download
+  pass. Fixed scanner-side 409 guidance after an empty-feeder rejection; 502
+  combined tests and hosted scan checks pass. E5 installation is complete;
+  two-sheet manual duplex also passed with 1F,1B,2F,2B upright. Tags remain.
+  See the current validation record for external hardware and remaining gates.

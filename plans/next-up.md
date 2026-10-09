@@ -16,7 +16,12 @@
   shared Options dialogs, paper/tray settings and safe diagnostics.
   [Plan and completed items](compatibility-rollout-2026-10-08.md).
   [Validation and remaining physical gates](compatibility-validation-2026-10-08.md).
-  Installed pair remains scan 0.7.1 / print 0.6.1 until the installation gate.
+  Live test installed scan 0.8.1 / print 0.7.0. Selected-options duplex print
+  and Letter/grayscale/300 DPI scan/download pass; two-sheet color manual duplex
+  verifies 1F,1B,2F,2B upright with matching downloads. Release tags remain.
+  User confirmed both new Options dialogs fit and work on the phone.
+  Fixed raw scanner-side 409 guidance after the
+  device reported an empty feeder. Pair now has 502 passing tests.
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
 - Live-test still open: zeroconf discovery flow only (needs the entry removed;
