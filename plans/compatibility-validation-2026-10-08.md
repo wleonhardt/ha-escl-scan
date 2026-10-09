@@ -73,3 +73,13 @@ Browser mobile emulation at 390 px verified both 165 px cards without horizontal
 overflow; the options dialog measured 352 px and also had no horizontal overflow.
 Final outage regressions preserve explicit print settings and permit resetting
 selected scan/print fields to defaults while capabilities are unavailable.
+
+## Delivery
+
+- Scan implementation head `a0f2e46`: [all six checks passed](https://github.com/wleonhardt/ha-escl-scan/actions/runs/37868285339).
+- Print implementation head `74878df`: [all six checks passed](https://github.com/wleonhardt/ha-ipp-print/actions/runs/37868134913).
+- Both main branches pushed. Local checks total 496 passing tests. Documentation
+  follow-ups do not alter these implementation trees. Print worktree clean; the
+  pre-existing, untracked scan `output/` directory was left untouched.
+- No tags, HA restart or installation performed. The repository versions are
+  prepared candidates; the installed versions remain the prior working pair.

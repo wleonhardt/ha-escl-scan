@@ -11,7 +11,7 @@
   and release tags pending. [Phase 2 validation](shared-card-phase-2-validation.md).
   Phase 3 options implemented in the compatibility rollout; release gate pending.
   [Full plan](shared-card-rollout-2026-10-08.md).
-- Compatibility implementation: scan 0.8.0 / print 0.7.0 prepared, including
+- Compatibility implementation: scan 0.8.0 / print 0.7.0 implemented and pushed with 496 passing tests and green hosted checks, including
   complete scan profiles, JPEG/PNG acquisition, print preflight/typed IPP,
   shared Options dialogs, paper/tray settings and safe diagnostics.
   [Plan and completed items](compatibility-rollout-2026-10-08.md).

@@ -1,6 +1,6 @@
 # IPP and eSCL compatibility rollout
 
-Status: implementation complete locally; delivery checks in progress. Canonical plan for
+Status: software implementation complete, validated and pushed; installation and physical acceptance remain staged. Canonical plan for
 ha-escl-scan and ha-ipp-print. Starting commits: scan cccdc47, print 0009f74.
 Evidence: [cross-project research](ipp-escl-compatibility-research-2026-10-08.md).
 
@@ -100,7 +100,7 @@ old backends remain usable, mobile/narrow layouts and keyboard behavior pass.
 
 - [x] E1 Update README/examples, capability contract, diagnostics and change logs;
   bump user-facing versions and commit meaningful stages in each repository.
-- [ ] E2 Run both Python/card suites, Ruff, print compileall and hosted validation.
+- [x] E2 Run both Python/card suites, Ruff, print compileall and hosted validation.
 - [x] E3 Verify paired layouts using BrowserOS Neo; read-only HP capability probe
   and controlled physical jobs only when the relevant paper/device is ready.
 - [x] E4 Preserve outstanding four-sheet print confirmation and automatic-duplex
@@ -121,3 +121,9 @@ old backends remain usable, mobile/narrow layouts and keyboard behavior pass.
 - E3 covers the browser fixture and read-only HP checks. E4 is complete as tracking
   of external gates, not a claim that the physical tests passed. No live installation
   or new physical job occurred. [Validation record](compatibility-validation-2026-10-08.md).
+
+- Hosted verification complete on implementation heads: scan `a0f2e46`, print
+  `74878df`; all six jobs passed in each repository. 496 local tests pass
+  (scan 209 Python/46 card; print 206 Python/35 card). Changes are on both main
+  branches. E5's push is complete; tags/installation remain pending the physical
+  acceptance stage. No release tags were created in this rollout.
