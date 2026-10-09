@@ -3,7 +3,8 @@
 ## Queue
 - Active: user-requested HP Phase 4 physical tests. Print job 371 and scan
   `a49d87b88844` passed, including real reconnect and the four-page PDF. Both
-  jobs are idle; awaiting user confirmation the HP is off for reachability testing. [Live-test record](phase-4-hp-live-tests-2026-10-09.md).
+  jobs are idle; shutdown detection passed, automatic power-on recovery remains.
+  [Live-test record](phase-4-hp-live-tests-2026-10-09.md).
   Print 0.9.1 fixes provisional progress totals found in that job.
 - Next implementation: Phase 5 native Tile and optional Mushroom features.
   Verify minimum/current HA host support and Android registration before

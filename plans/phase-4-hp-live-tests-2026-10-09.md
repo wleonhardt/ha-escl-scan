@@ -1,7 +1,8 @@
 # Phase 4 HP live tests — 2026-10-09
 
 Status: in progress; physical print and two-pass scan passed, including
-reload/reconnect and downloaded PDF inspection. Awaiting the final HP off/on test. Starting installed pair: scan 0.10.0 / print 0.9.0.
+reload/reconnect and downloaded PDF inspection. HP shutdown detection passed;
+automatic recovery after power-on remains. Starting installed pair: scan 0.10.0 / print 0.9.0.
 HP Color LaserJet MFP M283fdw, HA 2026.9.4. The user requested physical tests and
 confirmed Letter paper and a clear output tray.
 
@@ -28,12 +29,12 @@ cleared the filename on completion and returned to Choose file. The submitting
 tab was refreshed after acceptance; the inspected refreshed card showed the
 same completion and no staged filename. We did not capture an active-state
 snapshot immediately after refresh, so this alone does not prove recovery while
-printing. Scanner reload during the manual-back pause is the next recovery test.
+printing. Scanner reload during the manual-back pause provides recovery evidence below.
 Both native connectivity sensors remained connected during the print.
 
 The user confirmed both printed sheets were correct and loaded fronts 1F,2F.
-The same sheets are being reused for a two-pass scan, with reversed backs 2B,1B
-and Last sheet first; final PDF order should be 1F,1B,2F,2B.
+The same sheets were reused for a two-pass scan, with reversed backs 2B,1B
+and Last sheet first; the final PDF order is 1F,1B,2F,2B.
 
 ## Finding and fix: provisional progress totals
 
@@ -95,5 +96,20 @@ Downloaded file:
 `/Users/william/Downloads/scan-20261009-090610-feeder-a49d87b88844.pdf`.
 Its SHA-256 matches both the private retained PDF and `/media/escl_scan` copy:
 `fc93e19f6bc82a0b20c8319d966efd4503c9fccc5789497c40961d1c2a03bb3d`.
-Both integration jobs are idle. The user has been asked to turn the HP off for
-the final reachability test; no scan integration reload/restart was needed.
+Both integration jobs are idle; no scan integration reload/restart was needed.
+
+## Physical shutdown and automatic recovery
+
+The user shut down the HP while both jobs were idle. The real IPP connection
+entity changed to off at 13:33:06.359 UTC; eSCL followed at 13:33:07.913 UTC.
+Both reported unreachable, while Home Assistant stayed connected and the two
+job sensors remained idle. Each card showed "Cannot reach this device. Check
+its power and connection." The native tiles showed Scanner Disconnected and
+Printer Disconnected. The warnings were readable without overflow at 390 × 844;
+a freshly opened dashboard also loaded both cards with the disconnected state.
+
+While the printer remained off, natural retries at about 13:34:09 and 13:36:12
+UTC still reported unreachable. The advertised retry intervals increased from
+60 to 120 to 240 seconds; the next check is scheduled for 13:40:12 UTC. No
+forced refresh, integration reload, restart or device job was used to advance
+these checks. Power-on recovery is pending the user's readiness confirmation.
