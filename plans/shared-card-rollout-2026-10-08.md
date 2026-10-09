@@ -262,7 +262,8 @@ Implementation, host and physical Android acceptance: [Phase 5 validation](share
 
 Implemented and installed as scan 0.12.0 / print 0.11.0.
 [Validation, storage and release evidence](shared-card-phase-6-validation.md).
-Phone acceptance of the new disclosures remains a follow-up.
+Phone acceptance and the HP refresh/restart/download test passed.
+[Live test evidence](phase-6-hp-live-tests-2026-10-09.md).
 
 - [x] Preserve discoverable latest completed scan metadata beyond the active
   sensor's completion timer. Reconcile metadata against stored files and

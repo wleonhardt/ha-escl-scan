@@ -1,7 +1,8 @@
 # Phase 6 validation — 2026-10-09
 
-Status: implemented, released and installed. Physical phone acceptance of the
-new disclosures and the first post-upgrade real job remain follow-up checks.
+Status: implemented, released, installed and accepted on the physical HP and
+phone. Refresh/restart preservation and real downloads passed.
+[Physical test evidence](phase-6-hp-live-tests-2026-10-09.md).
 Release pair: scan 0.12.0 / print 0.11.0, shared presentation core v4.
 The preceding alignment revision was accepted by the user on the phone, including Back.
 
@@ -72,5 +73,7 @@ content overflow in an isolated real-host row.
 
 Rollback can restore the backup and restart HA while idle; previous versions
 ignore the new version-1 Store keys. Keep the existing PDF retention policy.
-No physical print/scan has been submitted for this phase. The first new result
-will populate the production sections; pre-upgrade jobs are not reconstructed.
+A subsequent physical test passed: print job 373, scan 8812dcdc7880, full
+dashboard refresh and HA restart. Metadata, deadlines and PDF hashes remained
+identical; the user confirmed both records and the download on their phone.
+Pre-upgrade jobs remain intentionally absent.
