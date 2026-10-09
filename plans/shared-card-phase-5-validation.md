@@ -1,8 +1,8 @@
 # Phase 5 native feature validation — 2026-10-09
 
-Status: installed; local checks and minimum/current host runtime checks pass.
-Hosted checks, release publication and physical Android acceptance are in progress.
-Installed pair: scan 0.11.0 / print 0.10.0.
+Status: released and installed; local/hosted checks and minimum/current host
+runtime checks pass. Physical Android acceptance remains open; native examples
+stay opt-in. Released pair: scan 0.11.0 / print 0.10.0.
 
 ## Implementation
 
@@ -28,6 +28,12 @@ tests now cover it. No backend protocol or stored job lifecycle changed.
 - Scan: 225 Python + 70 card tests pass. Ruff passes.
 - Print: 217 Python + 60 card tests pass. Ruff and compileall pass.
 - Total: **572 tests**, after npm ci. Shared-core parity and syntax checks pass.
+- Both release commits passed all six hosted validation jobs. Both tag workflows
+  published non-draft, non-prerelease HACS releases.
+- Scan commit `cca6945a792f6962199f5c781d1dfcd3c0e2ad77`, validation run
+  `37943266020`, release run `37943467728`, tag `v0.11.0`.
+- Print commit `7445c5a30e0ddaae1682d72eaf1b6a187ff7ae35`, validation run
+  `37943270180`, release run `37943467319`, tag `v0.10.0`.
 - Added tests cover feature picker/defaults, editor ownership, invalid options,
   old/new context, stale legacy delivery, unsupported/inline hosts, remount/local
   intent, control events, frozen target submission, stale reply detachment,
@@ -51,7 +57,10 @@ Minimum: a separate local HA **2024.12.5** instance with its actual frontend
 access were configured there. Scan registers before Print is loaded. Both Tile
 features render with legacy stateObj delivery at 390 px, including manual-back
 controls and print progress. Native Options fits at 354 px and Back closes it.
-This is runtime frontend coverage, not a physical device/backend test on old HA.
+A fresh authenticated reload of the final assets also renders both features
+using stateObj (without modern context), and both distinct editors exclude host
+identity. This is runtime frontend coverage, not a physical device/backend test
+on old HA. The temporary local instance is stopped after verification.
 
 The disposable preview and optional examples use bottom-position features with
 Sections rows set to auto; fixed-height rows can clip expanded instructions.
@@ -72,8 +81,8 @@ editors with the correct sensors. Both job sensors remain idle; no device job wa
 submitted in Phase 5.
 
 Installed assets match source:
-- Scan: `/escl_scan/card-280c069e070d.js`
-- Print: `/ipp_print/card-224ad3307c63.js`
+- Scan: `/escl_scan/card-280c069e070d.js` (SHA-256 `280c069e070dd7e41015bc2b75a251f9321b4448a1754416062f2317ebc638dd`)
+- Print: `/ipp_print/card-224ad3307c63.js` (SHA-256 `224ad3307c63233cd0436a9019cde5435db16e3114a1164345fa312e06b2dca0`)
 
 The user has been asked to check both features and Options/Back on the phone.
 Retain the standalone view regardless of the phone result; migration stays optional.

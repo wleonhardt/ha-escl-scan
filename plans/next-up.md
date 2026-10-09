@@ -3,7 +3,7 @@
 ## Queue
 - Active: Phase 5 native Tile and optional Mushroom features, scan 0.11.0 /
   print 0.10.0. Minimum/current host runtime checks and 572 tests pass; installed.
-  Hosted checks, release publication and physical Android acceptance remain. Standalone cards stay supported.
+  Both releases and all hosted checks pass. Physical Android acceptance remains. Standalone cards stay supported.
   [Phase 5 validation](shared-card-phase-5-validation.md).
   [Canonical phased plan](shared-card-rollout-2026-10-08.md).
 - External coverage remains separate: automatic duplex scanning, additional
