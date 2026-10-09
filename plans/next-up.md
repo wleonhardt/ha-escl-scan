@@ -1,12 +1,16 @@
 # Next up
 
 ## Queue
-- Active: Phase 5 native Tile and optional Mushroom features, scan 0.11.1 /
-  print 0.10.1. Minimum/current host runtime checks and 576 tests pass; installed.
-  Both releases and all hosted checks pass. The intermittent Android startup
-  race is patched; physical phone retry remains. Standalone cards stay supported.
+- Phase 5 native Tile/Mushroom features accepted: the user confirmed cards and
+  navigation work on the phone after scan 0.11.1 / print 0.10.1 fixed the startup
+  registry race. Standalone cards stay supported; existing dashboards stay unchanged.
   [Phase 5 validation](shared-card-phase-5-validation.md).
-  [Canonical phased plan](shared-card-rollout-2026-10-08.md).
+- Print 0.10.2 is released/installed: unsupported PNG gets format guidance
+  instead of a connection error. 579 paired tests and hosted checks pass; live
+  rejection and JPEG Validate-Job checks pass without printing. The original
+  user image has not been inspected. [Print validation](https://github.com/wleonhardt/ha-ipp-print/blob/main/plans/2026-10-09-format-rejection.md).
+- Next planned phase: durable Latest scan/recent activity; implementation has
+  not started. [Canonical phased plan](shared-card-rollout-2026-10-08.md).
 - External coverage remains separate: automatic duplex scanning, additional
   vendor/bridge hardware and assistive-technology device acceptance.
   Minimum-HA native feature hosting passed in Phase 5.

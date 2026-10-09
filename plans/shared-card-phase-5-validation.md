@@ -1,8 +1,9 @@
 # Phase 5 native feature validation — 2026-10-09
 
-Status: released and installed; local/hosted checks and minimum/current host
-runtime checks pass. Physical Android acceptance remains open; native examples
-stay opt-in. Released pair: scan 0.11.0 / print 0.10.0.
+Status: Phase 5 accepted. Local/hosted and minimum/current host runtime checks
+pass; the user confirmed cards and navigation work on the physical phone after
+the registry fix. Native Tile examples are recommended for new dashboards;
+existing dashboards stay unchanged. Initial pair: scan 0.11.0 / print 0.10.0.
 
 ## Implementation
 
@@ -133,3 +134,9 @@ manual import or configuration change. Both real native controls rendered with
 no startup exceptions. Temporary candidate files were removed. The user was
 asked to reopen the original preview link, refresh three times and check both
 Options/Back dialogs. That physical retry is still pending.
+
+Physical retry: the user confirmed “Cards and nav look good” on 2026-10-09.
+This closes the Phase 5 phone registration/navigation gate. A subsequent print
+attempt exposed a separate unsupported-format error classification, repaired in
+[Print 0.10.2](https://github.com/wleonhardt/ha-ipp-print/blob/main/plans/2026-10-09-format-rejection.md).
+That fix does not add image conversion or change the native presentation.

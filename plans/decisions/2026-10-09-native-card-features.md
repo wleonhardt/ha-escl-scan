@@ -1,8 +1,8 @@
 # Native scan and print features
 
 Status: released and installed as scan 0.11.1 / print 0.10.1. Keep standalone cards supported and the visible
-Two-sided switch as the default. Native examples remain opt-in until host and
-physical Android acceptance are recorded.
+Two-sided switch as the default. Host and physical Android acceptance are
+recorded; native Tiles are recommended for new dashboards. Migration stays optional.
 
 Register `escl-scan-feature` and `ipp-print-feature` in the existing, independently
 served card modules. A small domain-scoped adapter owns host context and embeds

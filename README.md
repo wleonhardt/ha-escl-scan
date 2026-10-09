@@ -445,8 +445,8 @@ card. Changing the parent device clears local staged content.
 The [Mushroom example](examples/dashboard-mushroom.yaml) uses the current
 Template card, not Legacy Template. No Mushroom dependency is required for Tile
 or standalone cards. See the [paired native Sections example](https://github.com/wleonhardt/ha-escl-scan/blob/main/examples/dashboard-native-sections.yaml).
-Native examples are opt-in while physical Android acceptance is completed;
-existing dashboards are never migrated automatically. Host verification and
+Native Tile features are the recommended starting point for new dashboards.
+Existing standalone cards remain supported; dashboards are never migrated automatically. Host verification and
 limits are recorded in the [Phase 5 validation](https://github.com/wleonhardt/ha-escl-scan/blob/main/plans/shared-card-phase-5-validation.md).
 
 ## Development
