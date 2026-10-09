@@ -1,7 +1,7 @@
 # Phase 4 HP live tests — 2026-10-09
 
-Status: in progress; print passed, awaiting user confirmation that the two fronts
-are loaded before scanning. Starting installed pair: scan 0.10.0 / print 0.9.0.
+Status: in progress; physical print confirmed, fronts scanned and reload/reconnect
+passed. Awaiting the user to load reversed backs. Starting installed pair: scan 0.10.0 / print 0.9.0.
 HP Color LaserJet MFP M283fdw, HA 2026.9.4. The user requested physical tests and
 confirmed Letter paper and a clear output tray.
 
@@ -31,9 +31,9 @@ snapshot immediately after refresh, so this alone does not prove recovery while
 printing. Scanner reload during the manual-back pause is the next recovery test.
 Both native connectivity sensors remained connected during the print.
 
-Physical sheet count/orientation awaits the user's confirmation. The test sheet
-will then be reused for a two-pass scan: fronts 1F,2F; backs 2B,1B with Last sheet
-first, validating final PDF order 1F,1B,2F,2B.
+The user confirmed both printed sheets were correct and loaded fronts 1F,2F.
+The same sheets are being reused for a two-pass scan, with reversed backs 2B,1B
+and Last sheet first; final PDF order should be 1F,1B,2F,2B.
 
 ## Finding and fix: provisional progress totals
 
@@ -52,12 +52,29 @@ The installed card resource is `/ipp_print/card-90abe4fae503.js`.
 
 ## Remaining physical checks
 
-- [ ] Confirm the printed sheets, load fronts, scan them and reach manual-back pause.
-- [ ] Refresh the submitting dashboard during that pause; compare same scan ID/count.
-- [ ] Briefly disconnect only that browser tab from HA and restore it; same scan recovers.
+- [x] Confirm the printed sheets, load fronts, scan them and reach manual-back pause.
+- [x] Refresh the submitting dashboard during that pause; compare same scan ID/count.
+- [x] Briefly disconnect only that browser tab from HA and restore it; same scan recovers.
 - [ ] Scan reversed backs, download PDF and inspect page count/order/orientation.
 - [ ] With no job active, user switches HP off/on to validate real unreachable/recovery.
 - [ ] Record completion and leave both integrations idle with no pending test jobs.
 
 No additional print should be sent unless needed and explained. Do not restart
 HA or reload the scan integration while the manual duplex scan is waiting.
+
+## Scan recovery evidence
+
+Real scan `a49d87b88844` started at 13:06:09 UTC, Feeder/Letter/color/300 DPI,
+manual duplex. It reached awaiting-back-sides with 2 front pages. Both tabs
+agreed on the scan ID, phase and count. Refreshing tab 65 restored the same
+scan and enabled Scan back sides without a new start request.
+
+Next, tab 65 alone was placed offline and its actual HA WebSocket closed.
+The dashboard reported disconnected, kept scan `a49d87b88844`, showed reconnection
+guidance and disabled both Scan back sides and Cancel. Networking was restored
+in a finally block. The real HA connection reconnected, preserved the same scan
+and counts, hid the connection warning and re-enabled both controls. Tab 67
+remained online throughout. HA and the scanner integration were not restarted.
+
+The unfinished `/api/escl_scan/file/a49d87b88844` correctly returns 409 while
+waiting for backs. No intermediate/front-only PDF was exposed.
