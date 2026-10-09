@@ -1460,3 +1460,22 @@ test('latest download failure stays local, expires on 404 and remains available 
   assert.equal(card._activityDownloadButton, null);
   assert.equal(card._primaryEl.textContent, 'Scan');
 });
+
+test('hung obsolete downloads cannot block a remounted card or a newer result', async () => {
+  for (const mode of ['remount', 'replacement', 'primary']) {
+    const win = boot(), card = mount(win), latest = latestResult();
+    const replies = [];
+    const { push, calls } = makeHass(card, { fetchImpl: () => new Promise(resolve => replies.push(resolve)) });
+    push(SENSOR, mode === 'primary' ? 'completed' : 'idle', { scan_id: latest.scan_id, file_url: latest.file_url, latest_scan: latest });
+    const old = mode === 'primary' ? card._downloadScan() : card._downloadLatest(card._activityRecords[0]);
+    if (mode === 'remount') { card.remove(); win.document.body.append(card); }
+    else push(SENSOR, 'idle', { latest_scan: latestResult({ scan_id: '123456abcdef', file_url: '/api/escl_scan/file/123456abcdef' }) });
+    if (mode === 'primary') { card.remove(); win.document.body.append(card); }
+    const next = card._downloadLatest(card._activityRecords[0]);
+    assert.equal(calls.fetch.length, 2, mode);
+    const response = { ok: true, status: 200, blob: async () => new win.Blob(['%PDF'], { type: 'application/pdf' }) };
+    replies[1](response); await next;
+    replies[0](response); await old;
+    assert.equal(win.downloads.length, 1, mode);
+  }
+});

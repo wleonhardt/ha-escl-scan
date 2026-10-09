@@ -18,6 +18,8 @@ if (!customElements.get(TAG)) {
       this._lastSig = null;
       this._clearResultTimer?.();
       this._clearActivityTimer?.();
+      this._historyDownload = null;
+      this._downloadRequest = null;
       this._toggleOptions?.(false, false);
       this._capabilityRequest?.abort();
     }
@@ -552,6 +554,7 @@ C.prototype._syncActivity = function () {
   const records = data.records.map(record => record.key === this._expiredActivityId
     ? { ...record, availability: 'expired', url: null } : record);
   this._activityRecords = records;
+  if (this._historyDownload && this._historyDownload.record.key !== records[0]?.key) this._historyDownload = null;
   if (scan && this._completedScan && this._completedScan.scanId === records[0]?.key && !records[0].url) {
     this._downloadedScanId = this._completedScan.scanId;
     this._completedScan = null;
@@ -591,7 +594,7 @@ C.prototype._syncActivity = function () {
   }
   const pending = this._historyDownload?.record.key === records[0]?.key;
   if (this._activityDownloadButton) {
-    this._activityDownloadButton.disabled = pending || !!this._downloadRequest || this._hass?.connected === false;
+    this._activityDownloadButton.disabled = pending || (!!this._downloadRequest && this._downloadRequest === this._completedScan) || this._hass?.connected === false;
     this._activityDownloadButton.textContent = this._t(pending ? 'action.downloading' : 'action.download');
   }
   const message = this._activityMessage?.key === records[0]?.key ? this._activityMessage : null;
@@ -621,7 +624,7 @@ async function downloadScanPdf(owner, result, isCurrent) {
   return 'downloaded';
 }
 C.prototype._downloadLatest = async function (record) {
-  if (!record.url || this._historyDownload || this._downloadRequest || this._hass?.connected === false) return;
+  if (!record.url || this._historyDownload || (this._downloadRequest && this._downloadRequest === this._completedScan) || this._hass?.connected === false) return;
   const token = { record, entity: this._activityEntity, epoch: this._requestEpoch || 0 };
   const current = () => this.isConnected && this._historyDownload === token
     && this._activityEntity === token.entity && (this._requestEpoch || 0) === token.epoch

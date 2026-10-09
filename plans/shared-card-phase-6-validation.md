@@ -28,11 +28,12 @@ need Rows: Auto to accommodate expanded content. Examples are updated.
 
 ## Automated and runtime evidence
 
-- Scan: 240 Python + 76 card tests; print: 229 Python + 64 card tests. **609 tests**.
+- Scan: 240 Python + 77 card tests; print: 229 Python + 64 card tests. **610 tests**.
 - Both npm ci/card suites, Ruff, shared-core parity and print compileall pass.
 - Coverage includes restart, idle, expiry, tighter TTL, touched files, purge,
   missing/symlink files, corrupt metadata, private fronts, failed/canceled scans,
-  reused print IDs, separate printer entries, stale downloads and text safety.
+  reused print IDs, separate printer entries, stale downloads, hung requests
+  after navigation/result replacement and text safety.
 - Real HTTP tests: restored PDF works with a read-only HA user's token; the same
   URL rejects anonymous requests with 401. No admin websocket dependency.
 - Actual HA 2024.12.5 Store runtime (isolated temporary directory) saves/restores
