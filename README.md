@@ -5,7 +5,7 @@
 [![validate](https://github.com/wleonhardt/ha-escl-scan/actions/workflows/validate.yml/badge.svg)](https://github.com/wleonhardt/ha-escl-scan/actions/workflows/validate.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A Home Assistant custom integration that triggers document scans on any
+A Home Assistant custom integration that triggers document scans on
 eSCL/AirScan-capable network scanner and surfaces **per-job state** through
 a sensor — including live page progress for ADF batches, completion,
 cancellation, and the scanner's own error reasons.
@@ -63,7 +63,7 @@ auto-upload to Paperless, etc.).
 ## Requirements
 
 - Home Assistant 2024.12 or newer (2026.3+ for the integration icon)
-- A network scanner that supports eSCL / AirScan (most modern MFPs do)
+- A network scanner that supports eSCL / AirScan (PDF, JPEG or PNG acquisition required)
 - The scanner reachable from your HA host (typically port 443 or 80)
 
 ### Tested devices
@@ -103,6 +103,7 @@ and fill in:
 |---|---|
 | Hostname or IP | e.g. `scanner.local` or `192.168.1.50` |
 | Port | `443` for HTTPS (default), `80` for HTTP |
+| Scanner resource path | `eSCL` normally; a bridge may advertise another path. `/` uses its root |
 | Use TLS | On for HTTPS |
 | User | Only required if scanner uses basic auth |
 | Password | Only required if scanner uses basic auth |
@@ -117,7 +118,7 @@ size per source, duplex support, and the supported resolutions:
 - the scan region is the full bed of the chosen source (A4, Letter, Legal
   ADF — whatever the device reports), so nothing gets cropped;
 - a requested DPI snaps to the nearest supported resolution for the chosen
-  source and simplex/duplex mode, when discrete resolutions are advertised;
+  source, color and simplex/duplex profile, using discrete values or square ranges;
 - automatic duplex is only sent for Feeder scans on a duplex-capable ADF.
   A two-sided request on a simplex ADF, or when capabilities are unavailable,
   uses the manual workflow below.
@@ -143,7 +144,7 @@ Set **Two-sided**, then press **Scan** for a two-sided feeder document. The
 switch only changes the next scan; it never starts one. Off explicitly requests
 one-sided scanning, while on selects the feeder. The card's `duplex` default
 overrides the integration's duplex default; DPI and color still use integration
-defaults. The switch remembers changes while the card stays mounted and resets
+defaults unless changed in Options. The switch remembers changes while the card stays mounted and resets
 on reload. Settings are locked while a scan is starting, running or awaiting
 download. With fresh scanner capabilities, the card shows **Automatic duplex**
 or **Two passes required**. Unknown/stale support retains **may need two passes**;
@@ -185,6 +186,31 @@ Automations can watch for `awaiting-back-sides`, then call
 `escl_scan.scan_backs` after the user reloads the backs. Optional `scan_id`
 selects the waiting scan; omitted `scan_id` uses the current scan. Set
 `reverse_back_order: true` when the last sheet feeds first (default `false`).
+
+## Scan options and compatibility
+
+Open **Options** (the sliders icon) for Source, Color, Resolution and Page size.
+Options open in a theme-aware dialog, so a narrow Sections tile stays compact.
+Choose Automatic, Feeder or Glass; Glass cannot scan both sides. Resolution
+choices follow the known source/color profiles, and adjustments are explained.
+Full scan area means the advertised maximum region, not automatic paper detection.
+Letter/A4 or Custom can avoid unnecessary blank space; custom dimensions in the
+card use millimeters. The service/API uses integer 1/300-inch units.
+
+Card defaults are optional: `source: auto` (`Platen` for Glass or `Feeder`),
+`color: default` (`color` or `gray`), `dpi: 300` and `page_size: full`
+(`letter` or `a4`). `duplex_in_options: true` moves the Two-sided switch into
+Options. Edits during a job apply to the next job. Download and reload/back-order
+controls retain their existing behavior.
+
+Native PDF is preferred. JPEG/PNG-only profiles are converted to PDF with Pillow,
+installed automatically with the integration. Each encoded image is limited to
+50 MiB and 40 megapixels after decoding; lower DPI or page size if necessary.
+Asymmetric-only resolutions, TIFF and multi-frame images are not supported.
+Unknown format metadata retains the legacy PDF request; it is not proof of support.
+
+See the [compatibility and bridge guide](docs/compatibility.md) for evidence levels,
+optional AirSane/ipp-usb routes, diagnostic collection and remaining hardware gates.
 
 ## Services and button
 
@@ -400,3 +426,19 @@ Pull requests welcome.
 ## License
 
 MIT
+
+### Paper-size service example
+
+```yaml
+action: escl_scan.start
+data:
+  source: Feeder
+  color: gray
+  dpi: 300
+  duplex: false
+  page_size: letter
+```
+
+For `page_size: custom`, provide both `width` and `height` as positive integers
+in 1/300 inch units (Letter is 2550 × 3300). Dimensions must fit the selected
+source. Both passes of a manual duplex scan use the same accepted settings.

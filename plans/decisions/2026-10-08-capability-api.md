@@ -37,3 +37,21 @@ must check this metadata and leave options unavailable on an older backend.
 No additional settings UI ships in Phase 2. A subsequent user-feedback fix uses
 scan capability metadata for the existing Two-sided label; new settings remain
 Phase 3 work.
+
+## Compatibility extension (0.8.0 scan / 0.7.0 print)
+
+Schema 1 remains additive. Scan source summaries now include up to 64 complete
+combinations (formats/colors and 50–1200 square DPI), min/max regions and region
+units. Start accepts page_size/full/letter/a4/custom plus bounded integer dimensions.
+Results expose acquisition format, requested/effective DPI and page size.
+
+Print accepts optional document_format in capability GETs and media, media_source,
+color_mode, quality in service/multipart requests. Supported/default/ready values
+remain distinct; auto_sensing is not format support. Query keyword subsets in
+batches of at most eight, excluding media-col-database from routine reads based
+on the live HP response. Validate explicit settings before uploading. Confirmed
+submit rejection includes job_may_exist=false; ambiguous outcomes use true.
+
+The common options surface is a native dialog (theme variables, no framework).
+It avoids expanding fixed-height Sections tiles, traps modal focus, and returns
+focus on Escape/Done. Backend constraints remain authoritative.

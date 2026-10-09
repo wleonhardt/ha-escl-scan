@@ -9,13 +9,14 @@
   print v0.6.0, followed by card fixes scan v0.7.1 / print v0.6.1. Live API,
   print jobs and physical phone downloads pass; physical four-sheet confirmation
   and release tags pending. [Phase 2 validation](shared-card-phase-2-validation.md).
-  Next implementation: Phase 3 options.
+  Phase 3 options implemented in the compatibility rollout; release gate pending.
   [Full plan](shared-card-rollout-2026-10-08.md).
-- Compatibility research completed across CUPS, sane-airscan, NAPS2 and related
-  projects. Recommends correcting format claims and scanner profile/completion
-  handling before expanding Phase 3 controls, then improving capability models
-  and optional bridge support. Proposed sequencing; no runtime changes or new
-  protocol decision accepted. [Research and evidence](ipp-escl-compatibility-research-2026-10-08.md).
+- Compatibility implementation: scan 0.8.0 / print 0.7.0 prepared, including
+  complete scan profiles, JPEG/PNG acquisition, print preflight/typed IPP,
+  shared Options dialogs, paper/tray settings and safe diagnostics.
+  [Plan and completed items](compatibility-rollout-2026-10-08.md).
+  [Validation and remaining physical gates](compatibility-validation-2026-10-08.md).
+  Installed pair remains scan 0.7.1 / print 0.6.1 until the installation gate.
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
 - Live-test still open: zeroconf discovery flow only (needs the entry removed;
@@ -24,14 +25,11 @@
 - Awaiting reporter feedback on #5 (v0.4.4/v0.4.5 on Epson ET-4950 / WF-4830).
 
 ## Backlog / nice-to-have
-- Image-mode (JPEG) scans converted to PDF (needs Pillow/img2pdf).
 - Reconfigure flow for host/creds (options flow currently edits them).
 - Per-scan override for rotate_duplex_backs (service field / card toggle).
 - Card: localisation of status strings.
 - Card: persistent scan history/download access across dashboard reloads.
   The mounted card now retains its latest result until download or a newer scan.
-- Paper size/scan-region selection: HP's maximum ADF region produces Legal-size
-  PDFs with extra white space when scanning Letter sheets.
 - Community forum thread + device compatibility reports.
 
 ## Done

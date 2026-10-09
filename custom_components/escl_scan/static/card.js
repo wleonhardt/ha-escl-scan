@@ -36,12 +36,24 @@ C.prototype.setConfig = function (config) {
   if (config?.duplex !== undefined && typeof config.duplex !== 'boolean') {
     throw new Error('Two-sided default must be true or false.');
   }
+  if (config?.source !== undefined && !['auto','Platen','Feeder'].includes(config.source)) throw new Error('Invalid scan source.');
+  if (config?.color !== undefined && !['default','color','gray'].includes(config.color)) throw new Error('Invalid scan color.');
+  if (config?.dpi !== undefined && (!Number.isInteger(config.dpi) || config.dpi < 50 || config.dpi > 1200)) throw new Error('DPI must be an integer from 50 to 1200.');
+  if (config?.page_size !== undefined && !['full','letter','a4'].includes(config.page_size)) throw new Error('Invalid default page size.');
+  if (config?.duplex_in_options !== undefined && typeof config.duplex_in_options !== 'boolean') throw new Error('Options layout must be true or false.');
+  const previousConfig = this._config;
   const previousDefault = this._config?.duplex;
   const previousEntity = this._config?.entity;
-  this._config = Object.assign({ title: 'Scan', duplex: false }, config || {});
+  this._config = Object.assign({ title: 'Scan', duplex: false, source: 'auto', color: 'default', dpi: 'default', page_size: 'full' }, config || {});
   if (this._duplex === undefined || previousDefault !== this._config.duplex) {
     if (this._busy || this._activeScanId) this._resetDuplex = true;
     else this._duplex = this._config.duplex;
+  }
+  this._settings ||= { source: 'auto', color: 'default', dpi: 'default', page_size: 'full' };
+  for (const key of ['source', 'color', 'dpi', 'page_size']) {
+    if (previousConfig?.[key] !== this._config[key]) {
+      (this._pendingSettings ||= {})[key] = this._config[key];
+    }
   }
   this._render();
   // _render() no-ops after the first call, so apply title changes (e.g. the
@@ -79,9 +91,14 @@ C.getConfigElement = function () { return document.createElement(TAG + '-editor'
 const EDITOR_SCHEMA = [
   { name: 'title', selector: { text: {} } },
   { name: 'duplex', selector: { boolean: {} } },
+  { name: 'duplex_in_options', selector: { boolean: {} } },
+  { name: 'source', selector: { select: { options: ['auto', 'Platen', 'Feeder'] } } },
+  { name: 'color', selector: { select: { options: ['default', 'color', 'gray'] } } },
+  { name: 'dpi', selector: { number: { min: 50, max: 1200, mode: 'box' } } },
+  { name: 'page_size', selector: { select: { options: ['full', 'letter', 'a4'] } } },
   { name: 'entity', selector: { entity: { domain: 'sensor', integration: 'escl_scan' } } },
 ];
-const EDITOR_LABELS = { title: 'Title', entity: 'Scan sensor (optional)', duplex: 'Two-sided by default (uses feeder)' };
+const EDITOR_LABELS = { title: 'Title', entity: 'Scan sensor (optional)', duplex: 'Two-sided by default (uses feeder)', duplex_in_options: 'Show Two-sided inside Options', source: 'Default source', color: 'Default color', dpi: 'Default DPI', page_size: 'Default page size' };
 
 if (!customElements.get(TAG + '-editor')) {
   customElements.define(TAG + '-editor', class extends HTMLElement {
@@ -148,6 +165,14 @@ C.prototype._render = function () {
       .cancel { display: none; color: var(--error-color); }
       .cancel.show { display: block; }
       @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+      .options-button { margin-left: auto; flex: none; width: 44px; padding: 8px; }
+      .options { box-sizing: border-box; display: grid; gap: 12px; width: min(400px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; padding: 20px; border: 1px solid var(--divider-color); border-radius: var(--ha-card-border-radius, 12px); color: var(--primary-text-color); background: var(--card-background-color); }
+      .options::backdrop { background: rgba(0, 0, 0, .45); }
+      .options h2 { font-size: 20px; margin: 0 0 4px; }
+      .option-field { display: grid; gap: 4px; min-width: 0; font-size: 14px; }
+      .option-field select, .option-field input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 8px; font: inherit; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 8px; }
+      .options-help { color: var(--secondary-text-color); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+      .warning { color: var(--warning-color, var(--primary-text-color)); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
       /* End shared document-card base. */
       .toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; font-size: 14px; cursor: pointer; }
       .toggle small { display: block; color: var(--secondary-text-color); font-size: 12px; }
@@ -160,7 +185,7 @@ C.prototype._render = function () {
       .status button { width: 100%; margin-top: 4px; }
     </style>
     <ha-card>
-      <div class="header"><ha-icon class="icon" icon="mdi:scanner" aria-hidden="true"></ha-icon><div class="title"></div></div>
+      <div class="header"><ha-icon class="icon" icon="mdi:scanner" aria-hidden="true"></ha-icon><div class="title"></div><button class="options-button" type="button" aria-expanded="false" aria-controls="options" aria-label="Options" title="Options"><ha-icon icon="mdi:tune" aria-hidden="true"></ha-icon></button></div>
       <div class="status" aria-live="polite" aria-atomic="true"></div>
       <div class="controls">
         <label class="toggle"><span>Two-sided<small>Uses feeder</small></span><input class="two-sided" type="checkbox" role="switch" aria-label="Two-sided scan using feeder"></label>
@@ -193,6 +218,7 @@ C.prototype._render = function () {
     this._setStatus('');
     this._refreshCapabilities();
   });
+  this._installOptions();
   this._rendered = true;
   this._syncControls();
   this._onHass();
@@ -201,6 +227,7 @@ C.prototype._render = function () {
 C.prototype._syncControls = function () {
   if (!this._primaryEl) return;
   const locked = !!this._busy || !!this._activeScanId;
+  if (!locked && this._pendingSettings) { Object.assign(this._settings, this._pendingSettings); this._pendingSettings = null; }
   if (!locked && this._resetDuplex) {
     this._duplex = this._config.duplex;
     this._resetDuplex = false;
@@ -216,11 +243,14 @@ C.prototype._syncControls = function () {
   this._primaryEl.hidden = !!this._showCancel;
   this._primaryEl.textContent = this._busy ? 'Starting…' : downloading ? 'Downloading…'
     : this._completedScan ? 'Download PDF' : 'Scan';
+  this._syncOptions(locked || !!this._completedScan);
+  if (!locked && !this._completedScan && this._settingsError) this._primaryEl.disabled = true;
   if (this._showingIdle) this._statusEl.textContent = this._idleStatus();
 };
 
 C.prototype._idleStatus = function () {
-  if (!this._duplex) return 'Automatic source';
+  if (!this._duplex) return this._settings?.source === 'Platen' ? 'Glass'
+    : this._settings?.source === 'Feeder' ? 'Feeder' : 'Automatic source';
   const caps = this._capabilities;
   if (caps?.expires > Date.now()) {
     if (caps.automatic === true) return 'Feeder · Automatic duplex';
@@ -231,9 +261,14 @@ C.prototype._idleStatus = function () {
 
 // Read only when the two-sided option is relevant. Cache per selected sensor,
 // coalesce hass pushes, and retry unknown/older backends without blocking Scan.
-C.prototype._refreshCapabilities = async function () {
+C.prototype._refreshCapabilities = function () {
+  if (this._capabilityRequest && !this._capabilityRequest.signal.aborted) return this._capabilityTask;
+  this._capabilityTask = this._fetchCapabilities();
+  return this._capabilityTask;
+};
+C.prototype._fetchCapabilities = async function () {
   const entity = this._scanState()?.entity_id;
-  if (!this.isConnected || !this._duplex || !entity || !this._hass
+  if (!this.isConnected || (!this._duplex && !this._optionsOpen && !this._hasExplicitSettings()) || !entity || !this._hass
       || this._capabilityRequest || this._capabilities?.expires > Date.now()) return;
   const request = new AbortController();
   this._capabilityRequest = request;
@@ -250,6 +285,7 @@ C.prototype._refreshCapabilities = async function () {
         || body.domain !== 'escl_scan' || body.entity_id !== entity || body.status !== 'fresh') return;
     caps.automatic = body.supported?.automatic_duplex;
     caps.manual = body.supported?.manual_duplex;
+    caps.body = body;
     const ttl = body.refresh_after_seconds;
     caps.expires = Date.now() + (Number.isFinite(ttl) ? Math.max(1, Math.min(900, ttl)) : 300) * 1000;
   } catch {
@@ -309,8 +345,6 @@ C.prototype._setCancelVisible = function (visible) {
 
 C.prototype._startScan = async function (overrides) {
   if (this._busy || this._activeScanId || this._completedScan) return;
-  const request = overrides || (this._duplex
-    ? { source: 'Feeder', duplex: true } : { duplex: false });
   this._busy = true;
   this._backError = null;
   this._reverseBackOrder = false;
@@ -319,6 +353,11 @@ C.prototype._startScan = async function (overrides) {
   this._setCancelVisible(false);
   this._clearResultTimer();
   try {
+    if (!overrides && this._hasExplicitSettings()) {
+      await this._refreshCapabilities();
+      if (!this._capabilities?.body) throw new Error('Scan settings could not be loaded. Open Options and check the scanner connection.');
+    }
+    const request = overrides || this._scanRequest();
     const resp = await this._apiFetch('/api/escl_scan/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -335,7 +374,9 @@ C.prototype._startScan = async function (overrides) {
     }
     this._activeScanId = body?.scan_id ?? null;
     const src = typeof body.source === 'string' ? ` (${body.source.toLowerCase()})` : '';
-    this._setStatus(`Scanning${src}…`);
+    const adjusted = body.requested_dpi && body.dpi !== body.requested_dpi
+      ? ` Using ${body.dpi} DPI; ${body.requested_dpi} is unavailable.` : '';
+    this._setStatus(`Scanning${src}…${adjusted}`);
     this._setCancelVisible(true);
     // A fast scan can already be terminal before its POST response arrives.
     const current = this._scanState();
@@ -766,3 +807,170 @@ try {
   // staggered sweeps above have all fired.
   setTimeout(() => observer.disconnect(), 12_000);
 } catch {}
+
+// Shared document-card option helpers. Keep this small block identical in both cards.
+function optionChoices(select, choices, value) {
+  const signature = JSON.stringify(choices);
+  if (select.dataset.choices !== signature) {
+    select.replaceChildren(...choices.map(([key, label, disabled]) => {
+      const option = document.createElement('option');
+      option.value = String(key); option.textContent = label; option.disabled = !!disabled;
+      return option;
+    }));
+    select.dataset.choices = signature;
+  }
+  select.value = String(value);
+}
+function addOptionField(panel, key, label, type = 'select') {
+  const wrapper = document.createElement('label');
+  wrapper.className = 'option-field'; wrapper.textContent = label;
+  const input = document.createElement(type === 'select' ? 'select' : 'input');
+  input.dataset.option = key;
+  if (type !== 'select') input.type = type;
+  wrapper.append(input); panel.append(wrapper);
+  return input;
+}
+C.prototype._toggleOptions = function (open) {
+  this._optionsOpen = open;
+  this._optionsPanel.hidden = !open;
+  this._optionsButton.setAttribute('aria-expanded', String(open));
+  if (open) {
+    this._refreshOptions();
+    if (!this._optionsPanel.open) this._optionsPanel.showModal?.();
+    this._optionsPanel.querySelector('select:not(:disabled), input:not(:disabled)')?.focus();
+  } else {
+    this._optionsPanel.close?.(); this._optionsButton.focus();
+  }
+};
+C.prototype._createOptionsPanel = function () {
+  this._optionsButton = this.shadowRoot.querySelector('.options-button');
+  const panel = document.createElement('dialog');
+  panel.className = 'options'; panel.id = 'options'; panel.hidden = true;
+  panel.setAttribute('aria-labelledby', 'options-heading');
+  const heading = document.createElement('h2'); heading.id = 'options-heading';
+  heading.textContent = this.localName === 'escl-scan-card' ? 'Scan options' : 'Print options';
+  panel.append(heading); this.shadowRoot.append(panel);
+  panel.addEventListener('cancel', event => { event.preventDefault(); this._toggleOptions(false); });
+  this._optionsPanel = panel;
+  this._optionsButton.addEventListener('click', () => this._toggleOptions(!this._optionsOpen));
+  panel.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.stopPropagation(); this._toggleOptions(false); }
+  });
+  this._optionHelp = document.createElement('div');
+  this._optionHelp.className = 'options-help'; this._optionHelp.setAttribute('aria-live', 'polite');
+  return panel;
+};
+C.prototype._finishOptionsPanel = function () {
+  this._optionsPanel.append(this._optionHelp);
+  const done = document.createElement('button'); done.type = 'button'; done.textContent = 'Done';
+  done.addEventListener('click', () => this._toggleOptions(false));
+  this._optionsPanel.append(done);
+};
+
+C.prototype._installOptions = function () {
+  const panel = this._createOptionsPanel();
+  this._optionFields = {
+    source: addOptionField(panel, 'source', 'Source'),
+    color: addOptionField(panel, 'color', 'Color'),
+    dpi: addOptionField(panel, 'dpi', 'Resolution'),
+    page_size: addOptionField(panel, 'page_size', 'Page size'),
+    width: addOptionField(panel, 'width', 'Custom width (mm)', 'number'),
+    height: addOptionField(panel, 'height', 'Custom height (mm)', 'number'),
+  };
+  for (const [key, field] of Object.entries(this._optionFields)) {
+    field.addEventListener('change', () => {
+      if (field.disabled || this._busy || this._activeScanId) return;
+      this._settingsAdjustment = '';
+      this._settings[key] = ['width', 'height'].includes(key) ? Math.round(Number(field.value) * 300 / 25.4) : field.value;
+      this._syncControls();
+    });
+  }
+  this._finishOptionsPanel();
+};
+C.prototype._refreshOptions = function () { return this._refreshCapabilities(); };
+C.prototype._syncOptions = function (locked) {
+  if (!this._optionFields) return;
+  const settings = this._settings;
+  if (locked) { for (const field of Object.values(this._optionFields)) field.disabled = true; return; }
+  const caps = this._capabilities?.expires > Date.now() ? this._capabilities.body : null;
+  const supported = caps?.supported;
+  const available = Array.isArray(caps?.request_options) ? caps.request_options : [];
+  const fields = this._optionFields;
+  this._settingsError = '';
+  const toggle = this._twoSidedEl.closest('label');
+  const parent = this._config.duplex_in_options ? this._optionsPanel : this.shadowRoot.querySelector('.controls');
+  if (toggle.parentElement !== parent) parent.prepend(toggle);
+  this._twoSidedEl.disabled = locked || settings.source === 'Platen';
+  toggle.querySelector('small').textContent = settings.source === 'Platen' ? 'Select feeder to scan both sides' : 'Uses feeder';
+  const sourceKnown = Array.isArray(supported?.sources);
+  optionChoices(fields.source, [['auto', 'Automatic'], ['Feeder', 'Feeder', sourceKnown && !supported.sources.includes('Feeder')],
+    ['Platen', 'Glass', this._duplex || (sourceKnown && !supported.sources.includes('Platen'))]], settings.source);
+  if (this._duplex && settings.source === 'Platen') this._settingsError = 'Choose Feeder or Automatic for a two-sided scan.';
+  else if (sourceKnown && settings.source !== 'auto' && !supported.sources.includes(settings.source)) this._settingsError = 'This scanner does not advertise the selected source.';
+  const key = settings.source === 'Platen' ? 'Platen' : (this._duplex && supported?.automatic_duplex === true) ? 'FeederDuplex' : 'Feeder';
+  const profile = supported?.profiles?.[key];
+  const combinations = Array.isArray(profile?.combinations) ? profile.combinations.filter(p => p && typeof p === 'object' && (!Array.isArray(p.formats) || p.formats.some(f => ['application/pdf','image/jpeg','image/png'].includes(f)))) : [];
+  const autoSource = settings.source === 'auto' && !this._duplex;
+  let colors = !autoSource && Array.isArray(profile?.colors) ? profile.colors : ['color', 'gray'];
+  if (settings.color !== 'default' && !colors.includes(settings.color)) {
+    this._settingsError = 'This source does not support the selected color mode. Choose another color mode.';
+    colors = [...colors, settings.color];
+  }
+  optionChoices(fields.color, [['default', 'Integration default'], ...colors.filter(x => ['color', 'gray'].includes(x)).map(x => [x, x === 'gray' ? 'Grayscale' : 'Color'])], settings.color);
+  let resolutions = !autoSource && Array.isArray(profile?.resolutions) ? profile.resolutions : [150, 200, 300, 600];
+  if (!autoSource && combinations.length && settings.color !== 'default') {
+    const matching = combinations.filter(p => p.colors == null || (Array.isArray(p.colors) && p.colors.includes(settings.color)));
+    if (matching.length && matching.every(p => Array.isArray(p.resolutions))) {
+      resolutions = [...new Set(matching.flatMap(p => p.resolutions))].sort((a,b) => a-b);
+    }
+  }
+  resolutions = resolutions.filter(dpi => Number.isInteger(dpi) && dpi >= 50 && dpi <= 1200);
+  if ((autoSource || !Array.isArray(profile?.resolutions)) && settings.dpi !== 'default') resolutions = [...new Set([...resolutions, Number(settings.dpi)])].sort((a,b) => a-b);
+  let adjustment = this._settingsAdjustment || '';
+  if (settings.dpi !== 'default' && resolutions.length && !resolutions.includes(Number(settings.dpi)) && !autoSource) {
+    const nearest = [...resolutions].sort((a,b) => Math.abs(a-Number(settings.dpi))-Math.abs(b-Number(settings.dpi)) || a-b)[0];
+    adjustment = this._settingsAdjustment = `${settings.dpi} DPI is unavailable for these settings; using ${nearest} DPI.`;
+    if (!locked) settings.dpi = String(nearest);
+  }
+  optionChoices(fields.dpi, [['default', 'Integration default'], ...resolutions.map(dpi => [dpi, `${dpi} DPI`])], settings.dpi);
+  optionChoices(fields.page_size, [['full','Full scan area'],['letter','Letter'],['a4','A4'],['custom','Custom']], settings.page_size);
+  for (const [name, field] of Object.entries(fields)) {
+    field.disabled = locked || !available.includes(name);
+    if (name === 'width' || name === 'height') {
+      field.closest('label').hidden = settings.page_size !== 'custom';
+      field.min = '0.1'; field.step = '0.1';
+      field.dataset.maxUnits = String(profile?.maximum_region?.[name === 'width' ? 0 : 1] || 60000);
+      field.max = String(Math.floor(Number(field.dataset.maxUnits) * 25.4 / 30) / 10);
+      if (document.activeElement !== this || this.shadowRoot.activeElement !== field) field.value = settings[name] ? (settings[name] * 25.4 / 300).toFixed(1) : '';
+    }
+  }
+  if (settings.page_size === 'custom' && ['width','height'].some(name => !Number.isInteger(settings[name]) || settings[name] < 1 || settings[name] > Number(fields[name].dataset.maxUnits))) {
+    this._settingsError = 'Enter a valid custom width and height within the scanner limits.';
+  }
+  this._optionHelp.textContent = this._settingsError || adjustment || (!caps ? 'Device settings are unavailable. Scanning with existing defaults still works.'
+    : autoSource ? 'Source is chosen when scanning. Available resolution depends on the selected source and color.' : 'Settings apply to the next scan.');
+};
+C.prototype._scanRequest = function () {
+  if (this._settingsError) throw new Error(this._settingsError);
+  const request = { duplex: !!this._duplex };
+  const settings = this._settings;
+  const available = this._capabilities?.body?.request_options || [];
+  for (const name of ['source','color','dpi','page_size']) {
+    const isExplicit = settings[name] !== ({source:'auto',color:'default',dpi:'default',page_size:'full'})[name];
+    if (isExplicit && !available.includes(name)) throw new Error('Update the scan integration to use the selected options.');
+  }
+  if (this._duplex) request.source = 'Feeder';
+  else if (settings.source !== 'auto' && available.includes('source')) request.source = settings.source;
+  if (settings.color !== 'default' && available.includes('color')) request.color = settings.color;
+  if (settings.dpi !== 'default' && available.includes('dpi')) request.dpi = Number(settings.dpi);
+  if (available.includes('page_size')) {
+    request.page_size = settings.page_size;
+    if (settings.page_size === 'custom') { request.width = settings.width; request.height = settings.height; }
+  }
+  return request;
+};
+
+C.prototype._hasExplicitSettings = function () {
+  return this._settings && (this._settings.source !== 'auto' || this._settings.color !== 'default'
+    || this._settings.dpi !== 'default' || this._settings.page_size !== 'full');
+};

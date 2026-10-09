@@ -741,3 +741,61 @@ test('late download success or failure cannot overwrite another scan or target',
     }
   }
 });
+
+function optionCaps() {
+  return { schema_version: 1, domain: 'escl_scan', entity_id: SENSOR, status: 'fresh',
+    request_options: ['source','color','dpi','duplex','page_size','width','height'], supported: {
+      sources: ['Platen','Feeder'], automatic_duplex: false, manual_duplex: true,
+      profiles: { Platen: { colors: ['gray'], resolutions: [300,600], maximum_region: [2550,3508],
+        combinations: [{colors:['gray'],formats:['image/png'],resolutions:[300,600]}] },
+      Feeder: { colors:['color','gray'],resolutions:[150,300,600], combinations: [
+        {colors:['color'],formats:['application/pdf'],resolutions:[150,300]},
+        {colors:['gray'],formats:['image/png'],resolutions:[600]}] } },
+    } };
+}
+const optionsTick = () => new Promise(resolve => setTimeout(resolve, 0));
+function changeOption(win, el, name, value) {
+  const field = el._optionFields[name]; field.value = value;
+  field.dispatchEvent(new win.Event('change')); return field;
+}
+test('scan options preserve complete profiles, explain DPI adjustment and reject incompatible source/color', async () => {
+  const win = boot(), el = mount(win);
+  const { push, calls } = makeHass(el, { capabilitiesImpl: async () => jsonResponse(optionCaps()),
+    fetchImpl: async () => jsonResponse({scan_id:'chosen'}) });
+  push(SENSOR, 'idle'); el._toggleOptions(true); await optionsTick();
+  changeOption(win, el, 'dpi', '600');
+  changeOption(win, el, 'source', 'Feeder');
+  changeOption(win, el, 'color', 'color');
+  assert.equal(el._settings.dpi, '300');
+  assert.match(el._optionHelp.textContent, /600.*300/);
+  changeOption(win, el, 'source', 'Platen');
+  assert.equal(el._twoSidedEl.disabled, true);
+  assert.equal(el._primaryEl.disabled, true);
+  assert.match(el._optionHelp.textContent, /color mode/);
+  changeOption(win, el, 'color', 'gray');
+  await el._startScan();
+  assert.deepEqual(JSON.parse(calls.fetch[0].init.body), {duplex:false,source:'Platen',color:'gray',dpi:300,page_size:'full'});
+});
+test('scan options keep focus and user intent across hass updates; config defaults defer until job ends', async () => {
+  const win=boot(), el=mount(win);
+  const { push } = makeHass(el,{capabilitiesImpl:async()=>jsonResponse(optionCaps())});
+  push(SENSOR,'idle');el._toggleOptions(true);await optionsTick();
+  const field=changeOption(win,el,'source','Feeder');field.focus();
+  push(SENSOR,'idle');assert.equal(el.shadowRoot.activeElement,field);
+  el.setConfig({title:'Renamed'});assert.equal(el._settings.source,'Feeder');
+  field.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  assert.equal(el._optionsPanel.hidden,true);assert.equal(el.shadowRoot.activeElement,el._optionsButton);
+  push(SENSOR,'processing',{scan_id:'active'});el.setConfig({source:'Platen'});
+  assert.equal(el._settings.source,'Feeder');
+  push(SENSOR,'canceled',{scan_id:'active'});assert.equal(el._settings.source,'Platen');
+  el.setConfig({});assert.equal(el._settings.source,'auto');
+});
+test('custom scan regions cannot submit missing dimensions; options-only duplex stays compact', async () => {
+  const win=boot(),el=mount(win,{duplex_in_options:true});
+  const {push}=makeHass(el,{capabilitiesImpl:async()=>jsonResponse(optionCaps())});
+  push(SENSOR,'idle');el._toggleOptions(true);await optionsTick();
+  changeOption(win,el,'page_size','custom');assert.equal(el._primaryEl.disabled,true);
+  assert.equal(el._twoSidedEl.closest('dialog'),el._optionsPanel);
+  changeOption(win,el,'width','215.9');changeOption(win,el,'height','279.4');
+  assert.equal(el._primaryEl.disabled,false);assert.equal(el._scanRequest().height,3300);
+});
