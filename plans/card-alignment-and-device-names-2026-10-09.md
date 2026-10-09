@@ -1,7 +1,8 @@
 # Paired card alignment and device identity
 
-Status: implementation and live validation in progress for scan 0.11.2 /
-print 0.10.3. No backend or device job changes.
+Status: implemented and installed as scan 0.11.2 / print 0.10.3; local and
+hosted validation pass. No backend or device job changes. Phone acceptance of
+this spacing revision remains separate from browser verification.
 
 The phone screenshot exposed uneven headings and Two-sided rows. On the real
 HA 2026.9.4 Tile host, Print's feature was 28 px taller: its file hint occupied
@@ -44,4 +45,23 @@ positions at 320, 390 and 768 px in the real HA Tile host with no horizontal
 overflow. At 320 px, Choose file wraps: a shared container query allows a 56 px
 action row on cards narrower than 150 px; wider cards retain 44 px controls.
 A separate two-printer fixture shows Office / Study names and distinct sensor
-targets, with all device requests blocked. Release/deployment checks pending.
+targets, with all device requests blocked. Both Options dialogs fit at 286 px
+within a 320 px viewport, and browser Back closes them correctly.
+
+Both source commits passed all six hosted validation jobs: Scan `c3d7849`, run
+`37954884095`; Print `ee83d2d`, run `37954885694`. Tags are `v0.11.2` / `v0.10.3`.
+Both release workflows succeeded (`37955062242` / `37955166770`) and published
+non-draft, non-prerelease HACS releases.
+
+Confirmed both job sensors idle before installation. Backup:
+`/config/.document-card-backups/before-alignment-v0112-v0103-20261009.tar.gz`.
+Both integration entry reloads returned 200 with `require_restart=false`.
+Installed card SHA-256 values match source:
+- Scan: `50e1bf25cf07030c89692c786589688131316f270afbc30899a03ec09bb10756`
+- Print: `51fc0835ef9c9a774f415d24f4afe4e107bb1449e2a4f6eb100561632e2a6906`
+
+A fresh production load uses the new hashed modules and renders both native
+features at identical positions. Added the native “HP Color LaserJet” heading
+only to `/lovelace/native-documents`; all other views compare unchanged. Temporary
+candidate assets and the simulated two-printer fixture were removed. No device
+job was submitted during this work.

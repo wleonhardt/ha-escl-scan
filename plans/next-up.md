@@ -1,9 +1,10 @@
 # Next up
 
 ## Queue
-- Paired alignment/device identity polish prepared for scan 0.11.2 / print
-  0.10.3; 579 tests and narrow real-host layout checks pass. Friendly device
-  headings and explicit per-printer card names are documented.
+- Paired alignment/device identity polish installed as scan 0.11.2 / print
+  0.10.3; 579 tests, hosted checks and narrow real-host layout checks pass.
+  The native preview now has a device heading. Friendly headings and explicit
+  per-printer card names are documented; physical phone spacing check remains.
   [Validation and naming decision](card-alignment-and-device-names-2026-10-09.md).
 - Phase 5 native Tile/Mushroom features accepted: the user confirmed cards and
   navigation work on the phone after scan 0.11.1 / print 0.10.1 fixed the startup
