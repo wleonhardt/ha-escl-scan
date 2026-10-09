@@ -137,5 +137,7 @@ Use the new device report forms to collect reproducible cases from automatic
 duplex scanners, other printer/scanner vendors and AirSane/ipp-usb installations.
 Turn redacted captures into focused regression fixtures before adding a vendor
 workaround. Physical output acceptance still requires the relevant device.
-Multi-scanner routing remains a separate planned feature, not a compatibility
-claim or an implicit expansion of this work.
+The user confirmed the dashboard looks good after installation. Multi-scanner
+routing is explicitly deferred to the backlog by the user's 2026-10-09 decision.
+The recommended next focus is the bounded diagnostics and real-device fixture
+work in the [scope decision](decisions/2026-10-08-compatibility-follow-ons.md).

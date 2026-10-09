@@ -2,6 +2,14 @@
 
 ## Queue
 
+- Recommended next: a bounded compatibility diagnostics/fixture pass. Audit
+  the existing Download diagnostics output for useful, redacted failure categories
+  and request stages, starting with the unresolved JPEG settings lookup. Turn
+  actual device reports/captures into regressions before adding workarounds.
+  Existing report forms and cards are sufficient; this is a proposed focus,
+  not approval for new runtime features. See the
+  [scope decision](decisions/2026-10-08-compatibility-follow-ons.md).
+
 - Native cards promoted to the main Printer dashboard at the user's request;
   connection tiles, page chip and navigation preserved. Original rollout complete.
   Compatibility follow-up released/installed as Scan 0.12.1 / Print 0.11.1:
@@ -53,8 +61,9 @@
 - Awaiting reporter feedback on #5 (v0.4.4/v0.4.5 on Epson ET-4950 / WF-4830).
 
 ## Backlog / nice-to-have
-- Multiple scanner entries: plan entry-scoped routing, sensors, jobs and file
-  retention before lifting the current single-scanner limit. See the
+- Multiple scanner entries: explicitly deferred by the user on 2026-10-09.
+  Revisit with a concrete second-scanner use case and tester; first design
+  entry-scoped routing, sensors, jobs and file retention. See the
   [device identity follow-up](card-alignment-and-device-names-2026-10-09.md).
 - Reconfigure flow for host/creds (options flow currently edits them).
 - Per-scan override for rotate_duplex_backs (service field / card toggle).
