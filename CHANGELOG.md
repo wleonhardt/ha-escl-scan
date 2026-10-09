@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.12.1] - 2026-10-09
+
+### Fixed
+- Validate a discovered scanner before creating its entry; failed connections
+  stay on the confirmation form. Recheck the single-scanner limit after the probe.
+- Offer **Allow legacy cipher suites** during secure discovery confirmation,
+  so older HP endpoints can be configured explicitly without automatic fallback.
+- Keep Options compatible with card-mod’s dialog update hooks while preserving
+  the native panel, browser Back and focus return.
+
 ## [0.12.0] - 2026-10-09
 
 ### Added

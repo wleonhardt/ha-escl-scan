@@ -1,6 +1,6 @@
 """Config- and options-flow tests."""
 from ipaddress import ip_address
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from homeassistant import config_entries, data_entry_flow
 from homeassistant.core import HomeAssistant
@@ -99,7 +99,7 @@ async def test_zeroconf_discovery_confirm_creates_entry(hass: HomeAssistant):
     assert result["step_id"] == "zeroconf_confirm"
     assert result["description_placeholders"]["name"] == "HP LaserJet MFP M234sdw"
 
-    with patch(_SETUP, return_value=True):
+    with patch(_SETUP, return_value=True), patch(_OK), patch(_CAPS, return_value=None):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
     assert result["title"] == "HP LaserJet MFP M234sdw"
@@ -117,7 +117,7 @@ async def test_zeroconf_plain_http_and_custom_resource_path(hass: HomeAssistant)
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_ZEROCONF}, data=info
     )
-    with patch(_SETUP, return_value=True):
+    with patch(_SETUP, return_value=True), patch(_OK), patch(_CAPS, return_value=None):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["data"][CONF_USE_TLS] is False
     assert result["data"][CONF_PORT] == 8080
@@ -206,3 +206,64 @@ def test_manual_scanner_paths_allow_root_and_bridges_but_not_escaped_urls():
     for path in ("https://other/eSCL", "eSCL/../private", "eSCL%3fx=1", "eSCL%5cprivate"):
         with pytest.raises(vol.Invalid):
             _base_path(path)
+
+
+async def test_discovery_validates_connection_before_creating_entry(hass):
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_ZEROCONF}, data=_zeroconf()
+    )
+    assert result["data_schema"]({}) == {"relaxed_ciphers": False}
+    with patch(_OK, side_effect=OSError("TLS handshake failure")), patch(
+        "custom_components.escl_scan.config_flow.ScannerClient.async_close"
+    ) as close:
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert "TLS handshake failure" in result["description_placeholders"]["error_detail"]
+    assert not hass.config_entries.async_entries(DOMAIN)
+    close.assert_awaited_once()
+
+
+async def test_discovery_legacy_ciphers_require_explicit_opt_in(hass):
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_ZEROCONF}, data=_zeroconf()
+    )
+    with patch("custom_components.escl_scan.config_flow.ScannerClient", autospec=True) as cls:
+        client = cls.return_value
+        client.get_capabilities.return_value = None
+        client.get_scanner_status.side_effect = OSError("TLS handshake failure")
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+        assert cls.call_args.kwargs["relaxed_ciphers"] is False
+        assert cls.call_args.kwargs["use_tls"] is True
+        assert not hass.config_entries.async_entries(DOMAIN)
+        client.get_scanner_status.side_effect = None
+        with patch(_SETUP, return_value=True):
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {"relaxed_ciphers": True}
+            )
+        assert cls.call_args.kwargs["relaxed_ciphers"] is True
+        assert client.async_close.await_count == 2
+    assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+    assert result["data"]["relaxed_ciphers"] is True
+    assert result["data"][CONF_USE_TLS] is True
+    assert result["result"].unique_id == "uuid-abc"
+
+
+async def test_discovery_rechecks_single_scanner_after_probe(hass):
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_ZEROCONF},
+        data=_zeroconf("_uscan._tcp.local.", 8080),
+    )
+    assert result["data_schema"]({}) == {}
+
+    async def another_flow_finishes():
+        MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "192.0.2.99"}).add_to_hass(hass)
+
+    with (
+        patch(_OK, new=AsyncMock(side_effect=another_flow_finishes)),
+        patch(_CAPS, return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == data_entry_flow.FlowResultType.ABORT
+    assert result["reason"] == "single_instance_allowed"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1

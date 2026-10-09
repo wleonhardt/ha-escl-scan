@@ -20,7 +20,13 @@
       },
       "zeroconf_confirm": {
         "title": "Discovered scanner",
-        "description": "Set up {name}? Credentials, TLS verification and scan defaults can be changed later in the integration's options."
+        "description": "Set up {name}? The connection is checked before adding the scanner. Credentials, TLS verification and scan defaults can be changed in the integration's options. If credentials are required, use manual setup.",
+        "data": {
+          "relaxed_ciphers": "Allow legacy cipher suites"
+        },
+        "data_description": {
+          "relaxed_ciphers": "For older devices that fail the secure connection check, including some HP LaserJets. Enables older cipher suites for this device; TLS stays enabled. Leave off unless needed."
+        }
       }
     },
     "error": {

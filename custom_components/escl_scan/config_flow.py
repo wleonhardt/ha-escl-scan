@@ -44,7 +44,7 @@ from .const import (
     DEFAULT_USER,
     DOMAIN,
 )
-from .scanner import ScannerClient
+from .scanner import ScannerCapabilities, ScannerClient
 
 _ZEROCONF_TLS_TYPE = "_uscans._tcp.local."
 
@@ -69,6 +69,29 @@ def _normalize_uuid(value: str | None) -> str | None:
     return value.strip().casefold().removeprefix("urn:uuid:").strip("{}") or None if value else None
 
 
+async def _probe(data: dict[str, Any]) -> ScannerCapabilities | None:
+    """Validate the endpoint without creating a scan; capabilities are optional."""
+    client = ScannerClient(
+        host=data[CONF_HOST],
+        port=data.get(CONF_PORT, DEFAULT_PORT),
+        use_tls=data.get(CONF_USE_TLS, True),
+        user=data.get(CONF_USER) or DEFAULT_USER,
+        password=data.get(CONF_PASSWORD, ""),
+        verify_tls=data.get(CONF_VERIFY_TLS, False),
+        relaxed_ciphers=data.get(CONF_RELAXED_CIPHERS, False),
+        timeout=10.0,
+        base_path=data.get(CONF_BASE_PATH, DEFAULT_BASE_PATH),
+    )
+    try:
+        await client.get_scanner_status()
+        try:
+            return await client.get_capabilities()
+        except Exception:  # noqa: BLE001 — optional endpoint
+            return None
+    finally:
+        await client.async_close()
+
+
 class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
     """Ask the user for scanner connection details and validate with a
     ScannerStatus probe. Any well-formed eSCL response confirms the path."""
@@ -78,6 +101,7 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._discovered: dict[str, Any] = {}
         self._discovered_name = ""
+        self._last_error = ""
 
     async def async_step_zeroconf(
         self, discovery_info: ZeroconfServiceInfo
@@ -137,12 +161,32 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
-        if user_input is None:
-            return self.async_show_form(
-                step_id="zeroconf_confirm",
-                description_placeholders={"name": self._discovered_name},
-            )
-        return self.async_create_entry(title=self._discovered_name, data=self._discovered)
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if self._discovered[CONF_USE_TLS]:
+                self._discovered = {
+                    **self._discovered,
+                    CONF_RELAXED_CIPHERS: user_input.get(CONF_RELAXED_CIPHERS, False),
+                }
+            try:
+                await _probe(self._discovered)
+            except Exception as exc:
+                errors["base"] = "cannot_connect"
+                self._last_error = str(exc)
+            else:
+                # Another flow may finish while the network probe is pending.
+                if self._async_current_entries():
+                    return self.async_abort(reason="single_instance_allowed")
+                return self.async_create_entry(title=self._discovered_name, data=self._discovered)
+        schema = vol.Schema({
+            vol.Optional(CONF_RELAXED_CIPHERS,
+                         default=self._discovered[CONF_RELAXED_CIPHERS]): bool,
+        } if self._discovered[CONF_USE_TLS] else {})
+        return self.async_show_form(
+            step_id="zeroconf_confirm", data_schema=schema, errors=errors,
+            description_placeholders={"name": self._discovered_name,
+                                      "error_detail": self._last_error},
+        )
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         # Enforce the single-scanner policy here so discovery can first
@@ -151,29 +195,12 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="single_instance_allowed")
         errors: dict[str, str] = {}
         if user_input is not None:
-            client = ScannerClient(
-                host=user_input[CONF_HOST],
-                port=user_input.get(CONF_PORT, DEFAULT_PORT),
-                use_tls=user_input.get(CONF_USE_TLS, True),
-                user=user_input.get(CONF_USER) or DEFAULT_USER,
-                password=user_input.get(CONF_PASSWORD, ""),
-                verify_tls=user_input.get(CONF_VERIFY_TLS, False),
-                relaxed_ciphers=user_input.get(CONF_RELAXED_CIPHERS, False),
-                timeout=10.0,
-                base_path=user_input.get(CONF_BASE_PATH, DEFAULT_BASE_PATH),
-            )
             caps = None
             try:
-                await client.get_scanner_status()
-                try:
-                    caps = await client.get_capabilities()
-                except Exception:  # noqa: BLE001 — optional endpoint
-                    caps = None
+                caps = await _probe(user_input)
             except Exception as exc:
                 errors["base"] = "cannot_connect"
                 self._last_error = str(exc)
-            finally:
-                await client.async_close()
             if not errors:
                 # Serial/UUID survives a DHCP address change; host:port is
                 # the fallback for devices that don't serve capabilities.

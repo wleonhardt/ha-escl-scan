@@ -22,7 +22,7 @@
   "requirements": [
     "pypdf>=4.0"
   ],
-  "version": "0.12.0",
+  "version": "0.12.1",
   "zeroconf": [
     "_uscan._tcp.local.",
     "_uscans._tcp.local."

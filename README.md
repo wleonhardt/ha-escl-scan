@@ -93,8 +93,10 @@ repository needed.
 
 Most eSCL scanners advertise themselves on the LAN, so the scanner usually
 appears under **Settings → Devices & Services → Discovered**; press
-*Configure*, confirm, done. Credentials and TLS settings can be adjusted
-afterwards in the integration's options.
+*Configure* to check the connection before adding it. Secure discovery offers
+**Allow legacy cipher suites** for older devices that fail the TLS handshake;
+it is off by default and never enabled automatically. Credentials and other TLS
+settings can be adjusted in options; use manual setup if authentication is needed.
 
 For manual setup: **Settings → Devices & Services → Add Integration → eSCL Scan**
 and fill in:
