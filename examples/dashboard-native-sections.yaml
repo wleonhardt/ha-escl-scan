@@ -6,6 +6,10 @@ max_columns: 1
 sections:
   - type: grid
     cards:
+      # Friendly device/room name; repeat a heading for each printer group.
+      - type: heading
+        heading: Office printer
+        heading_style: title
       - type: tile
         entity: sensor.printer_current_scan
         name: Scan

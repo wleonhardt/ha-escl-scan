@@ -4,6 +4,18 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.11.2] - 2026-10-09
+
+### Fixed
+- Align the Scan/Print headings, Two-sided switches, helper text and actions
+  in paired native cards. Put the scanner's feeder hint below the switch row,
+  reserve the same two-line status space, and collapse empty warning rows.
+  Long content can still expand without fixed card heights or host CSS overrides.
+
+### Documentation
+- Device naming guidance: use a friendly heading for a paired device, or name
+  each separate card. Document the current single-scanner limit explicitly.
+
 ## [0.11.1] - 2026-10-09
 
 ### Fixed

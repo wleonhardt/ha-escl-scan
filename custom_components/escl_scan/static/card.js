@@ -316,6 +316,7 @@ const DOCUMENT_CARD_STYLES = `/* Shared document-card contract v1. Keep this bas
       .option-field select, .option-field input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 8px; font: inherit; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 8px; }
       .options-help { color: var(--secondary-text-color); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
       .warning { color: var(--warning-color, var(--primary-text-color)); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+      .warning:empty { display: none; }
       /* End shared document-card base. */`;
 
 // Shared document-card option helpers. Keep this small block identical in both cards.
@@ -430,12 +431,13 @@ C.prototype._finishOptionsPanel = function () {
 // Native hosts own identity/surface; the existing card still owns every workflow.
 const DOCUMENT_FEATURE_STYLES = `
   :host { height: auto; min-width: 0; }
-  .feature-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; color: var(--primary-text-color); }
-  .feature-body .status { min-height: 20px; }
+  .feature-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; color: var(--primary-text-color); container-type: inline-size; }
   .feature-body .actions { display: flex; align-items: stretch; gap: 8px; }
   .feature-body .primary, .feature-body .cancel { flex: 1; width: auto; min-width: 0; }
   .feature-body button { border-radius: var(--feature-border-radius, 12px); min-height: max(44px, var(--feature-height, 42px)); }
   .feature-body .options-button { margin: 0; }
+  /* Allow a two-line primary label on narrow half-width mobile cards. */
+  @container (max-width: 150px) { .feature-body .actions { min-height: 56px; } }
 `;
 C.prototype._configureFeatureView = function () {
   if (!this._featureMode) return;
@@ -701,8 +703,8 @@ C.prototype._render = function () {
     <style>
       ${DOCUMENT_CARD_STYLES}
       ${this._featureMode ? DOCUMENT_FEATURE_STYLES : ''}
-      .toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; font-size: 14px; cursor: pointer; }
-      .toggle small { display: block; color: var(--secondary-text-color); font-size: 12px; }
+      .toggle { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: minmax(44px, auto) auto; align-items: center; column-gap: 8px; font-size: 14px; line-height: 20px; cursor: pointer; }
+      .toggle small { grid-column: 1 / -1; color: var(--secondary-text-color); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
       .two-sided { appearance: none; position: relative; margin: 0; width: 36px; height: 22px; flex: none; border-radius: 12px; background: var(--disabled-text-color); cursor: pointer; }
       .two-sided::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; border-radius: 50%; background: var(--card-background-color); }
       .two-sided:checked { background: var(--primary-color); }
@@ -716,7 +718,7 @@ C.prototype._render = function () {
       <div class="status" aria-live="polite" aria-atomic="true"></div>
       <div class="connection warning" aria-live="polite" hidden></div>
       <div class="controls">
-        <label class="toggle"><span><span data-i18n="action.two_sided"></span><small data-i18n="help.feeder"></small></span><input class="two-sided" type="checkbox" role="switch" data-i18n-label="accessibility.two_sided"></label>
+        <label class="toggle"><span data-i18n="action.two_sided"></span><input class="two-sided" type="checkbox" role="switch" data-i18n-label="accessibility.two_sided" aria-describedby="feeder-hint"><small id="feeder-hint" data-i18n="help.feeder"></small></label>
       </div>
       <div class="actions">
         <button class="primary" type="button"></button>

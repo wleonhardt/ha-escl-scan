@@ -1,6 +1,10 @@
 # Next up
 
 ## Queue
+- Paired alignment/device identity polish prepared for scan 0.11.2 / print
+  0.10.3; 579 tests and narrow real-host layout checks pass. Friendly device
+  headings and explicit per-printer card names are documented.
+  [Validation and naming decision](card-alignment-and-device-names-2026-10-09.md).
 - Phase 5 native Tile/Mushroom features accepted: the user confirmed cards and
   navigation work on the phone after scan 0.11.1 / print 0.10.1 fixed the startup
   registry race. Standalone cards stay supported; existing dashboards stay unchanged.
@@ -25,6 +29,9 @@
 - Awaiting reporter feedback on #5 (v0.4.4/v0.4.5 on Epson ET-4950 / WF-4830).
 
 ## Backlog / nice-to-have
+- Multiple scanner entries: plan entry-scoped routing, sensors, jobs and file
+  retention before lifting the current single-scanner limit. See the
+  [device identity follow-up](card-alignment-and-device-names-2026-10-09.md).
 - Investigate card-mod's requestUpdate console error after native Options;
   both dialogs and Back work in the browser. See Phase 5 validation.
 - Reconfigure flow for host/creds (options flow currently edits them).
