@@ -7,8 +7,9 @@
   [Phase 5 validation](shared-card-phase-5-validation.md).
   [Canonical phased plan](shared-card-rollout-2026-10-08.md).
 - External coverage remains separate: automatic duplex scanning, additional
-  vendor/bridge hardware, minimum-HA native feature hosting before Phase 5 and
-  assistive-technology device acceptance. [Compatibility validation](compatibility-validation-2026-10-08.md).
+  vendor/bridge hardware and assistive-technology device acceptance.
+  Minimum-HA native feature hosting passed in Phase 5.
+  [Compatibility validation](compatibility-validation-2026-10-08.md).
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
 - Live-test still open: zeroconf discovery flow only (needs the entry removed;
