@@ -3,7 +3,8 @@
 Status: dashboard fix applied on HA 2026.9.4; browser validation passed.
 Installed integrations remain scan 0.12.0 / print 0.11.0. This changes dashboard
 configuration, examples and documentation only; no runtime update or tag is needed.
-Physical phone confirmation of this layout is pending.
+Physical phone acceptance passed: on 2026-10-09 the user supplied a follow-up
+recording and confirmed the layout looks good and expansion is very smooth.
 
 ## Cause and correction
 
