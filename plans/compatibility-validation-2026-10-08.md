@@ -177,7 +177,16 @@ selected scan/print fields to defaults while capabilities are unavailable.
 - Hosted validation passed for scan `8ba20e7` ([run 37873907577](https://github.com/wleonhardt/ha-escl-scan/actions/runs/37873907577))
   and print `8ab7703` ([run 37873970387](https://github.com/wleonhardt/ha-ipp-print/actions/runs/37873970387)).
   All six checks passed for each integration.
-- Next physical gate: submit the existing two-page short-edge PDF with copies=2,
-  Letter paper and short-edge binding. Expect two sheets, each FRONT/BACK upright
-  when flipped over its top edge like a notepad. This single job covers the two
-  remaining print settings; acceptance is pending printer readiness and output.
+
+### Two-copy short-edge acceptance — 2026-10-08
+
+- User confirmed Letter paper loaded and readiness for the two-sheet test.
+  Reused the visually inspected two-page `phase2-short-edge.pdf` (3055 bytes).
+- Submitted exactly once through the live Print card as job 370, with copies=2,
+  sides=two-sided-short-edge, Letter, automatic tray, monochrome and normal quality.
+  The integration's requested-settings metadata confirms all six values.
+- The printer reported `job-completed-successfully`, 4/4 impressions, no warning.
+  Submission/completion: 22:43:52–22:44:18 America/New_York. The card cleared its
+  filename and active job, retained no staged document, and restored Choose file.
+- Physical confirmation remains pending: exactly two sheets, each FRONT/BACK
+  upright when flipped over the top edge like a notepad. No release tags yet.
