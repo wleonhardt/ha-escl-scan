@@ -2,6 +2,11 @@
 
 ## Queue
 
+- Native cards promoted to the main Printer dashboard at the user's request;
+  connection tiles, page chip and navigation preserved. Original rollout complete.
+  Compatibility follow-up is active: isolated real-HP discovery, card-mod Options
+  investigation and device-report coverage. [Follow-up plan](compatibility-follow-up-2026-10-09.md).
+
 - Paired activity expansion fixed in both live dashboards using one built-in
   Vertical stack per card. Tile, Mushroom and standalone layouts pass independent
   expansion checks at 320/390/768 px; all 610 tests pass. Examples updated;
@@ -36,8 +41,8 @@
   [Compatibility validation](compatibility-validation-2026-10-08.md).
 - HACS store icon: shows once hacs/frontend#937 (brands-proxy support) ships;
   nothing to do on our side.
-- Live-test still open: zeroconf discovery flow only (needs the entry removed;
-  single_config_entry aborts otherwise).
+- Zeroconf discovery acceptance is being tested in an isolated HA fixture
+  against live HP advertisements; the production entry stays configured.
 
 - Awaiting reporter feedback on #5 (v0.4.4/v0.4.5 on Epson ET-4950 / WF-4830).
 

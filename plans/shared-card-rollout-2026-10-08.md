@@ -1,11 +1,12 @@
 # Shared scan and print card rollout plan
 
-Status: Phases 1–5 are released and validated. The phone startup registry race
-is patched, and the user confirmed native cards and navigation work. Native
-Tile examples are recommended for new dashboards; existing dashboards remain
-unchanged. An independently reproduced PNG error-classification bug is repaired
-in Print 0.10.2. The user confirmed their JPEG retry succeeded; the first failure
-remains undiagnosed. Phase 6 has not started. [Phase 5 validation](shared-card-phase-5-validation.md).
+Status: Phases 0–6 are complete. Released pair: scan 0.12.0 / print 0.11.0.
+HP scan/print, refresh/restart retention and physical phone acceptance passed.
+The approved native cards were promoted to the main Printer dashboard on
+2026-10-09 at the user's request, retaining connection tiles and navigation.
+Standalone cards remain supported; integration updates never migrate dashboards
+implicitly. [Phase 6 validation](shared-card-phase-6-validation.md) and
+[rollout closeout / compatibility follow-up](compatibility-follow-up-2026-10-09.md).
 
 Bring scanning and printing onto one Home Assistant visual and interaction
 contract, starting with the visible Two-sided switch selected in the design
@@ -85,10 +86,9 @@ Agree on the small reusable surface before extracting production code.
   options panel, keyboard behavior and registration on refresh/update.
 - [x] Test the current installed HA frontend and confirm standalone card loading
   on the physical phone after the paired release.
-- [ ] Complete a runtime test of native feature hosting on the declared minimum
-  HA version and actual Android app before Phase 5. Source compatibility was
-  checked; the older runtime is unavailable locally. If hosting needs a newer frontend, keep
-  it optional with a documented requirement; preserve standalone support.
+- [x] Native feature runtime passed on HA 2024.12.5/frontend 20241127.8 and
+  current HA 2026.9.4. The user confirmed Android registration/navigation after
+  the registry fix. [Evidence](shared-card-phase-5-validation.md).
 
 Exit: a decision with tested host/version limits and fixtures both repositories
 can consume. Do not couple this experiment to private Tile shadow DOM, a Lit
@@ -283,6 +283,12 @@ removes its action; incomplete/canceled results never appear. Print and scan
 activity use the same presentation without claiming identical file retention.
 
 ## Follow on options
+
+The six-phase rollout is closed. The next authorized work is compatibility:
+real HP discovery in an isolated setup, the card-mod Options warning, and
+structured reports for additional devices/bridges. See the
+[bounded follow-up plan](compatibility-follow-up-2026-10-09.md). Multiple scanner
+entries, presets and reviewed translations remain separately scoped follow-ons.
 
 These have their own backend or product decisions and must not delay the common
 card platform. Add each only after capability handling and an end-to-end path
