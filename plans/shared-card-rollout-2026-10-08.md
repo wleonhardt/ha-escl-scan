@@ -1,7 +1,7 @@
 # Shared scan and print card rollout plan
 
-Status: in-progress. Phases 1–3 are implemented and installed as scan 0.9.0 /
-print 0.8.0; HACS publication is pending. HP physical acceptance and Phase 3
+Status: in-progress. Phases 1–3 are released and installed as scan 0.9.0 /
+print 0.8.0; both HACS release workflows passed. HP physical acceptance and Phase 3
 editor/localization/browser checks pass. [Phase 3 validation](shared-card-phase-3-validation.md).
 Phase 4 state/reconnect/availability is next; minimum-version native-host runtime
 checks still gate Phase 5.

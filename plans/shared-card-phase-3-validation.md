@@ -1,7 +1,7 @@
 # Phase 3 editors, accessibility and localization validation
 
-Candidate pair: scan **0.9.0** / print **0.8.0**, 2026-10-08.
-Implementation and live browser checks pass; HACS publication pending.
+Released and installed pair: scan **0.9.0** / print **0.8.0**, 2026-10-08.
+Implementation, live browser checks, hosted validation and HACS publication pass.
 
 ## Scope
 
@@ -78,3 +78,19 @@ Final source hashes:
   stale-reply guards and checked availability. The dashboard's old printer-offline
   summary combines stale/inverted legacy sensors; keep this separate from job
   and capability results and replace it with checked availability in Phase 4.
+
+
+## Release evidence
+
+- Scan implementation `3205393`: [all six hosted checks passed](https://github.com/wleonhardt/ha-escl-scan/actions/runs/37878018176).
+  [Release workflow passed](https://github.com/wleonhardt/ha-escl-scan/actions/runs/37878194923);
+  [v0.9.0 published](https://github.com/wleonhardt/ha-escl-scan/releases/tag/v0.9.0).
+- Print implementation `a08ad04`: [all six hosted checks passed](https://github.com/wleonhardt/ha-ipp-print/actions/runs/37878037750).
+  [Release workflow passed](https://github.com/wleonhardt/ha-ipp-print/actions/runs/37878202304);
+  [v0.8.0 published](https://github.com/wleonhardt/ha-ipp-print/releases/tag/v0.8.0).
+- Both releases are public, non-draft and non-prerelease. Release notes summarize
+  the capability/options/compatibility changes since the previous HACS tags.
+- Final host card hashes match the source hashes above. A fresh dashboard loads
+  only `/escl_scan/card-09542c63616c.js` and `/ipp_print/card-ae0fc5b82635.js`.
+  Both cards load with their existing custom titles; both tracked sensors remain
+  idle. Temporary editor panels and test labels were removed by reload.

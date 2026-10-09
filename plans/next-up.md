@@ -1,11 +1,6 @@
 # Next up
 
 ## Queue
-- Publish the validated paired release: scan **0.9.0** / print **0.8.0**. Phases
-  2–3 and compatibility work are installed, HP physical acceptance is complete,
-  and native editor/keyboard/narrow-layout checks pass. **527 tests pass**.
-  English-only localization foundation follows the user's chosen scope.
-  [Phase 3 validation](shared-card-phase-3-validation.md).
 - Next implementation: Phase 4 tracked job recovery, reconnect and honest checked
   availability, including replacing the dashboard's stale/inverted legacy printer
   summary. [Canonical phased plan](shared-card-rollout-2026-10-08.md).
@@ -28,10 +23,11 @@
 - Community forum thread + device compatibility reports.
 
 ## Done
-- 2026-10-08 — Phase 3 final audit implemented and installed as scan 0.9.0 /
+- 2026-10-08 — Phase 3 completed, released and installed as scan 0.9.0 /
   print 0.8.0: shared English localization, readable editors, correct defaults,
   cleared optional overrides and keyboard/accessibility polish. 527 tests pass;
   native editors and narrow/long-label dialogs verified in HA 2026.9.4.
+  Both release workflows and all six hosted checks passed.
   [Validation](shared-card-phase-3-validation.md).
 - 2026-10-08 — Remaining HP print acceptance passed on print 0.7.2 / scan 0.8.2.
   User confirmed two copies and short-edge duplex orientation from job 370;
