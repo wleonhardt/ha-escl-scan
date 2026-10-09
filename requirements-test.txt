@@ -8,4 +8,3 @@ home-assistant-frontend==20260826.7
 # runtime requirement from manifest.json, needed by the merge/page-count tests
 pypdf==6.19.0
 ruff==0.16.9
-Pillow==12.3.0

@@ -20,8 +20,7 @@
     "escl_scan"
   ],
   "requirements": [
-    "pypdf>=4.0",
-    "Pillow>=10.4"
+    "pypdf>=4.0"
   ],
   "version": "0.8.0",
   "zeroconf": [

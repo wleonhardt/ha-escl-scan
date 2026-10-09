@@ -204,7 +204,7 @@ Options. Edits during a job apply to the next job. Download and reload/back-orde
 controls retain their existing behavior.
 
 Native PDF is preferred. JPEG/PNG-only profiles are converted to PDF with Pillow,
-installed automatically with the integration. Each encoded image is limited to
+provided by Home Assistant core. Each encoded image is limited to
 50 MiB and 40 megapixels after decoding; lower DPI or page size if necessary.
 Asymmetric-only resolutions, TIFF and multi-frame images are not supported.
 Unknown format metadata retains the legacy PDF request; it is not proof of support.

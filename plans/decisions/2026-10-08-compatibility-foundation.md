@@ -11,8 +11,9 @@ Accepted during the user-authorized compatibility rollout, 2026-10-08.
   Send standard DocumentFormat and the extension only when advertised or unknown.
 - Use Pillow for image decoding/PDF encoding in executor work, with explicit
   encoded-byte and pixel limits, single-image checks and requested-DPI physical
-  page sizing. Keep pypdf for PDF validation/merging. This is the one added scan
-  runtime dependency; no print rendering stack or card build is introduced.
+  page sizing. Keep pypdf for PDF validation/merging. Pillow is supplied by Home Assistant core, so it is not added to the
+  manifest (hassfest prohibits redeclaring core dependencies). No print rendering
+  stack, additional installed dependency or card build is introduced.
 - Retain a bounded local IPP codec, adding typed groups/collections and preserving
   unknown values. The current public parse_response helper remains compatible.
 - IPP auto-sensing is distinct from explicit file-format support. Never promote

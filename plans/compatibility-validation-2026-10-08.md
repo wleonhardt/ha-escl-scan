@@ -8,10 +8,10 @@ files or running jobs were changed during this implementation.
 ## Automated checks
 
 - Scan: 208 Python tests, 45 card tests; Ruff passes.
-- Print: 202 Python tests, 34 card tests; Ruff and compileall pass.
+- Print: 206 Python tests, 34 card tests; Ruff and compileall pass.
 - Both npm dependencies installed with npm ci; JSON/service definitions parse;
   diff whitespace checks clean. Hosted validation is checked on the pushed heads.
-- Total: 489 tests. Fixtures distinguish a redacted live HP capability capture
+- Total: 493 tests. Fixtures distinguish a redacted live HP capability capture
   from synthetic devices. Tests include profile references/ranges/combinations,
   image conversion dimensions and manual-duplex order, conversion cancellation,
   origin/port restrictions, recovery exhaustion/deadlines, IPP collection bounds,
@@ -31,6 +31,10 @@ files or running jobs were changed during this implementation.
 - Local CUPS queue to HP: format-specific PDF settings parse, including typed
   collections; Validate-Job succeeds. This does not verify physical conversion
   output or remote HA network reachability to the local queue.
+- HP tray preflight initially rejected media-size-name inside media-col (0x040b).
+  The printer advertises media-size, not media-size-name. Encode PWG paper keywords
+  as exact hundredths-of-millimeter dimensions in the nested collection. Both auto
+  and tray-1 now pass PDF + Letter + monochrome + normal-quality preflight.
 - No physical print or scan jobs were submitted by these probes.
 
 ## Browser verification
@@ -58,3 +62,7 @@ an installed-version check.
 Rollback when installation is undertaken: back up both deployed integrations and
 Lovelace resources first; restore the prior pair and restart HA if setup fails.
 Retain the existing card/entity IDs and document the actual installed hashes.
+
+Hosted scan validation caught Pillow redeclaration: it is already a Home Assistant
+core dependency and custom manifests must not list it. Removed the redundant
+requirement and retained conversion tests; no extra dependency installation is needed.
