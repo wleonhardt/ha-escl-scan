@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.11.0] - 2026-10-09
+
+### Added
+- Optional `custom:escl-scan-feature` for native Tile and current Mushroom Template
+  cards. The host owns the title/surface; the feature reuses the existing workflow,
+  visible Two-sided switch, Options dialog, progress and recovery behavior.
+- Native feature picker, visual defaults editor and paired examples. Modern host
+  context and legacy entity delivery are supported; unrelated/area-only hosts
+  and inline placement show configuration guidance without device actions.
+
+### Changed
+- Shared presentation core v3 includes the native host adapter without additional
+  assets or dependencies. Existing standalone card configurations remain supported.
+- A feature follows only its parent's job sensor. Changing that sensor discards
+  staged files and detaches old replies; control gestures do not trigger host actions.
+
 ## [0.10.0] - 2026-10-09
 
 ### Added

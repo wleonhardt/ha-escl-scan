@@ -1,9 +1,9 @@
 # Shared scan and print card rollout plan
 
-Status: in-progress. Phases 1–4 are released and installed as scan 0.10.0 /
-print 0.9.0; both HACS release workflows and all six hosted checks passed.
-[Phase 4 validation](shared-card-phase-4-validation.md). Phase 5 native-host
-compatibility checks are next; minimum-version/Android checks still gate migration.
+Status: in-progress. Phases 1–4 are released and validated. Phase 5 is installed
+as scan 0.11.0 / print 0.10.0; minimum/current native host runtime checks and 572
+tests pass. Release checks and physical Android acceptance remain; native examples
+are optional. [Phase 5 validation](shared-card-phase-5-validation.md).
 
 Bring scanning and printing onto one Home Assistant visual and interaction
 contract, starting with the visible Two-sided switch selected in the design
@@ -235,24 +235,26 @@ Validation and explicit live-test limits: [Phase 4 record](shared-card-phase-4-v
 
 Move shell responsibility to the supported host once behavior is stable.
 
-- [ ] Register domain-specific scan and print custom features using the
+- [x] Register domain-specific scan and print custom features using the
   documented feature context, support checks, editor and default configuration.
   Reuse Phase 4 presentation helpers and adapters; avoid a second state machine.
-- [ ] Let Tile supply identity and surface styling. Features supply task controls
+- [x] Let Tile supply identity and surface styling. Features supply task controls
   and options. Check narrow feature rows without squeezing controls below usable
   targets or duplicating the host header.
-- [ ] Test current Mushroom Template as an optional alternate host. Document
+- [x] Test current Mushroom Template as an optional alternate host. Document
   tested versions and distinguish it from legacy Template behavior. Bubble and
   Button card remain visual references unless separately verified as hosts.
-- [ ] Keep both old standalone types as supported wrappers, using the same
+- [x] Keep both old standalone types as supported wrappers, using the same
   presentation contract. Supply side-by-side Sections, native Tile and optional
   Mushroom examples. Migration is optional and does not rewrite dashboards.
-- [ ] Verify both integrations alone, both together and differing shared-core
+- [x] Verify both integrations alone, both together and differing shared-core
   versions. Keep assets local and independently installable.
 
 Exit: refresh/update and Android registration work, native hosts remove shell
 styling, and standalone configurations retain their behavior. Promote the native
 feature example to the recommended new-dashboard path only after this gate.
+
+Implementation/host evidence and the remaining Android gate: [Phase 5 validation](shared-card-phase-5-validation.md).
 
 ## Phase 6 Durable results and recent activity
 

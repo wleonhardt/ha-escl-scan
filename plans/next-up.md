@@ -1,9 +1,10 @@
 # Next up
 
 ## Queue
-- Next implementation: Phase 5 native Tile and optional Mushroom features.
-  Verify minimum/current HA host support and Android registration before
-  promoting the native examples; keep standalone cards supported.
+- Active: Phase 5 native Tile and optional Mushroom features, scan 0.11.0 /
+  print 0.10.0. Minimum/current host runtime checks and 572 tests pass; installed.
+  Hosted checks, release publication and physical Android acceptance remain. Standalone cards stay supported.
+  [Phase 5 validation](shared-card-phase-5-validation.md).
   [Canonical phased plan](shared-card-rollout-2026-10-08.md).
 - External coverage remains separate: automatic duplex scanning, additional
   vendor/bridge hardware, minimum-HA native feature hosting before Phase 5 and

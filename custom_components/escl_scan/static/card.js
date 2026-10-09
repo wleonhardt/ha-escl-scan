@@ -23,11 +23,23 @@ if (!customElements.get(TAG)) {
   });
 }
 
+const FEATURE_TAG = 'escl-scan-feature';
+const FEATURE_DOMAIN = 'escl_scan';
+if (!customElements.get(FEATURE_TAG)) {
+  customElements.define(FEATURE_TAG, class extends HTMLElement {
+    connectedCallback() { this._updateFeature?.(); }
+  });
+}
+
 const C = customElements.get(TAG);
 
 // BEGIN ENGLISH CATALOG
 const CARD_TRANSLATIONS = {
   "en": {
+    "feature.config": "Invalid feature configuration.",
+    "feature.host_config": "Set the device and title on the parent card.",
+    "feature.target": "Select an eSCL Scan sensor on this card.",
+    "feature.bottom": "Set Features position to Bottom to use these controls.",
     "action.options": "Options",
     "action.two_sided": "Two-sided",
     "action.done": "Done",
@@ -146,7 +158,7 @@ const CARD_TRANSLATIONS = {
 };
 // END ENGLISH CATALOG
 
-// BEGIN DOCUMENT CARD CORE v2
+// BEGIN DOCUMENT CARD CORE v3
 // Canonical source: ha-escl-scan/shared/card-core.js; synchronize with tools/sync-card-core.mjs.
 // Shared localization contract v1. Keep this helper identical in both cards.
 // Catalogs are bundled here: no build step, translation fetch or registration wait.
@@ -415,7 +427,116 @@ C.prototype._finishOptionsPanel = function () {
   done.addEventListener('click', () => this._toggleOptions(false));
   this._optionsPanel.append(done);
 };
-// END DOCUMENT CARD CORE v2
+// Native hosts own identity/surface; the existing card still owns every workflow.
+const DOCUMENT_FEATURE_STYLES = `
+  :host { height: auto; min-width: 0; }
+  .feature-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; color: var(--primary-text-color); }
+  .feature-body .status { min-height: 20px; }
+  .feature-body .actions { display: flex; align-items: stretch; gap: 8px; }
+  .feature-body .primary, .feature-body .cancel { flex: 1; width: auto; min-width: 0; }
+  .feature-body button { border-radius: var(--feature-border-radius, 12px); min-height: max(44px, var(--feature-height, 42px)); }
+  .feature-body .options-button { margin: 0; }
+`;
+C.prototype._configureFeatureView = function () {
+  if (!this._featureMode) return;
+  this._card.classList.add('feature-body');
+  this.shadowRoot.querySelector('.header').hidden = true;
+  this.shadowRoot.querySelector('.actions').append(this._optionsButton);
+};
+
+function supportsDocumentFeature(hass, context) {
+  const id = context?.entity_id;
+  if (typeof id !== 'string' || !id.startsWith('sensor.')) return false;
+  const registered = hass?.entities?.[id];
+  if (registered?.platform) return registered.platform === FEATURE_DOMAIN;
+  // Older frontends can omit the registry; require the integration's enum shape.
+  const attrs = hass?.states?.[id]?.attributes;
+  return !!attrs && hasOwn(attrs, FEATURE_DOMAIN === 'escl_scan' ? 'scan_id' : 'job_id')
+    && Array.isArray(attrs.options) && attrs.options.includes('processing-stopped')
+    && attrs.options.includes(FEATURE_DOMAIN === 'escl_scan' ? 'awaiting-back-sides' : 'pending-held');
+}
+
+function registerDocumentFeature() {
+  const F = customElements.get(FEATURE_TAG);
+  F.getStubConfig = () => ({ type: 'custom:' + FEATURE_TAG, duplex: false });
+  const editorTag = FEATURE_TAG + '-editor';
+  if (!customElements.get(editorTag)) {
+    // Own tag and filtering also work when an older standalone editor loaded first.
+    const Editor = customElements.get(TAG + '-editor');
+    customElements.define(editorTag, class extends Editor {
+      _render() {
+        super._render();
+        this._form.schema = this._form.schema.filter(field => !['title', 'entity'].includes(field.name));
+      }
+    });
+  }
+  F.getConfigElement = () => document.createElement(editorTag);
+  F.prototype._t = C.prototype._t;
+  F.prototype.setConfig = function (config) {
+    if (!config || typeof config !== 'object') throw new Error(this._t('feature.config'));
+    if (config.entity || config.title) throw new Error(this._t('feature.host_config'));
+    C.prototype._validateConfig.call(this, config);
+    this._config = { ...config };
+    this._configRevision = (this._configRevision || 0) + 1;
+    this._updateFeature();
+  };
+  for (const property of ['hass', 'context', 'stateObj', 'position']) {
+    Object.defineProperty(F.prototype, property, {
+      get() { return this['_' + property]; },
+      set(value) {
+        this['_' + property] = value;
+        if (property === 'context') this._hasContext = true;
+        this._updateFeature();
+      },
+      configurable: true,
+    });
+  }
+  F.prototype._updateFeature = function () {
+    if (!this._config || !this._hass) return;
+    if (!this.shadowRoot) {
+      const root = this.attachShadow({ mode: 'open' });
+      const style = document.createElement('style');
+      style.textContent = ':host { display: block; min-width: 0; } .guidance { font-size: 14px; line-height: 20px; color: var(--secondary-text-color); overflow-wrap: anywhere; }';
+      this._container = document.createElement('div');
+      root.append(style, this._container);
+      // Control gestures must not also invoke the host's tap/hold/double action.
+      for (const type of ['click', 'dblclick', 'pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'keyup', 'action']) {
+        root.addEventListener(type, event => event.stopPropagation());
+      }
+    }
+    const context = this._hasContext ? this._context : this._stateObj;
+    const entity = context?.entity_id;
+    const supported = this._position !== 'inline' && supportsDocumentFeature(this._hass, context);
+    if (!supported) {
+      this._workflow?.remove();
+      this._workflow = null;
+      this._entity = null;
+      this._container.className = 'guidance';
+      this._container.textContent = this._t(this._position === 'inline' ? 'feature.bottom' : 'feature.target');
+      return;
+    }
+    if (this._entity !== entity || !this._workflow) {
+      this._workflow?.remove();
+      this._workflow = document.createElement(TAG);
+      this._workflow._featureMode = true;
+      this._entity = entity;
+      this._appliedRevision = null;
+      this._container.className = '';
+      this._container.replaceChildren();
+    }
+    if (this._appliedRevision !== this._configRevision) {
+      this._workflow.setConfig({ ...this._config, type: 'custom:' + TAG, entity });
+      this._appliedRevision = this._configRevision;
+    }
+    this._workflow.hass = this._hass;
+    if (!this._workflow.parentNode) this._container.append(this._workflow);
+  };
+  window.customCardFeatures ||= [];
+  if (!window.customCardFeatures.some(feature => feature.type === FEATURE_TAG)) {
+    window.customCardFeatures.push({ type: FEATURE_TAG, name: localize('picker.name'), isSupported: supportsDocumentFeature, configurable: true });
+  }
+}
+// END DOCUMENT CARD CORE v3
 
 
 function responseErrorMessage(response, body, conflictFallback) {
@@ -431,7 +552,7 @@ function responseErrorMessage(response, body, conflictFallback) {
   return message || `HTTP ${response.status}`;
 }
 
-C.prototype.setConfig = function (config) {
+C.prototype._validateConfig = function (config) {
   if (config?.duplex !== undefined && typeof config.duplex !== 'boolean') {
     throw new Error(this._t('config.duplex'));
   }
@@ -440,6 +561,9 @@ C.prototype.setConfig = function (config) {
   if (config?.dpi !== undefined && (!Number.isInteger(config.dpi) || config.dpi < 50 || config.dpi > 1200)) throw new Error(this._t('config.dpi'));
   if (config?.page_size !== undefined && !['full','letter','a4'].includes(config.page_size)) throw new Error(this._t('config.page_size'));
   if (config?.duplex_in_options !== undefined && typeof config.duplex_in_options !== 'boolean') throw new Error(this._t('config.layout'));
+};
+C.prototype.setConfig = function (config) {
+  this._validateConfig(config);
   const previousConfig = this._config;
   const previousDefault = this._config?.duplex;
   const previousEntity = this._config?.entity;
@@ -540,9 +664,11 @@ if (!customElements.get(TAG + '-editor')) {
 C.prototype._render = function () {
   if (this._rendered) return;
   const root = this.attachShadow({ mode: 'open' });
+  const shell = this._featureMode ? 'div' : 'ha-card';
   root.innerHTML = `
     <style>
       ${DOCUMENT_CARD_STYLES}
+      ${this._featureMode ? DOCUMENT_FEATURE_STYLES : ''}
       .toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; font-size: 14px; cursor: pointer; }
       .toggle small { display: block; color: var(--secondary-text-color); font-size: 12px; }
       .two-sided { appearance: none; position: relative; margin: 0; width: 36px; height: 22px; flex: none; border-radius: 12px; background: var(--disabled-text-color); cursor: pointer; }
@@ -553,7 +679,7 @@ C.prototype._render = function () {
       .status select { display: block; width: 100%; min-height: 44px; margin: 8px 0; padding: 4px; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 8px; }
       .status button { width: 100%; margin-top: 4px; }
     </style>
-    <ha-card>
+    <${shell} class="document-body">
       <div class="header"><ha-icon class="icon" icon="mdi:scanner" aria-hidden="true"></ha-icon><div class="title"></div><button class="options-button" type="button" aria-expanded="false" aria-controls="options" data-i18n-label="dialog.title" title=""><ha-icon icon="mdi:tune" aria-hidden="true"></ha-icon></button></div>
       <div class="status" aria-live="polite" aria-atomic="true"></div>
       <div class="connection warning" aria-live="polite" hidden></div>
@@ -564,9 +690,9 @@ C.prototype._render = function () {
         <button class="primary" type="button"></button>
         <button class="cancel" type="button" data-i18n="action.cancel"></button>
       </div>
-    </ha-card>
+    </${shell}>
   `;
-  this._card = root.querySelector('ha-card');
+  this._card = root.querySelector('.document-body');
   this._titleEl = root.querySelector('.title');
   this._statusEl = root.querySelector('.status');
   this._connectionEl = root.querySelector('.connection');
@@ -590,6 +716,7 @@ C.prototype._render = function () {
     this._refreshCapabilities();
   });
   this._installOptions();
+  this._configureFeatureView();
   this._rendered = true;
   this._syncControls();
   this._onHass();
@@ -1319,3 +1446,5 @@ C.prototype._hasExplicitSettings = function () {
 C.prototype._connectionSnapshot = function () {
   return this._scanState()?.attributes?.device_connection;
 };
+
+registerDocumentFeature();
