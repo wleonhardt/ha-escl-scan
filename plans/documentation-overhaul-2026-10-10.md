@@ -77,5 +77,13 @@ an earlier card layout that omits current Options/activity controls.
   service schemas; no action was executed or document submitted.
 - Runtime source, dependency manifests and card assets are unchanged. Scan's
   pre-existing untracked `output/` is untouched.
-- Publication checks: verify the rendered GitHub READMEs and navigation, and
-  require both hosted validation workflows to pass before final handoff.
+- Published Scan commit `bcab03ef60e8d59281e5b73c3e3bddf8a1aaae23` and Print
+  commit `cfeb5e469e60896aef50dc0249c4cdc787cbb732`. All seven checks pass in
+  [Scan CI](https://github.com/wleonhardt/ha-escl-scan/actions/runs/38059606592)
+  and [Print CI](https://github.com/wleonhardt/ha-ipp-print/actions/runs/38059607551),
+  including both minimum-Home-Assistant jobs.
+- Inspected both rendered GitHub READMEs, followed Scan's documentation-index
+  and Print's dashboard-guide links, and checked code-block/table rendering.
+  Scan's landing page and guide table fit a 390-pixel viewport without horizontal
+  overflow; badges load. The quick-start prose is about 90% shorter by word count.
+- Documentation overhaul and publication acceptance are complete.

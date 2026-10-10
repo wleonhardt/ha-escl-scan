@@ -5,8 +5,8 @@
 - Paired documentation overhauled on 2026-10-10: 70-line quick starts plus
   focused installation, dashboard, usage, automation, troubleshooting,
   compatibility and API guides. Corrected stale behavior/examples; runtime and
-  production configuration unchanged. All 730 tests and documentation checks
-  pass locally. [Scope and validation](documentation-overhaul-2026-10-10.md).
+  production configuration unchanged. All 730 tests, documentation checks and
+  both hosted workflows pass; published pages and navigation verified. [Scope and validation](documentation-overhaul-2026-10-10.md).
 
 - Minimum HA backend compatibility released as Scan 0.12.4 / Print 0.11.5.
   Reproduced and fixed Scan's discovery import and Print's targeted-service
