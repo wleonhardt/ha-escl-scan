@@ -3,6 +3,9 @@
 Working memory for this repo: plans, decisions, open questions.
 
 ## Contents
+
+User-facing instructions are in [the documentation index](../docs/README.md).
+
 | File | Purpose |
 |------|---------|
 | `next-up.md` | Task queue + done log |
@@ -19,3 +22,5 @@ Working memory for this repo: plans, decisions, open questions.
 - One decision per file in `decisions/`, named `YYYY-MM-DD-slug.md`.
 - Plans reference code as `path:line`.
 - Update `next-up.md` when starting/finishing work.
+
+[Paired documentation overhaul — 2026-10-10](documentation-overhaul-2026-10-10.md)
