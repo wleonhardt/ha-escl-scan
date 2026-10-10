@@ -60,5 +60,18 @@ hosting only; this task exercises real backend APIs with simulated devices.
 
 ## Delivery
 
-Prepared as Scan 0.12.4 / Print 0.11.5. Hosted CI and release results follow.
-The live installation stays Scan 0.12.3 / Print 0.11.4 during this isolated task.
+- Scan source `9ea5b2b99a36790df42d909738f3f086f9685a19` passed all seven
+  [hosted checks](https://github.com/wleonhardt/ha-escl-scan/actions/runs/38019023347),
+  including the clean minimum-version job. The successful
+  [release workflow](https://github.com/wleonhardt/ha-escl-scan/actions/runs/38019157143)
+  published [Scan 0.12.4](https://github.com/wleonhardt/ha-escl-scan/releases/tag/v0.12.4).
+- Print source `23ffee788c88dc35447448889316deb8acd59432` passed all seven
+  [hosted checks](https://github.com/wleonhardt/ha-ipp-print/actions/runs/38019032694),
+  including the clean minimum-version job. The successful
+  [release workflow](https://github.com/wleonhardt/ha-ipp-print/actions/runs/38019157707)
+  published [Print 0.11.5](https://github.com/wleonhardt/ha-ipp-print/releases/tag/v0.11.5).
+- Minimum-version verification is now part of every normal validation run,
+  including the existing weekly schedule. No additional automation was created.
+- No production files, dashboard configuration or device settings were changed;
+  no live HA upgrade/restart or device job was performed. The live installation
+  stays Scan 0.12.3 / Print 0.11.4. This task's isolated acceptance is complete.
