@@ -18,8 +18,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+import errno
+import io
 import logging
 from pathlib import Path
 import shutil
@@ -78,6 +81,62 @@ class ScanBusyError(RuntimeError):
 
 MAX_IMAGE_BYTES = 50 * 1024 * 1024
 MAX_IMAGE_PIXELS = 40_000_000
+MAX_SCAN_BYTES = 1024 * 1024 * 1024
+MIN_FREE_BYTES = 256 * 1024 * 1024
+_SPACE_ERROR = "Not enough free space to save the scan. Free disk space and try again."
+
+
+class _StorageError(ValueError):
+    """A local storage guard stopped this scan before publication."""
+
+
+def _check_scan_size(size: int, limit: int) -> None:
+    if size > limit:
+        raise _StorageError(
+            "The 1 GiB scan size limit was exceeded; lower DPI or scan smaller batches."
+        )
+
+
+def _require_storage_space(directory: Path, needed: int = 0) -> int:
+    """Executor-only: leave room for HA, without treating a check as a reservation."""
+    if not directory.is_dir():
+        raise _StorageError(
+            "Scan storage folder is unavailable. Check its location and permissions."
+        )
+    available = shutil.disk_usage(directory).free - MIN_FREE_BYTES
+    if available < needed:
+        raise _StorageError(_SPACE_ERROR)
+    return available
+
+
+def _scan_error(exc: Exception) -> str:
+    if isinstance(exc, OSError) and exc.errno in (errno.ENOSPC, errno.EDQUOT):
+        return _SPACE_ERROR
+    return str(exc)
+
+
+class _StorageFile(io.BufferedRandom):
+    """Bound raw/generated PDF writes in executors, including seek-based encoders."""
+
+    def __init__(self, path: Path, limit: int | None = None) -> None:
+        self._directory = path.parent
+        self._limit = MAX_SCAN_BYTES if limit is None else limit
+        self._size = 0
+        self._checked_until = 0
+        _require_storage_space(self._directory)
+        super().__init__(io.FileIO(path, "w+"))
+
+    def write(self, data: bytes) -> int:
+        end = self.tell() + len(data)
+        _check_scan_size(end, self._limit)
+        if end > self._checked_until:
+            available = _require_storage_space(self._directory, max(0, end - self._size))
+            # Avoid a filesystem query for each tiny PDF object. Recheck at
+            # most every MiB of growth; other writers can still race this guard.
+            self._checked_until = self._size + min(available, 1024 * 1024)
+        written = super().write(data)
+        self._size = max(self._size, self.tell())
+        return written
 
 
 class _PdfFileWriter:
@@ -88,8 +147,9 @@ class _PdfFileWriter:
     ``hass.async_add_executor_job``, never directly on the event loop.
     """
 
-    def __init__(self, tmp_path: Path) -> None:
+    def __init__(self, tmp_path: Path, limit: int | None = None) -> None:
         self._tmp = tmp_path
+        self._limit = MAX_SCAN_BYTES if limit is None else limit
         self._f: Any = None
         self.bytes_written = 0
         self.head = b""
@@ -104,7 +164,7 @@ class _PdfFileWriter:
         return self.head.startswith(b"%PDF-") and b"%%EOF" in self.tail
 
     def open(self) -> None:
-        self._f = open(self._tmp, "wb")
+        self._f = _StorageFile(self._tmp, self._limit)
 
     def write(self, chunk: bytes) -> None:
         self._f.write(chunk)
@@ -125,11 +185,12 @@ class _PdfFileWriter:
         self._tmp.replace(final_path)
 
     def cleanup(self) -> None:
-        self.close()
         try:
-            self._tmp.unlink()
+            self.close()
         except OSError:
-            pass
+            _LOGGER.debug("scratch close failed during cleanup", exc_info=True)
+        finally:
+            _safe_unlink(self._tmp)
 
     def convert_image(self, document_format: str, dpi: int) -> None:
         """Decode one bounded image and replace scratch with a PDF, in executor."""
@@ -137,7 +198,7 @@ class _PdfFileWriter:
 
         dest = self._tmp.with_name(self._tmp.name + ".image-pdf")
         try:
-            with Image.open(self._tmp) as source:
+            with Image.open(self._tmp) as source, _StorageFile(dest, self._limit) as output:
                 expected = {"image/jpeg": "JPEG", "image/png": "PNG"}[document_format]
                 if source.format != expected or getattr(source, "n_frames", 1) != 1:
                     raise ValueError("scanner returned an unexpected or multi-frame image")
@@ -148,10 +209,10 @@ class _PdfFileWriter:
                           Image.new("RGB", source.size, "white") as rgb):
                         with rgba.getchannel("A") as alpha:
                             rgb.paste(rgba, mask=alpha)
-                        rgb.save(dest, "PDF", resolution=dpi)
+                        rgb.save(output, "PDF", resolution=dpi)
                 else:
                     with source.convert("RGB") as rgb:
-                        rgb.save(dest, "PDF", resolution=dpi)
+                        rgb.save(output, "PDF", resolution=dpi)
             dest.replace(self._tmp)
             self.bytes_written = self._tmp.stat().st_size
             with self._tmp.open("rb") as stream:
@@ -177,7 +238,9 @@ def _copy_into(src: Path, directory: Path) -> Path:
     dest = directory / src.name
     tmp = directory / f".{src.name}.tmp"
     try:
+        _require_storage_space(directory, src.stat().st_size)
         shutil.copyfile(src, tmp)
+        _require_storage_space(directory)
         tmp.replace(dest)
     finally:
         tmp.unlink(missing_ok=True)
@@ -214,7 +277,7 @@ def _merge_pdfs(parts: list[Path], dest: Path) -> tuple[int, int]:
             for page in reader.pages:
                 writer.add_page(page)
                 pages += 1
-    with open(dest, "wb") as fh:
+    with _StorageFile(dest) as fh:
         writer.write(fh)
     return pages, dest.stat().st_size
 
@@ -234,7 +297,7 @@ def _rotate_back_sides(path: Path) -> int:
             for i, page in enumerate(writer.pages):
                 if i % 2:
                     page.rotate(180)
-            with open(tmp, "wb") as fh:
+            with _StorageFile(tmp) as fh:
                 writer.write(fh)
         tmp.replace(path)
         return path.stat().st_size
@@ -269,7 +332,7 @@ def _interleave_duplex(
                 copied_back = writer.add_page(back)
                 if rotate_backs:
                     copied_back.rotate(180)
-            with tmp.open("wb") as output:
+            with _StorageFile(tmp) as output:
                 writer.write(output)
             pages = len(writer.pages)
         tmp.replace(backs)
@@ -304,6 +367,9 @@ class TrackedScan:
     file_path: Path | None = None
     copied_to: Path | None = None
     bytes_written: int = 0
+    # Internal cumulative payload budget, retained across both manual passes.
+    # For image inputs count the larger of encoded bytes and converted PDF.
+    document_bytes: int = 0
     finished_at: datetime | None = None
     error: str | None = None
     publishing: bool = False
@@ -682,6 +748,9 @@ class ScanCoordinator:
 
     async def _create_device_job(self, scan: TrackedScan) -> None:
         """Recover the created job's address even if shutdown interrupts POST."""
+        await self._file_job(_require_storage_space, self._storage)
+        if scan.is_terminal():
+            return
         region = scan.region
         create = self._hass.loop.create_task(self._client.create_job(
             source=scan.source, dpi=scan.dpi, color=scan.color, duplex=scan.duplex,
@@ -710,7 +779,7 @@ class ScanCoordinator:
             try:
                 await self._create_device_job(scan)
             except Exception as exc:
-                self._mark_terminal(scan, STATE_FAILED, None, error=str(exc))
+                self._mark_terminal(scan, STATE_FAILED, None, error=_scan_error(exc))
                 return
 
             if scan.is_terminal():
@@ -772,7 +841,7 @@ class ScanCoordinator:
                 raise
         except Exception as exc:
             _LOGGER.exception("scan driver crashed")
-            self._mark_terminal(scan, STATE_FAILED, None, error=str(exc))
+            self._mark_terminal(scan, STATE_FAILED, None, error=_scan_error(exc))
         finally:
             # Always best-effort delete the server-side job, including on
             # failure paths. eSCL devices have a limited number of job slots
@@ -871,18 +940,24 @@ class ScanCoordinator:
                 writer = _PdfFileWriter(
                     scan.file_path.with_name(
                         f"{scan.file_path.name}.part{scan.scan_phase or ''}{doc_index}"
-                    )
+                    ),
+                    MAX_SCAN_BYTES - scan.document_bytes,
                 )
                 parts.append(writer)
                 got_data = False
                 try:
                     await self._file_job(writer.open)
-                    async for chunk in self._client.iter_next_document(scan.job_url):
-                        if (scan.document_format != "application/pdf"
-                                and writer.bytes_written + len(chunk) > MAX_IMAGE_BYTES):
-                            raise ValueError("scan image exceeds the 50 MiB limit; lower the DPI")
-                        got_data = True
-                        await self._file_job(writer.write, chunk)
+                    async with aclosing(self._client.iter_next_document(scan.job_url)) as chunks:
+                        async for chunk in chunks:
+                            if (scan.document_format != "application/pdf"
+                                    and writer.bytes_written + len(chunk) > MAX_IMAGE_BYTES):
+                                raise ValueError(
+                                    "scan image exceeds the 50 MiB limit; lower the DPI"
+                                )
+                            _check_scan_size(scan.document_bytes + len(chunk), MAX_SCAN_BYTES)
+                            got_data = True
+                            await self._file_job(writer.write, chunk)
+                            scan.document_bytes += len(chunk)
                 finally:
                     await self._file_job(writer.close)
                 if not got_data:
@@ -890,7 +965,9 @@ class ScanCoordinator:
                     parts.pop()
                     break
                 if scan.document_format != "application/pdf":
+                    encoded_size = writer.bytes_written
                     await self._file_job(writer.convert_image, scan.document_format, scan.dpi)
+                    scan.document_bytes += max(0, writer.bytes_written - encoded_size)
                 doc_index += 1
                 scan.pages_done = max(scan.pages_done, scan.front_pages + doc_index)
                 scan.last_seen = datetime.now(UTC)
@@ -969,7 +1046,7 @@ class ScanCoordinator:
                 )
         except Exception as exc:
             self._mark_terminal(
-                scan, STATE_FAILED, None, error=f"could not assemble PDF: {exc}"
+                scan, STATE_FAILED, None, error=f"could not assemble PDF: {_scan_error(exc)}"
             )
             return None
 
@@ -979,6 +1056,10 @@ class ScanCoordinator:
                     _rotate_back_sides, scan.file_path
                 )
             except Exception as exc:
+                if isinstance(exc, _StorageError) or (
+                    isinstance(exc, OSError) and exc.errno in (errno.ENOSPC, errno.EDQUOT)
+                ):
+                    raise
                 _LOGGER.warning(
                     "scan %s: could not rotate duplex back sides: %s",
                     scan.scan_id, exc,

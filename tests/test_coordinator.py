@@ -1109,3 +1109,389 @@ async def test_explicit_duplex_never_silently_scans_glass(make_coord):
     with pytest.raises(ValueError, match="requires the feeder"):
         await make_coord(client).start_scan(duplex=True)
     assert client.create_kwargs is None
+
+
+@pytest.mark.parametrize("mode", ["bundle", "separate", "manual"])
+async def test_scan_storage_limit_covers_whole_scan_and_preserves_latest(
+    make_coord, monkeypatch, mode,
+):
+    from custom_components.escl_scan import coordinator as module
+
+    client = FakeClient(docs=[[VALID_PDF]])
+    coord = make_coord(client)
+    previous = await coord.start_scan()
+    await _drive(coord, previous)
+    before = coord.latest.snapshot()
+    monkeypatch.setattr(module, "MAX_SCAN_BYTES", 2 * len(VALID_PDF) - 1, raising=False)
+    if mode == "manual":
+        client = TwoPassClient(VALID_PDF, VALID_PDF)
+        coord._client = client
+        scan = await coord.start_scan(source="Feeder", duplex=True)
+        await _wait_for(lambda: scan.state == "awaiting-back-sides")
+        await coord.async_scan_backs(scan.scan_id)
+    else:
+        client._docs = ([[VALID_PDF, b" " * len(VALID_PDF)]] if mode == "bundle"
+                        else [[VALID_PDF], [VALID_PDF]])
+        scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "failed"
+    assert "scan size limit" in scan.error
+    assert not coord._driver_tasks and not coord._back_events
+    assert coord.latest.snapshot() == before
+    assert set(coord._storage.iterdir()) == {previous.file_path}
+    assert previous.file_path.read_bytes() == VALID_PDF
+    assert await coord.async_download_file(previous.scan_id) == (
+        previous.file_path, previous.filename,
+    )
+
+
+async def test_low_disk_space_stops_before_creating_job(make_coord, monkeypatch):
+    from types import SimpleNamespace
+
+    from custom_components.escl_scan import coordinator as module
+
+    client = FakeClient(docs=[[VALID_PDF]])
+    coord = make_coord(client)
+    monkeypatch.setattr(module.shutil, "disk_usage", lambda p: SimpleNamespace(free=0))
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "failed"
+    assert "free space" in scan.error
+    assert client.create_kwargs is None and client.deleted == []
+    assert not list(coord._storage.iterdir()) and not coord._driver_tasks
+
+
+def test_scratch_cleanup_unlinks_even_when_close_fails(tmp_path):
+    import errno
+
+    from custom_components.escl_scan.coordinator import _PdfFileWriter
+
+    writer = _PdfFileWriter(tmp_path / "scan.pdf.part0")
+    writer.open()
+    writer.write(b"partial scan")
+    real_file = writer._f
+
+    class FullOnClose:
+        def close(self):
+            real_file.close()
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+    writer._f = FullOnClose()
+    writer.cleanup()
+    assert not writer.path.exists()
+    assert writer._f is None
+
+
+@pytest.mark.parametrize("extra", [0, 1], ids=["at-limit", "one-byte-over"])
+async def test_scan_storage_exact_boundary(make_coord, monkeypatch, extra):
+    from custom_components.escl_scan import coordinator as module
+
+    monkeypatch.setattr(module, "MAX_SCAN_BYTES", len(VALID_PDF))
+    coord = make_coord(FakeClient(docs=[[VALID_PDF, b" " * extra]]))
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == ("completed" if extra == 0 else "failed")
+    assert scan.document_bytes == len(VALID_PDF)
+    assert not list(coord._storage.glob("*.part*"))
+
+
+async def test_disk_space_rechecked_mid_download_and_stream_closed(make_coord, monkeypatch):
+    from types import SimpleNamespace
+
+    from custom_components.escl_scan import coordinator as module
+
+    free = 2 * module.MIN_FREE_BYTES
+    closed = False
+
+    class ChangingDisk(FakeClient):
+        async def iter_next_document(self, url):
+            nonlocal free, closed
+            try:
+                yield b"%PDF-" + b"x" * (1024 * 1024 - 5)
+                free = module.MIN_FREE_BYTES
+                yield b"x"
+            finally:
+                closed = True
+
+    monkeypatch.setattr(module.shutil, "disk_usage", lambda p: SimpleNamespace(free=free))
+    client = ChangingDisk()
+    coord = make_coord(client)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "failed" and "free space" in scan.error
+    assert closed and client.deleted == [scan.job_url]
+    assert not coord._driver_tasks and not list(coord._storage.iterdir())
+
+
+async def test_storage_limit_closes_stream_without_consuming_rest(make_coord, monkeypatch):
+    from custom_components.escl_scan import coordinator as module
+
+    closed, consumed = False, False
+
+    class EndlessBody(FakeClient):
+        async def iter_next_document(self, url):
+            nonlocal closed, consumed
+            try:
+                yield b"x" * 11
+                consumed = True
+                await asyncio.Event().wait()
+            finally:
+                closed = True
+
+    monkeypatch.setattr(module, "MAX_SCAN_BYTES", 10)
+    coord = make_coord(EndlessBody())
+    scan = await coord.start_scan()
+    await asyncio.wait_for(coord._driver_tasks[scan.scan_id], 2)
+    assert scan.state == "failed" and closed and not consumed
+    assert not list(coord._storage.iterdir())
+
+
+@pytest.mark.parametrize("stage", ["write", "close", "merge", "rotation", "interleave", "image"])
+async def test_disk_full_during_storage_cleans_up_and_allows_next_scan(
+    make_coord, monkeypatch, stage,
+):
+    import errno
+
+    from custom_components.escl_scan import coordinator as module
+    from custom_components.escl_scan.scan_profiles import SettingProfile
+
+    payload = image_bytes(100, "PNG") if stage == "image" else VALID_PDF
+    if stage == "interleave":
+        client = TwoPassClient(payload, payload)
+    else:
+        client = FakeClient(docs=[[payload], [payload]] if stage == "merge" else [[payload]])
+    if stage == "image":
+        client.caps = ScannerCapabilities(
+            setting_profiles={"Platen": [SettingProfile(formats=("image/png",))]})
+    elif stage == "rotation":
+        client.caps = ScannerCapabilities(adf_duplex=True)
+        client._docs = [[real_pdf(2)]]
+    coord = make_coord(client, rotate_duplex_backs=stage == "rotation")
+    original_write, original_close = module._StorageFile.write, module._StorageFile.close
+    injected = False
+
+    def write(stream, data):
+        nonlocal injected
+        count = original_write(stream, data)
+        name = str(stream.name)
+        match = ((stage == "write" and ".part" in name)
+                 or (stage == "merge" and name.endswith(".pdf"))
+                 or (stage == "rotation" and name.endswith(".rot"))
+                 or (stage == "interleave" and name.endswith(".duplex"))
+                 or (stage == "image" and name.endswith(".image-pdf")))
+        if match and not injected:
+            injected = True
+            raise OSError(errno.ENOSPC, "No space left on device")
+        return count
+
+    def close(stream):
+        nonlocal injected
+        original_close(stream)
+        if stage == "close" and not injected:
+            injected = True
+            raise OSError(errno.EDQUOT, "Disk quota exceeded")
+
+    monkeypatch.setattr(module._StorageFile, "write", write)
+    monkeypatch.setattr(module._StorageFile, "close", close)
+    scan = await coord.start_scan(
+        source="Feeder" if stage in ("rotation", "interleave") else "Platen",
+        duplex=stage in ("rotation", "interleave"),
+    )
+    if stage == "interleave":
+        await _wait_for(lambda: scan.state == "awaiting-back-sides")
+        await coord.async_scan_backs(scan.scan_id)
+    await _drive(coord, scan)
+    assert injected and scan.state == "failed" and "free space" in scan.error
+    assert not coord._driver_tasks and not coord._back_events
+    assert not list(coord._storage.iterdir()) and coord.latest.snapshot() is None
+    assert scan.to_dict()["file_url"] is None
+    # Removing the local fault lets the next explicit scan succeed.
+    coord._client = FakeClient(docs=[[payload]], caps=client.caps)
+    retry = await coord.start_scan(source="Platen", duplex=False)
+    await _drive(coord, retry)
+    assert retry.state == "completed"
+
+
+async def test_image_conversion_counts_toward_total_budget(make_coord, monkeypatch):
+    from custom_components.escl_scan import coordinator as module
+    from custom_components.escl_scan.scan_profiles import SettingProfile
+
+    payload = image_bytes(100, "PNG")
+    caps = ScannerCapabilities(
+        setting_profiles={"Platen": [SettingProfile(formats=("image/png",))]})
+    client = FakeClient(docs=[[payload]], caps=caps)
+    coord = make_coord(client)
+    previous = await coord.start_scan()
+    await _drive(coord, previous)
+    assert previous.bytes_written > len(payload)
+    before = coord.latest.snapshot()
+    # First converted PDF fits; the second raw image fits, but its PDF cannot.
+    monkeypatch.setattr(module, "MAX_SCAN_BYTES", previous.bytes_written + len(payload))
+    client._docs = [[payload], [payload]]
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "failed" and "scan size limit" in scan.error
+    assert coord.latest.snapshot() == before
+    assert set(coord._storage.iterdir()) == {previous.file_path}
+
+
+async def test_cancel_during_disk_preflight_cannot_create_job(make_coord, monkeypatch):
+    import threading
+
+    from custom_components.escl_scan import coordinator as module
+
+    entered, release = threading.Event(), threading.Event()
+    original = module._require_storage_space
+
+    def delayed(directory, needed=0):
+        entered.set()
+        assert release.wait(3)
+        return original(directory, needed)
+
+    monkeypatch.setattr(module, "_require_storage_space", delayed)
+    client = FakeClient(docs=[[VALID_PDF]])
+    coord = make_coord(client)
+    scan = await coord.start_scan()
+    try:
+        await _wait_for(entered.is_set)
+        assert await coord.async_cancel(scan.scan_id)
+        release.set()
+        await _drive(coord, scan)
+        assert scan.state == "canceled" and client.create_kwargs is None
+        assert not coord._driver_tasks and not list(coord._storage.iterdir())
+    finally:
+        release.set()
+
+
+async def test_low_space_on_copy_destination_preserves_local_pdf(make_coord, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from custom_components.escl_scan import coordinator as module
+
+    dest = tmp_path / "copies"
+    dest.mkdir()
+    previous = dest / "previous.pdf"
+    previous.write_bytes(VALID_PDF)
+    monkeypatch.setattr(module.shutil, "disk_usage", lambda p: SimpleNamespace(
+        free=module.MIN_FREE_BYTES + (len(VALID_PDF) - 1 if p == dest else module.MAX_SCAN_BYTES)))
+    coord = make_coord(FakeClient(docs=[[VALID_PDF]]), copy_dir=dest)
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "completed" and scan.copied_to is None
+    assert scan.file_path.read_bytes() == VALID_PDF
+    assert set(dest.iterdir()) == {previous} and previous.read_bytes() == VALID_PDF
+    assert await coord.async_download_file(scan.scan_id) == (scan.file_path, scan.filename)
+
+
+def test_generated_pdf_writer_bounds_seek_and_growth(tmp_path, monkeypatch):
+    from custom_components.escl_scan import coordinator as module
+
+    monkeypatch.setattr(module, "MAX_SCAN_BYTES", 10)
+    path = tmp_path / "bounded.pdf"
+    with module._StorageFile(path) as output:
+        output.write(b"x" * 10)
+        output.seek(0)
+        output.write(b"abc")
+        output.seek(0, 2)
+        with pytest.raises(ValueError, match="scan size limit"):
+            output.write(b"x")
+    assert path.read_bytes() == b"abc" + b"x" * 7
+
+
+async def test_unusable_storage_directory_does_not_consume_paper(make_coord):
+    client = FakeClient(docs=[[VALID_PDF]])
+    coord = make_coord(client)
+    coord._storage.write_text("existing unrelated file")
+    scan = await coord.start_scan()
+    await _drive(coord, scan)
+    assert scan.state == "failed" and client.create_kwargs is None
+    assert coord._storage.read_text() == "existing unrelated file"
+
+
+@pytest.mark.parametrize("exit_kind", ["cancel", "shutdown", "disconnect"])
+async def test_interrupted_partial_write_keeps_previous_result(make_coord, exit_kind):
+    coord = make_coord(FakeClient(docs=[[VALID_PDF]]))
+    previous = await coord.start_scan()
+    await _drive(coord, previous)
+    before = coord.latest.snapshot()
+    written, closed = asyncio.Event(), asyncio.Event()
+
+    class Interrupted(FakeClient):
+        async def iter_next_document(self, url):
+            try:
+                yield VALID_PDF[:100]
+                written.set()
+                if exit_kind == "disconnect":
+                    raise ConnectionError("scanner disconnected")
+                await asyncio.Event().wait()
+            finally:
+                closed.set()
+
+    client = Interrupted()
+    coord._client = client
+    scan = await coord.start_scan()
+    task = coord._driver_tasks[scan.scan_id]
+    await asyncio.wait_for(written.wait(), 2)
+    if exit_kind == "cancel":
+        await coord.async_cancel(scan.scan_id)
+        await task
+    elif exit_kind == "shutdown":
+        await coord.async_shutdown()
+    else:
+        await task
+    assert closed.is_set() and client.deleted == [scan.job_url]
+    assert not coord._driver_tasks and scan.to_dict()["file_url"] is None
+    assert coord.latest.snapshot() == before
+    assert set(coord._storage.iterdir()) == {previous.file_path}
+    assert previous.file_path.read_bytes() == VALID_PDF
+
+
+async def test_low_disk_before_manual_backs_does_not_start_second_job(make_coord, monkeypatch):
+    from types import SimpleNamespace
+
+    from custom_components.escl_scan import coordinator as module
+
+    client = TwoPassClient(VALID_PDF, VALID_PDF)
+    coord = make_coord(client)
+    scan = await coord.start_scan(duplex=True)
+    await _wait_for(lambda: scan.state == "awaiting-back-sides")
+    monkeypatch.setattr(module.shutil, "disk_usage", lambda p: SimpleNamespace(free=0))
+    await coord.async_scan_backs(scan.scan_id)
+    await _drive(coord, scan)
+    assert scan.state == "failed" and "free space" in scan.error
+    assert client.create_calls == 1 and not coord._back_events
+    assert not list(coord._storage.iterdir()) and not coord._driver_tasks
+
+
+@pytest.mark.parametrize("stage", ["merge", "rotation", "interleave"])
+async def test_generated_pdf_overflow_never_publishes(make_coord, monkeypatch, stage):
+    from pypdf import PdfWriter
+
+    from custom_components.escl_scan import coordinator as module
+
+    payload = real_pdf(2) if stage == "rotation" else VALID_PDF
+    client = (TwoPassClient(payload, payload) if stage == "interleave" else
+              FakeClient(docs=[[payload], [payload]] if stage == "merge" else [[payload]],
+                         caps=ScannerCapabilities(adf_duplex=stage == "rotation")))
+    monkeypatch.setattr(module, "MAX_SCAN_BYTES", 2 * len(payload) + 1024)
+    original = PdfWriter.write
+    attempted = False
+
+    def expanded(writer, output):
+        nonlocal attempted
+        result = original(writer, output)
+        attempted = True
+        # Simulate serialized output growing beyond the bounded input PDFs.
+        output.write(b" " * (module.MAX_SCAN_BYTES + 1))
+        return result
+
+    monkeypatch.setattr(PdfWriter, "write", expanded)
+    coord = make_coord(client, rotate_duplex_backs=stage == "rotation")
+    scan = await coord.start_scan(source="Feeder", duplex=stage != "merge")
+    if stage == "interleave":
+        await _wait_for(lambda: scan.state == "awaiting-back-sides")
+        await coord.async_scan_backs(scan.scan_id)
+    await _drive(coord, scan)
+    assert attempted and scan.state == "failed" and "scan size limit" in scan.error
+    assert coord.latest.snapshot() is None and scan.to_dict()["file_url"] is None
+    assert not coord._driver_tasks and not list(coord._storage.iterdir())

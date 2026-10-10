@@ -390,6 +390,20 @@ a folder consumer may already have ingested the file.
 
 ## Troubleshooting
 
+Scans have a fixed **1 GiB document budget** across the complete batch, including
+both manual duplex passes. Image inputs count the larger of their original size
+and converted PDF size; each generated PDF is also capped at 1 GiB. Lower DPI
+or scan smaller batches if this limit is reached. Temporary assembly files can
+require additional disk space.
+
+The integration checks for **256 MiB of free disk headroom** before starting each
+scanner job and rechecks while scan files grow. This is a best-effort safeguard,
+not reserved disk space: other applications can still fill the disk. Storage
+failures stop the scan and clean up its temporary files while earlier retained
+results keep their normal expiry. If the optional copy folder has insufficient
+space, the local completed PDF remains downloadable and the copy failure is
+logged. These safeguards require no new settings.
+
 Scanner status, capability, job-status and scan-start error replies are limited
 to 1 MiB after decompression. A reply exceeding that limit is rejected as it is
 read; oversized status data cannot authorize stale-job cleanup. This limit

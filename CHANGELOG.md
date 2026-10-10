@@ -4,6 +4,19 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.12.3] - 2026-10-09
+
+### Fixed
+- Bound a scan's cumulative document payloads to 1 GiB, including both manual
+  duplex passes and image-to-PDF expansion. Generated PDFs also stop at 1 GiB.
+- Check for 256 MiB of free disk headroom before starting each scanner job and
+  during file growth. Unavailable storage stops before consuming paper; size
+  and disk-full failures give guidance to split the batch, lower DPI or free space.
+- Close interrupted download streams promptly and remove scratch files even if
+  closing a file fails. Failed/canceled scans preserve earlier retained results.
+  Copy-folder space failures retain the completed local PDF. No new settings or
+  dependencies.
+
 ## [0.12.2] - 2026-10-09
 
 ### Fixed

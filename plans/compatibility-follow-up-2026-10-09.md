@@ -242,3 +242,50 @@ Released and installed as Scan 0.12.2 (Print stays 0.11.3):
   a PDF header. A newer user scan appeared during release preparation, so the
   final idle baseline was refreshed before restarting. This task submitted no
   physical jobs and deleted none.
+
+## Scanner storage safeguards — 2026-10-09
+
+The user approved the proposed next task: reproduce oversized downloads,
+low-space/write failures and interrupted scans, then add lean safeguards. Print
+upload concurrency and scanner diagnostics remain separate proposals.
+
+Five initial regressions failed against 0.12.2: over-budget bundled PDF,
+separate-document batch and manual two-pass scan all completed; a zero-free-space
+fixture still created a scanner job; and scratch cleanup skipped unlink when
+close raised ENOSPC. The close test exercises the cleanup helper directly, not
+an observed HP failure. A later fixture also showed an unusable storage path
+could still create a job before the write failed. All faults are local fixtures;
+no production disk was filled and no scanner fault was induced.
+
+Use a fixed 1 GiB cumulative document budget per logical scan, retaining the
+counter across both manual passes. Count each image's larger original/converted
+size so compression cannot bypass the total. Each generated PDF is independently
+bounded during writes (merge, conversion, back rotation and duplex interleave).
+The limit leaves room for ordinary large color batches while bounding an endless
+response. This is a document budget, not a claim that temporary disk use or PDF
+parser memory stays below 1 GiB. Assembly can hold inputs and output together.
+
+Keep 256 MiB of free-space headroom as a best-effort HA safeguard. Check in the
+executor before each scanner job and before new files; recheck at most every
+MiB of file growth, including generated output. Tiny PDF-object writes reuse
+that check. Other writers can race a space check, so actual ENOSPC/EDQUOT still
+produce an actionable failure. A canceled preflight cannot create a late job.
+Copy destinations get a full-file free-space check before copying and a final
+headroom check before atomic publication. A failed optional copy leaves the
+completed private PDF available under the existing policy.
+
+Explicitly close the download generator when writing fails or is canceled;
+cleanup still unlinks scratch files when close raises. Storage-limit/full-disk
+errors during requested back rotation fail the scan rather than publishing an
+unrotated result as successful. Existing TTL, previous-result metadata, job
+ownership/deletion, manual resume, scan settings and dependencies stay intact.
+No runtime framework, additional configuration or automatic job retry is added.
+
+Validation: 295 Python tests and 78 card tests pass (373 total), plus Ruff,
+compileall, npm ci and diff checks. The 27 new cases cover the original gaps,
+exact/one-byte-over boundaries, per-batch image expansion, generated-PDF bounds,
+mid-download space loss, immediate stream closure, ENOSPC/EDQUOT in all writing
+stages, explicit recovery, cancellation/shutdown/disconnection, manual back-pass
+preflight and optional-copy failure. Previous result bytes/metadata remain
+intact. Live storage has about 52 GiB available; no production fault was induced.
+Release and installed verification will be recorded below.
