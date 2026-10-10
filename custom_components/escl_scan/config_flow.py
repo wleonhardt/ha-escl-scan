@@ -16,8 +16,12 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
-from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 import voluptuous as vol
+
+try:
+    from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+except ImportError:  # HA 2024.12, before discovery models moved to helpers.
+    from homeassistant.components.zeroconf import ZeroconfServiceInfo
 
 from .const import (
     CONF_BASE_PATH,

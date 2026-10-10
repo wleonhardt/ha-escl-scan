@@ -2,6 +2,13 @@
 
 ## Queue
 
+- Minimum HA backend compatibility prepared as Scan 0.12.4 / Print 0.11.5.
+  Reproduced and fixed Scan's discovery import and Print's targeted-service
+  helper call on HA 2024.12.0. Both complete Python suites pass on the exact
+  minimum and newer environments; all card tests pass. Added isolated CI jobs
+  with no new settings/runtime dependencies. Production untouched.
+  [Paired evidence](minimum-ha-compatibility-2026-10-09.md).
+
 - Scanner storage safeguards released and installed as 0.12.3; all 373 tests,
   hosted/release checks and installed verification pass. Fixed 1 GiB
   batch/generated-PDF bounds and 256 MiB

@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.12.4] - 2026-10-09
+
+### Fixed
+- Restore setup and discovery on HA 2024.12 by accepting its original discovery
+  model import path. Newer HA keeps using the current path.
+
+### Tests
+- Run the full Python suite on the exact advertised HA 2024.12.0 minimum and
+  pypdf 4.0.0 in an isolated CI job, alongside the newer test environment.
+  No settings or runtime dependencies added.
+
 ## [0.12.3] - 2026-10-09
 
 ### Fixed

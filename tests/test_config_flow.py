@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, patch
 
 from homeassistant import config_entries, data_entry_flow
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.escl_scan.config_flow import ZeroconfServiceInfo
 from custom_components.escl_scan.const import (
     CONF_BASE_PATH,
     CONF_COPY_DIR,

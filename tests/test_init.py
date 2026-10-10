@@ -105,11 +105,16 @@ async def test_dashboard_resource_sync_failure_keeps_extra_module_fallback(hass,
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, add_extra_js_url
+    from homeassistant.components.frontend import (
+        DATA_EXTRA_MODULE_URL,
+        UrlManager,
+        add_extra_js_url,
+    )
 
     from custom_components.escl_scan import _sync_lovelace_resources
 
-    await async_setup_component(hass, "frontend", {})
+    # Only URL registration is needed here; avoid starting an HTTP listener.
+    hass.data[DATA_EXTRA_MODULE_URL] = UrlManager(lambda *_: None, [])
     url = "/escl_scan/card-new.js"
     add_extra_js_url(hass, url)
     hass.data[DOMAIN] = {"entry": {"card_url": url}}
@@ -156,7 +161,12 @@ async def test_setup_and_unload(hass):
         assert hass.states.get("sensor.printer_current_scan") is not None
 
         dev_reg = dr.async_get(hass)
-        device = dev_reg.async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+        if hasattr(dev_reg, "async_get_device_by_identifier"):
+            device = dev_reg.async_get_device_by_identifier(
+                (DOMAIN, entry.entry_id), entry.entry_id
+            )
+        else:
+            device = dev_reg.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
         assert device.manufacturer == "HP"
         assert device.model == "LaserJet MFP M234sdw"
         assert device.serial_number == "SN1"
@@ -232,7 +242,8 @@ async def test_setup_registers_dashboard_resource_and_updates_it_on_reload(hass)
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        coll = hass.data["lovelace"].resources
+        lovelace = hass.data["lovelace"]
+        coll = lovelace["resources"] if isinstance(lovelace, dict) else lovelace.resources
         before = list(coll.async_items())
         assert len(before) == 1
         assert before[0]["url"] == "/escl_scan/card-old.js"
