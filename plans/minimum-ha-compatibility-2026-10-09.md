@@ -75,3 +75,43 @@ hosting only; this task exercises real backend APIs with simulated devices.
 - No production files, dashboard configuration or device settings were changed;
   no live HA upgrade/restart or device job was performed. The live installation
   stays Scan 0.12.3 / Print 0.11.4. This task's isolated acceptance is complete.
+
+## HACS installation and dashboard acceptance — 2026-10-10
+
+The user subsequently requested the latest HACS versions on the live instance
+and verification of the card setup. This is separate from the isolated tests
+above.
+
+- Both integrations were present on disk but HACS reported `installed: false`
+  and no installed version. Refreshed their repository metadata, then used
+  HACS's own `hacs/repository/download` operation to install stable Scan 0.12.4
+  and Print 0.11.5. No manual component copy or HACS storage edit was used.
+- Backed up both component directories, the main dashboard, resources and
+  HACS tracking files to
+  `/config/.document-card-backups/before-hacs-latest-20261010-complete.tar.gz`.
+  All 25 Scan and 20 Print shipped files match their release-tag SHA-256 hashes.
+- Both devices were idle before the single restart. `ha core check` passed.
+  After restart, diagnostics report Scan 0.12.4 / Print 0.11.5, both entries
+  are loaded, and both HP connections are reachable. HA stays on 2026.9.4.
+- HACS now reports both repositories installed, matching latest versions,
+  with no pending update or restart. The new `update.escl_scan_update` and
+  `update.ipp_print_update` entities both report up to date; beta and automatic
+  updates remain disabled.
+- Read-only eSCL and JPEG-specific IPP capability lookups return fresh results.
+  Latest scan and recent print activity match the pre-restart snapshots
+  exactly. The scan was already expired before the update; no download claim
+  is made for that expired file. No physical scan or print job was submitted.
+- Main `/lovelace/printer` and preview `/lovelace/native-documents` configs
+  already bind the native features to the correct sensors, with one built-in
+  Vertical stack per card. Each integration has exactly one current resource:
+  `/escl_scan/card-a5a7bef90d84.js` and `/ipp_print/card-d5f2508ef4af.js`.
+  No dashboard/resource edits were needed.
+- Fresh main dashboard at 390 × 844 renders one Scan and one Print feature,
+  no error card, aligned compact switches/actions and the device heading.
+  Scan/Print Options fit, and browser Back closes each without leaving the
+  dashboard. Expanding Scan changes its feature height from 216 to 420 px
+  while Print stays 216 px; expanding Print changes it to 416 px while Scan
+  stays 216 px. Both disclosures were left collapsed.
+
+Live installation acceptance is complete. The release test/CI results above
+remain applicable: this follow-up changes deployment and records only.
