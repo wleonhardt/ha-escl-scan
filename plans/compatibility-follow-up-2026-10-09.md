@@ -288,4 +288,21 @@ mid-download space loss, immediate stream closure, ENOSPC/EDQUOT in all writing
 stages, explicit recovery, cancellation/shutdown/disconnection, manual back-pass
 preflight and optional-copy failure. Previous result bytes/metadata remain
 intact. Live storage has about 52 GiB available; no production fault was induced.
-Release and installed verification will be recorded below.
+Released and installed as Scan 0.12.3 (Print stays 0.11.3):
+
+- Source commit `a149eeb887cd2697011bea102f0a5dcdb85fc2c5`;
+  [all hosted checks passed](https://github.com/wleonhardt/ha-escl-scan/actions/runs/38012885032).
+- [Release workflow passed](https://github.com/wleonhardt/ha-escl-scan/actions/runs/38012969601)
+  and published [v0.12.3](https://github.com/wleonhardt/ha-escl-scan/releases/tag/v0.12.3).
+- Rollback archive:
+  `/config/.document-card-backups/before-storage-v0123-20261009.tar.gz`.
+  Installed tracked release files; coordinator/manifest/card hashes match.
+  Card content is unchanged. HA configuration check passed before restart.
+- Both job sensors were idle before restart. HA stays 2026.9.4; both integration
+  entries load, both devices report reachable, and scanner capabilities are fresh.
+  Downloaded diagnostics confirm Scan 0.12.3; each native card feature renders once.
+- Latest scan `eb6a6af1b516` and recent print job 373 match the pre-restart records
+  exactly after refresh/restart. The scan was already expired before installation
+  and retains its original expiry/no download link. Available-result preservation
+  is verified in isolated tests; this is not a claim of a fresh physical scan.
+  No physical job or synthetic production disk failure was sent.

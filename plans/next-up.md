@@ -2,11 +2,13 @@
 
 ## Queue
 
-- Scanner storage safeguards approved and implemented for 0.12.3; all 373 tests
-  pass and delivery is underway. Fixed 1 GiB batch/generated-PDF bounds and 256 MiB
+- Scanner storage safeguards released and installed as 0.12.3; all 373 tests,
+  hosted/release checks and installed verification pass. Fixed 1 GiB
+  batch/generated-PDF bounds and 256 MiB
   free-space headroom, including manual passes and image conversion. Preserve
-  prior results and release streams/scratch files on failure. No new settings
-  or dependencies. [Scope and evidence](compatibility-follow-up-2026-10-09.md#scanner-storage-safeguards--2026-10-09).
+  prior results and release streams/scratch files on failure. Cards, fresh
+  capabilities and unchanged activity verified after restart. No physical jobs,
+  new settings or dependencies. [Scope and evidence](compatibility-follow-up-2026-10-09.md#scanner-storage-safeguards--2026-10-09).
 
 - Scanner response-size hardening released and installed as 0.12.2. Reproduced four
   unbounded control-body paths; all now share the existing 1 MiB limit.
