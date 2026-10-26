@@ -69,6 +69,15 @@ def _base_path(value: str) -> str:
     return value.strip("/")
 
 
+def _validate_base_path(user_input: dict[str, Any], errors: dict[str, str]) -> None:
+    # Validated here, not in the form schema: HA must serialize form schemas
+    # for the frontend and cannot serialize custom validators (issue #11).
+    try:
+        user_input[CONF_BASE_PATH] = _base_path(user_input[CONF_BASE_PATH])
+    except vol.Invalid:
+        errors[CONF_BASE_PATH] = "invalid_base_path"
+
+
 def _normalize_uuid(value: str | None) -> str | None:
     return value.strip().casefold().removeprefix("urn:uuid:").strip("{}") or None if value else None
 
@@ -200,11 +209,13 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             caps = None
-            try:
-                caps = await _probe(user_input)
-            except Exception as exc:
-                errors["base"] = "cannot_connect"
-                self._last_error = str(exc)
+            _validate_base_path(user_input, errors)
+            if not errors:
+                try:
+                    caps = await _probe(user_input)
+                except Exception as exc:
+                    errors["base"] = "cannot_connect"
+                    self._last_error = str(exc)
             if not errors:
                 # Serial/UUID survives a DHCP address change; host:port is
                 # the fallback for devices that don't serve capabilities.
@@ -228,7 +239,7 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
             {
                 vol.Required(CONF_HOST): str,
                 vol.Optional(CONF_PORT, default=DEFAULT_PORT): _PORT,
-                vol.Optional(CONF_BASE_PATH, default=DEFAULT_BASE_PATH): vol.All(str, _base_path),
+                vol.Optional(CONF_BASE_PATH, default=DEFAULT_BASE_PATH): str,
                 vol.Optional(CONF_USE_TLS, default=True): bool,
                 vol.Optional(CONF_USER, default=DEFAULT_USER): str,
                 vol.Optional(CONF_PASSWORD, default=""): _PASSWORD_SELECTOR,
@@ -265,16 +276,17 @@ class EsclScanOptionsFlow(OptionsFlow):
         if user_input is not None:
             copy_dir = (user_input.get(CONF_COPY_DIR) or "").strip()
             user_input[CONF_COPY_DIR] = copy_dir
+            _validate_base_path(user_input, errors)
             if copy_dir and not self.hass.config.is_allowed_path(copy_dir):
                 errors[CONF_COPY_DIR] = "path_not_allowed"
-            else:
+            if not errors:
                 return self.async_create_entry(title="", data=user_input)
         data = {**self.config_entry.data, **self.config_entry.options, **(user_input or {})}
         schema = vol.Schema(
             {
                 vol.Required(CONF_HOST, default=data.get(CONF_HOST, "")): str,
                 vol.Optional(CONF_BASE_PATH, default=data.get(CONF_BASE_PATH, DEFAULT_BASE_PATH)):
-                    vol.All(str, _base_path),
+                    str,
                 vol.Optional(
                     CONF_PORT, default=data.get(CONF_PORT, DEFAULT_PORT)
                 ): _PORT,

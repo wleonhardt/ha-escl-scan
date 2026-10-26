@@ -30,7 +30,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Could not reach the scanner. Check host/port/TLS settings. Detail: {error_detail}"
+      "cannot_connect": "Could not reach the scanner. Check host/port/TLS settings. Detail: {error_detail}",
+      "invalid_base_path": "Enter a scanner resource path such as eSCL, not a full URL."
     },
     "abort": {
       "already_configured": "This scanner is already configured.",
@@ -66,7 +67,8 @@
       }
     },
     "error": {
-      "path_not_allowed": "That folder is not in allowlist_external_dirs (configuration.yaml)."
+      "path_not_allowed": "That folder is not in allowlist_external_dirs (configuration.yaml).",
+      "invalid_base_path": "Enter a scanner resource path such as eSCL, not a full URL."
     }
   },
   "entity": {

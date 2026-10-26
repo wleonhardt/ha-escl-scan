@@ -197,6 +197,45 @@ async def test_discovery_uuid_reconciles_serial_id_and_preserves_options(hass):
     assert entry.options[CONF_HOST] == entry.data[CONF_HOST] == "192.0.2.20"
 
 
+async def test_forms_serialize_for_frontend(hass: HomeAssistant):
+    """HA serializes every form schema for the UI; custom validators break that (#11)."""
+    from homeassistant.helpers import config_validation as cv
+    from probatio import to_field_list
+
+    user = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "192.0.2.10"})
+    entry.add_to_hass(hass)
+    options = await hass.config_entries.options.async_init(entry.entry_id)
+    for result in (user, options):
+        to_field_list(result["data_schema"], custom_serializer=cv.custom_serializer)
+
+
+async def test_forms_reject_bad_base_path_and_normalize_good_one(hass: HomeAssistant):
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    with patch(_OK, return_value=None) as probe:
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_HOST: "192.0.2.10", CONF_BASE_PATH: "https://x/eSCL"}
+        )
+    assert result["errors"] == {CONF_BASE_PATH: "invalid_base_path"}
+    probe.assert_not_called()
+
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "192.0.2.10"})
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    bad = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_HOST: "192.0.2.10", CONF_BASE_PATH: "eSCL/../x"}
+    )
+    assert bad["errors"] == {CONF_BASE_PATH: "invalid_base_path"}
+    good = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_HOST: "192.0.2.10", CONF_BASE_PATH: "/eSCL/"}
+    )
+    assert good["data"][CONF_BASE_PATH] == "eSCL"
+
+
 def test_manual_scanner_paths_allow_root_and_bridges_but_not_escaped_urls():
     import voluptuous as vol
 

@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.12.6] - 2026-10-26
+
+### Fixed
+- Open the integration settings and the manual setup form again on Home
+  Assistant 2026.10. Both forms failed with "500 Internal Server Error" because
+  newer Home Assistant cannot send the scanner path check to the browser
+  ([#11](https://github.com/wleonhardt/ha-escl-scan/issues/11)). The path is
+  now checked after you submit the form. An invalid path shows a message on
+  that field instead of a generic error.
+
 ## [0.12.5] - 2026-10-26
 
 ### Fixed
