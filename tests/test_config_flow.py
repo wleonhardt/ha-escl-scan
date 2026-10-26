@@ -200,7 +200,10 @@ async def test_discovery_uuid_reconciles_serial_id_and_preserves_options(hass):
 async def test_forms_serialize_for_frontend(hass: HomeAssistant):
     """HA serializes every form schema for the UI; custom validators break that (#11)."""
     from homeassistant.helpers import config_validation as cv
-    from probatio import to_field_list
+    try:
+        from probatio import to_field_list
+    except ImportError:  # HA before 2026.9 uses voluptuous_serialize.
+        from voluptuous_serialize import convert as to_field_list
 
     user = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}

@@ -7,9 +7,9 @@ match `custom_components/escl_scan/manifest.json`.
 ## [0.12.6] - 2026-10-26
 
 ### Fixed
-- Open the integration settings and the manual setup form again on Home
-  Assistant 2026.10. Both forms failed with "500 Internal Server Error" because
-  newer Home Assistant cannot send the scanner path check to the browser
+- Open the integration settings and the manual setup form again. Since 0.9.0
+  both forms failed with "500 Internal Server Error" because Home Assistant
+  cannot send the scanner path check to the browser
   ([#11](https://github.com/wleonhardt/ha-escl-scan/issues/11)). The path is
   now checked after you submit the form. An invalid path shows a message on
   that field instead of a generic error.
