@@ -43,7 +43,7 @@ class ScannerScanSensor(SensorEntity):
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = SCAN_STATES
     _attr_should_poll = False
-    _unrecorded_attributes = frozenset({"latest_scan"})
+    _unrecorded_attributes = frozenset({"latest_scan", "device_connection"})
 
     def __init__(self, coordinator: ScanCoordinator, entry_id: str, connection=None) -> None:
         self._connection = connection

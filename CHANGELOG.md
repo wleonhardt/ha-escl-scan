@@ -4,6 +4,15 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.12.5] - 2026-10-26
+
+### Fixed
+- Keep the per-poll connection timestamps (`checked_at`, `last_success_at`,
+  `next_check_at`) and the `Current scan` sensor's `device_connection` attribute
+  out of Recorder. Each minute's check previously stored a new attribute row
+  for both entities. Live attributes and the card's freshness check are
+  unchanged.
+
 ## [0.12.4] - 2026-10-09
 
 ### Fixed

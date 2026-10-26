@@ -158,6 +158,10 @@ async def test_setup_and_unload(hass):
         assert len(connections) == 1 and connections[0].state == "on"
         scan_state = hass.states.get("sensor.printer_current_scan")
         assert scan_state.attributes["device_connection"]["state"] == "reachable"
+        # Per-poll timestamps stay live for the card but are not written to Recorder.
+        unrecorded = connections[0].state_info["unrecorded_attributes"]
+        assert {"checked_at", "last_success_at", "next_check_at"} <= unrecorded
+        assert "device_connection" in scan_state.state_info["unrecorded_attributes"]
         assert hass.states.get("sensor.printer_current_scan") is not None
 
         dev_reg = dr.async_get(hass)
