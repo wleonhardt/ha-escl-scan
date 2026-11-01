@@ -8,4 +8,4 @@ zeroconf==0.136.2
 # Old aiodns allows incompatible newer pycares; retain its contemporary API.
 pycares==4.5.0
 # Exercise the integration's declared lower bound, not just the latest pypdf.
-pypdf==4.0.0
+pypdf==6.21.4
