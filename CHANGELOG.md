@@ -4,6 +4,13 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.12.7]
+
+### Fixed
+- Keep manually configured scanner ports when Zeroconf rediscovers a scanner.
+  This prevents devices advertising a different port from breaking a working
+  eSCL connection.
+
 ## [0.12.6] - 2026-10-26
 
 ### Fixed
