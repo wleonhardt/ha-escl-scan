@@ -6,5 +6,9 @@ updates:
       interval: monthly
   - package-ecosystem: pip
     directory: /
+    # The minimum file pins the hacs.json floor on purpose; bumping it breaks
+    # the "Minimum HA compatibility" job and hides floor regressions.
+    exclude-paths:
+      - requirements-test-minimum.txt
     schedule:
       interval: monthly
