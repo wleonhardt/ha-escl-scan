@@ -5,6 +5,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from homeassistant.config_entries import (
+    SOURCE_USER,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -151,7 +152,12 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
                 if (effective.get(CONF_USE_TLS, True) == self._discovered[CONF_USE_TLS]
                         and effective.get(CONF_BASE_PATH, DEFAULT_BASE_PATH).strip("/")
                         == self._discovered[CONF_BASE_PATH]):
-                    changes = {CONF_HOST: host, CONF_PORT: self._discovered[CONF_PORT]}
+                    changes = {CONF_HOST: host}
+                    # Options are saved explicitly by the user. Manual setup
+                    # also stores its port in data. Discovery may refresh the
+                    # port only when discovery supplied it in the first place.
+                    if CONF_PORT not in entry.options and entry.source != SOURCE_USER:
+                        changes[CONF_PORT] = self._discovered[CONF_PORT]
                     self.hass.config_entries.async_update_entry(
                         entry, data={**entry.data, **changes, "discovery_uuid": uuid},
                         options={**entry.options,
