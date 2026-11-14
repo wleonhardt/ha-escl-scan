@@ -197,6 +197,40 @@ async def test_discovery_uuid_reconciles_serial_id_and_preserves_options(hass):
     assert entry.options[CONF_HOST] == entry.data[CONF_HOST] == "192.0.2.20"
 
 
+@pytest.mark.parametrize(
+    ("source", "saved_port", "options_port", "expected_port"),
+    [
+        (config_entries.SOURCE_USER, 80, None, 80),
+        (config_entries.SOURCE_ZEROCONF, 8080, 80, 80),
+        (config_entries.SOURCE_ZEROCONF, 80, None, 8080),
+    ],
+)
+async def test_rediscovery_preserves_manually_configured_port(
+    hass: HomeAssistant, source, saved_port, options_port, expected_port
+):
+    options = {} if options_port is None else {CONF_PORT: options_port}
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        source=source,
+        unique_id="uuid-abc",
+        data={CONF_HOST: "192.0.2.10", CONF_PORT: saved_port, CONF_USE_TLS: False},
+        options=options,
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=_zeroconf("_uscan._tcp.local.", port=8080),
+    )
+
+    assert result["type"] == data_entry_flow.FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == "192.0.2.20"
+    assert entry.options == options
+    assert {**entry.data, **entry.options}[CONF_PORT] == expected_port
+
+
 async def test_forms_serialize_for_frontend(hass: HomeAssistant):
     """HA serializes every form schema for the UI; custom validators break that (#11)."""
     from homeassistant.helpers import config_validation as cv
