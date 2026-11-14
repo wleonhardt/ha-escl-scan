@@ -11,6 +11,7 @@ User-facing instructions are in [the documentation index](../docs/README.md).
 | `next-up.md` | Task queue + done log |
 | `open-questions.md` | Unresolved questions |
 | `decisions/` | One file per accepted structural decision |
+| `v0127-live-test-2026-11-14.md` | v0.12.7 port fix live test on the HP M283fdw and the port 8080 job-URL finding |
 | `stability-review-2026-07-20.md` | Full bug/stability/perf review + phased fix plan |
 | `design-review-2026-10-08.md` | Shared scan/print design findings and direction |
 | `shared-card-rollout-2026-10-08.md` | Canonical cross-project phases, dependencies and release gates |

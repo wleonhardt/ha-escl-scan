@@ -7,6 +7,10 @@
   the HP M277dw advertising 8080 while returning job URLs on port 80. Follow-up
   fix: only an options port that differs from the stored port counts as a user
   override, so saving settings no longer freezes a discovered port.
+  Live-tested on the M283fdw the same day: port 80 is kept across a restart and
+  two 3-page feeder scans pass. The test also confirmed that discovery-created
+  entries on port 8080 still cannot scan; fix not designed yet.
+  [Live test](v0127-live-test-2026-11-14.md).
 
 - Paired documentation overhauled on 2026-10-10: 70-line quick starts plus
   focused installation, dashboard, usage, automation, troubleshooting,
