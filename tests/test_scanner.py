@@ -70,7 +70,8 @@ async def scanner(aiohttp_server, socket_enabled):
         if backend.create_status != 201:
             return web.Response(status=backend.create_status,
                                 body=getattr(backend, "create_body", b""))
-        return web.Response(status=201, headers={"Location": "/eSCL/ScanJobs/j1"})
+        return web.Response(status=201, headers={
+            "Location": getattr(backend, "location", "/eSCL/ScanJobs/j1")})
 
     async def jobinfo(request):
         if backend.jobinfo_404:
@@ -346,15 +347,55 @@ def test_origin_keeps_nondefault_port_and_formats_ipv6(host, port, tls, origin):
 
 
 @pytest.mark.parametrize("uri", [
-    "http://other-host/eSCL/ScanJobs/j1", "//other-host/eSCL/ScanJobs/j1",
-    "http://scanner:8080/eSCL/ScanJobs/j1", "https://scanner/eSCL/ScanJobs/j1",
-    "http://user@scanner/eSCL/ScanJobs/j1",
-    "/admin/reset", "../reset",
+    "/admin/reset", "../reset", "http://other-host/admin/reset",
+    "http://scanner/eSCL/ScanJobs/../../admin/reset",
 ])
 def test_job_uri_cannot_escape_scanner_job_endpoint(uri):
     client = ScannerClient(host="scanner", use_tls=False, port=80)
     with pytest.raises(ValueError):
         client._absolute(uri)
+
+
+@pytest.mark.parametrize(("uri", "expected"), [
+    # HP names its own IP and port 80 whatever address the request used.
+    ("http://10.11.30.190:80/eSCL/ScanJobs/j1", "/eSCL/ScanJobs/j1"),
+    ("//other-host/eSCL/ScanJobs/j1", "/eSCL/ScanJobs/j1"),
+    ("https://scanner/eSCL/ScanJobs/j1?key=value", "/eSCL/ScanJobs/j1?key=value"),
+    ("http://user:pw@10.0.0.1:9/eSCL/ScanJobs/j1", "/eSCL/ScanJobs/j1"),
+])
+def test_job_uri_path_is_used_on_configured_origin(uri, expected):
+    client = ScannerClient(host="NPIC25FE4.local", use_tls=False, port=8080)
+    assert client._absolute(uri) == "http://npic25fe4.local:8080" + expected
+
+
+async def test_job_location_naming_another_server_never_contacts_it(
+    scanner, aiohttp_server,
+):
+    seen = []
+
+    async def collect(request):
+        seen.append((request.method, request.path))
+        return web.Response(status=500)
+
+    app = web.Application()
+    app.router.add_route("*", "/{tail:.*}", collect)
+    other = await aiohttp_server(app)
+    scanner._password = "scanner-secret"
+    scanner._backend.location = str(other.make_url("/eSCL/ScanJobs/j1"))
+    url = await scanner.create_job(source="Platen", dpi=300, color="color")
+    assert url == _url(scanner)
+    chunks = [c async for c in scanner.iter_next_document(url)]
+    assert b"".join(chunks) == VALID_PDF
+    assert await scanner.delete_job(url) is True
+    assert scanner._backend.deleted == ["j1"]
+    assert seen == []
+
+
+async def test_job_location_outside_scan_jobs_says_job_may_still_run(scanner):
+    scanner._backend.location = "http://10.0.0.1/admin/reset"
+    with pytest.raises(ValueError, match="cancel it on the scanner"):
+        await scanner.create_job(source="Platen", dpi=300, color="color")
+    assert scanner._backend.deleted == []
 
 
 def test_job_uri_resolves_relative_and_absolute_paths():

@@ -489,6 +489,7 @@ class ScannerClient:
         self.quirks: tuple[str, ...] = ()
         self._feeder_job = False
         self._next_page_at = 0.0
+        self._foreign_job_origin_logged = False
 
     @property
     def host(self) -> str:
@@ -503,10 +504,20 @@ class ScannerClient:
         return self._base
 
     def _absolute(self, uri: str) -> str:
-        """Resolve a job URI (may be absolute or root-relative)."""
-        url = URL(self._base + "/").join(URL(uri))
-        if not self._is_scanner_origin(url):
-            raise ValueError("scanner returned a job URL outside its origin")
+        """Resolve a job URI against the configured origin.
+
+        Only the path and query of an absolute URI are used. HP names its own
+        IP and port 80 whatever address the request used, and requests must
+        never go to an address taken from a scanner response.
+        """
+        ref = URL(uri)
+        if ref.absolute:
+            if not self._foreign_job_origin_logged and not self._is_scanner_origin(ref):
+                self._foreign_job_origin_logged = True
+                _LOGGER.debug("Scanner job URL names %s:%s; using its path on %s",
+                              ref.host, ref.port, self._origin)
+            ref = URL.build(path=ref.raw_path, query_string=ref.raw_query_string, encoded=True)
+        url = URL(self._base + "/").join(ref)
         if not url.path.startswith(URL(self._base).path + "/ScanJobs/"):
             raise ValueError("scanner returned a job URL outside ScanJobs")
         return str(url)
@@ -703,7 +714,12 @@ class ScannerClient:
             raise RuntimeError("scan create: no Location header")
         self._feeder_job = source == "Feeder"
         self._next_page_at = 0
-        return self._absolute(loc)
+        try:
+            return self._absolute(loc)
+        except ValueError as exc:
+            # The device accepted a job we cannot address, so we cannot cancel it.
+            raise ValueError(f"{exc}. The scanner may still be running this job; "
+                             "cancel it on the scanner's panel.") from exc
 
     async def _wait_idle(self, session: aiohttp.ClientSession) -> bool:
         """Poll ScannerStatus until Idle or SCANNER_IDLE_WAIT_SECONDS elapse."""

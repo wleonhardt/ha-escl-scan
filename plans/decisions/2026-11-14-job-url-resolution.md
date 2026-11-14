@@ -1,6 +1,6 @@
 # Resolve scanner job URLs by path on the configured origin
 
-Status: proposed, awaiting approval. Target release 0.12.8.
+Status: accepted and implemented in 0.12.8 (2026-11-14).
 
 ## Problem
 

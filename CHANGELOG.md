@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer and
 match `custom_components/escl_scan/manifest.json`.
 
+## [0.12.8] - 2026-11-14
+
+### Fixed
+- Scan from HP scanners on the port they advertise. HP returns every new job's
+  address with its own IP and port 80, whatever address Home Assistant used, so
+  scanners added through discovery (port 8080) or by hostname failed with
+  "scanner returned a job URL outside its origin" while the scanner kept
+  feeding paper. The integration now uses only the job's path and sends every
+  request to the address you configured, as before.
+
 ## [0.12.7] - 2026-11-14
 
 ### Fixed

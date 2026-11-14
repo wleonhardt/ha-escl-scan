@@ -2,6 +2,11 @@
 
 ## Queue
 
+- HP job URL fix released as 0.12.8 on 2026-11-14. HP returns job addresses
+  with its own IP and port 80, so discovered entries on port 8080 could not
+  scan. The client now keeps only the job path and sends every request to the
+  configured origin. [Decision](decisions/2026-11-14-job-url-resolution.md).
+
 - Zeroconf port handling released as 0.12.7 on 2026-11-14. Merged contributor
   PR #17: rediscovery keeps the port of manually created entries, which fixes
   the HP M277dw advertising 8080 while returning job URLs on port 80. Follow-up
