@@ -153,10 +153,12 @@ class EsclScanConfigFlow(ConfigFlow, domain=DOMAIN):
                         and effective.get(CONF_BASE_PATH, DEFAULT_BASE_PATH).strip("/")
                         == self._discovered[CONF_BASE_PATH]):
                     changes = {CONF_HOST: host}
-                    # Options are saved explicitly by the user. Manual setup
-                    # also stores its port in data. Discovery may refresh the
-                    # port only when discovery supplied it in the first place.
-                    if CONF_PORT not in entry.options and entry.source != SOURCE_USER:
+                    # Manual setup stores the user's port in data. Saving options
+                    # always writes the port, so only an options port that differs
+                    # from data is a user override. Refresh a discovered port only.
+                    saved_port = entry.data.get(CONF_PORT)
+                    if (entry.source != SOURCE_USER
+                            and entry.options.get(CONF_PORT, saved_port) == saved_port):
                         changes[CONF_PORT] = self._discovered[CONF_PORT]
                     self.hass.config_entries.async_update_entry(
                         entry, data={**entry.data, **changes, "discovery_uuid": uuid},

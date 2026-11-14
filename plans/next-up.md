@@ -2,6 +2,12 @@
 
 ## Queue
 
+- Zeroconf port handling released as 0.12.7 on 2026-11-14. Merged contributor
+  PR #17: rediscovery keeps the port of manually created entries, which fixes
+  the HP M277dw advertising 8080 while returning job URLs on port 80. Follow-up
+  fix: only an options port that differs from the stored port counts as a user
+  override, so saving settings no longer freezes a discovered port.
+
 - Paired documentation overhauled on 2026-10-10: 70-line quick starts plus
   focused installation, dashboard, usage, automation, troubleshooting,
   compatibility and API guides. Corrected stale behavior/examples; runtime and
